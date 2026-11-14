@@ -23,7 +23,7 @@ The plan contract uses only Node.js built-ins. `README.md` §6.5 is the plan sou
 
 ## Nikos: motion and recognition
 
-1. Export a representative `<name>.clean.json` file following `motion/FORMAT.md`, and publish the VRM player's loading entry point. Keep the matching `.raw.json` for provenance and cleanup work. The shared loader admits only cleaned files for catalog playback.
+1. Use `motion/extract.py` and `motion/clean.py` to export a representative `<name>.clean.json` file following `motion/FORMAT.md`. Keep the matching `.raw.json` for provenance and cleanup work. The shared loader admits only cleaned files for catalog playback. `puppet/src/motion.ts` provides the browser validator; `puppet/render.mjs` provides a local file-based render path.
 2. Register a sign in `catalog/signs.json` only after rights/provenance and QA checks. `id` is the shared key. Put the motion asset's repository-relative path in `motion_path`; use `sense` for ambiguous glosses and `recognizer_label` for recognition labels that differ from glosses.
 3. Consume each `ready.items[n].motion` as the validated v1 JSON object. The player uses ordered items and marker sequence spans, preserving `null` for missing parts or individual landmarks. `pose` and hands are image coordinates; `poseWorld` and optional hand world arrays have distinct origins as described in `motion/FORMAT.md`. The validator does not retarget, interpolate, or assert facial marker support.
 
@@ -55,11 +55,11 @@ const result = await loadPlayback(plan, catalog, loader);
 
 `assertMotionV1(motion, options)` in `shared/motion-format.mjs` validates raw or cleaned v1 objects and returns the original object without changing coordinates, confidence values, or `null` landmarks. Options are `expectedMotionId`, `requireClean`, and `fileStem`. Errors are `MotionValidationError` with an `issues` array. The Node loader checks project-relative paths, symlinks, `.clean.json`, file stem, catalog ID, and planned gloss. `auditVerifiedCatalog()` checks every verified entry against its file. A sentence/reference clip with `motion_id: null` can be valid research data but can never satisfy a verified isolated sign entry.
 
-Run `node --test shared/*.test.mjs`. Motion test fixtures under `shared/fixtures/` are synthetic and **not ASL**. No real `.clean.json` file is checked into `main` yet, so a representative file from Nikos is still needed for an integration test against his extractor output.
+Run `node --test shared/*.test.mjs`. Motion test fixtures under `shared/fixtures/` are synthetic and **not ASL**. A real extractor output can be tested locally with `ASL_REAL_MOTION_ROOT`, `ASL_REAL_MOTION_PATH`, `ASL_REAL_MOTION_ID`, and `ASL_REAL_MOTION_GLOSS`; see `shared/real-motion.integration.test.mjs`. The test skips when those variables are absent. No WLASL-derived `.clean.json` file is checked into `main` because source rights and signer QA remain open. Reproduction results are in `experiments/2026-11-15-alex-real-motion-integration.md`.
 
 ## First real playback check
 
-After Nikos publishes a rights-checked isolated sign and its `.clean.json` file, register its canonical `motion_id`, exact gloss, provenance, license, and repository-relative `motion_path` in a reviewed catalog. Save a one-item plan for that ID. From the repository root run:
+After rights and signer review of an isolated sign and its `.clean.json` file, register its canonical `motion_id`, exact gloss, provenance, license, and repository-relative `motion_path` in the product catalog. Save a one-item plan for that ID. From the repository root run:
 
 ```sh
 node shared/check-playback.mjs path/to/one-sign-plan.json path/to/catalog.json
@@ -67,4 +67,4 @@ node shared/check-playback.mjs path/to/one-sign-plan.json path/to/catalog.json
 
 The CLI calls the existing `loadPlayback()` with `createMotionLoader()`. Exit 0 means all requested motions loaded and validated; exit 1 means an unsupported plan or failed motion load, with no playable prefix; exit 2 means malformed input or invocation. The JSON report lists identity, source, FPS, frame count, sampled duration, dominant hand, mirror flag, and detected pose/face/hand frame counts. These counts expose gaps but cannot prove that left/right labels or the sign itself are correct. Compare the source video, hand labels, palm/wrist movement, and the VRM rendering visually with Nikos and a fluent signer. The CLI does not render motion.
 
-When the player entry point is published, pass `ready.items[n].motion` from the same `loadPlayback()` call to it in order. Ledi's app should submit its plan through that call and render nothing on `unsupported`. This check can be repeated with a short sequence only after one genuine isolated sign plays correctly.
+Pass `ready.items[n].motion` from the same `loadPlayback()` call to Nikos's player in order. For a local render, serializing that unchanged object to a temporary JSON file allows `puppet/render.mjs --motion PATH` to consume it. For a short sequence, `puppet/src/blend.ts` accepts ordered `{ motion }` clip specs after each individual asset has passed validation. Its runtime composite is not a catalog `.clean.json` asset and should not be fed back into the isolated-asset loader. Ledi's app should submit its plan through `loadPlayback()` and render nothing on `unsupported`.
