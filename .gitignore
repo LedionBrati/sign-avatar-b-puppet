@@ -1,5 +1,9 @@
 # outputs and dependencies
 out/
+.venv/
+**/__pycache__/
+.pytest_cache/
+motion/models/
 node_modules/
 pipeline/node_modules/
 
