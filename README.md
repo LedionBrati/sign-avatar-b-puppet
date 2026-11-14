@@ -4,9 +4,9 @@
 
 This repo explores **Method B**: store every sign as **motion data** (hand, body and face points), join the motion smoothly for any sentence, drive a simple **3D figure** with it, then let an **AI video model repaint** the figure into our realistic avatar.
 
-Its twin repo, **[sign-avatar-a-stitching](https://github.com/LedionBrati/sign-avatar-a-stitching)**, explores **Method A** (join pre-made avatar video clips). Same goal, same avatar, same reference clips, different engine. We build both, race them, and keep what works.
+**We are building Method B only.** The twin repo, **[sign-avatar-a-stitching](https://github.com/LedionBrati/sign-avatar-a-stitching)** (Method A, join pre-made avatar video clips), stays as a reference. Its Recast-on-real-signer approach is also our **fallback** (see section 4).
 
-> **Status (14 Nov 2026):** the realistic avatar works on real sentences (see the demo below). Method B itself is **untested**: nobody has yet driven a 3D figure from sign data and repainted it. That's what this repo is for. Nothing here is assigned to anyone: read, pick what interests you, write down what you learn.
+> **Status (14 Nov 2026):** the realistic avatar works on real sentences (see the demo below). Method B itself is **untested**: nobody has yet driven a 3D figure from sign data and repainted it. We get there through **4 checkpoints, free ones first** (section 4). Nothing here is assigned to anyone: read, pick what interests you, write down what you learn.
 
 ---
 
@@ -15,7 +15,7 @@ Its twin repo, **[sign-avatar-a-stitching](https://github.com/LedionBrati/sign-a
 1. [The vision](#1-the-vision)
 2. [What already works](#2-what-already-works)
 3. [The one idea everything rests on](#3-the-one-idea-everything-rests-on)
-4. [Two repos, one race](#4-two-repos-one-race)
+4. [The path: 4 checkpoints](#4-the-path-4-checkpoints)
 5. [Method B, explained](#5-method-b-explained)
 6. [The hard parts (open problems)](#6-the-hard-parts-open-problems)
 7. [Existing pieces we can reuse](#7-existing-pieces-we-can-reuse)
@@ -60,7 +60,7 @@ On 14 Nov 2026 we turned a real ASL signer into our AI avatar, frame for frame.
 The full story, numbers, and what failed: **[`docs/findings-2026-11-14.md`](docs/findings-2026-11-14.md)**. Read it before you start.
 
 What matters most for Method B:
-- **`minimax/h3-max/recast` copies motion frame for frame** from a video of a **real person**. Whether it does the same from a **3D render** is unknown and is the first thing to test here.
+- **`minimax/h3-max/recast` copies motion frame for frame** from a video of a **real person**. Whether it does the same from a **3D render** is unknown (checkpoint 3).
 - `minimax/h3-max/reference-to-video` **interprets** motion and drifts into wrong signs after a few seconds. A loose motion guide is not enough for sign language.
 - Fast fingers were the weak spot even with a real source video. With tracked points, fingers will be harder.
 
@@ -81,9 +81,34 @@ In Method B the motion data is the source of truth. The 3D figure and the AI rep
 
 ---
 
-## 4. Two repos, one race
+## 4. The path: 4 checkpoints
 
-| | **A: Clip stitching** ([twin repo](https://github.com/LedionBrati/sign-avatar-a-stitching)) | **B: 3D puppet + repaint** (this repo) |
+We prove the hard parts **in order, free ones first**, before building a big vocabulary or spending on AI repaint. Each checkpoint ends with a short demo and an honest **go / no-go** written in `experiments/`.
+
+| # | Checkpoint | Done when | Cost | Details |
+|---|---|---|---|---|
+| **1** | **Motion proof.** One real signer clip → MediaPipe points (raw + cleaned) → 3D puppet playing in the browser | One clip plays, with 3 views side by side: **real signer \| skeleton \| puppet**. Source, signer, license and timecodes written down. | free | 6.4, 6.7, section 7 |
+| **2** | **Finger test.** Check every frame for lost or wrong fingers | A frame-by-frame report: thumb, finger curl and spread, palm direction, wrist. For each failure: was it the **tracking**, the **cleanup**, or the **puppet**? | free | 6.2 |
+| **3** | **Repaint.** Turn the puppet video into our realistic avatar | The repaint keeps the signs **clearly better** than the plain puppet, and the extra time and cost is worth it. Agree a small fal budget first. Log request ids, cost, seconds. | paid | 6.1 |
+| **4** | **English to signs, end to end.** A tiny shared "plan" (section 6.5) with 2 or 3 checked signs | One hard-coded sentence goes text → plan → motion → puppet (→ repaint) → video. Words we can't sign show up as "can't sign this yet". | free (paid if repainted) | 6.3, 6.5, 6.9 |
+
+Only after these: more signs, an LLM for the gloss, speech input, live.
+
+**Rules for the checkpoints**
+- **Look, don't trust.** A puppet that moves nicely is not proof of correct ASL. Compare handshape, palm and wrist with the real signer, side by side.
+- **Keep raw data.** Never let smoothing silently delete fast fingerspelling. Keep raw and cleaned tracks.
+- **The quality target** stays [`assets/demo/judy-avatar-clean.mp4`](assets/demo/judy-avatar-clean.mp4): Recast on a real signer.
+
+### If checkpoint 3 fails: the fallback
+
+If no model repaints the puppet without damaging the hands, we **don't** show an AI video with wrong signs. We fall back to **Recast on real signer clips** (what made the Judy demo, `examples/judy.sh`):
+- keeps the **realistic avatar** and frame-accurate signs
+- only works for sentences or signs we have real clips for
+- the puppet still runs underneath (checkpoints 1, 2 and 4 are never wasted: the plan, the motion data and the puppet view stay useful for debugging and for live later)
+
+### B vs the clip-stitching approach
+
+| | **A: Clip stitching** ([twin repo](https://github.com/LedionBrati/sign-avatar-a-stitching), reference only) | **B: 3D puppet + repaint** (this repo) |
 |---|---|---|
 | A sign is stored as | a short **video** of the avatar | **points** (hands, body, face) per frame |
 | A sentence is made by | joining video clips | joining points smoothly, rendering a 3D figure, AI repaint |
@@ -93,9 +118,9 @@ In Method B the motion data is the source of truth. The 3D figure and the AI rep
 
 Both share: the avatar (`assets/avatar/`), the reference clips (`references/`), the finishing scripts (`pipeline/`).
 
-### The race
+### How we score a result
 
-When both can make a sentence, we make the **same 3 sentences** with both and compare side by side.
+Once B can make a sentence, we compare it with the Judy Recast video (and with the fallback) on the **same 3 sentences**.
 
 Suggested test sentences (change them if you have better ones):
 1. `Hello, my name is Maria.` (greeting + fingerspelling: **the finger test**)
@@ -112,7 +137,7 @@ Score each 1 to 5:
 | **Speed** | Seconds from pressing enter to the video playing |
 | **Cost** | fal spend per new sentence |
 
-Log every race in `experiments/`.
+Log every comparison in `experiments/`.
 
 ---
 
@@ -171,9 +196,9 @@ flowchart LR
 
 These are **not tasks**. They are the questions this repo needs answered. Pick any, explore it your way, write down what you find in `experiments/`. Each has what we already know and a few ideas to start from. Better ideas are welcome.
 
-### 6.1 The repaint: can an AI copy a puppet's motion exactly? (test this first)
+### 6.1 The repaint: can an AI copy a puppet's motion exactly? (checkpoint 3)
 
-Everything depends on this. If no model repaints a puppet precisely, Method B can't be correct.
+The realistic look depends on this. If no model repaints a puppet precisely, we use the fallback in section 4. Do it **after** checkpoint 1 gives us a puppet video to repaint.
 
 **Candidates on fal:**
 - **`minimax/h3-max/recast`**: copied a real person perfectly on day one. Feed it a **3D render** instead. Does it accept it? Does it keep handshapes?
@@ -181,15 +206,20 @@ Everything depends on this. If no model repaints a puppet precisely, Method B ca
 - **`minimax/h3-max/reference-to-video`**: drifted on day one; maybe better with a very clean puppet video as the reference.
 - Search fal for more: `pose to video`, `motion transfer`, `character animation`.
 
-**A quick, cheap first test (no 3D needed yet):**
-1. Take a reference clip (`references/how2sign/judy.mp4`).
-2. Extract its points, render them as a **skeleton video** and as a **simple 3D figure**.
-3. Repaint both with each candidate.
-4. Compare with the Recast result from day one (`assets/demo/judy-avatar-clean.mp4`), which is the "perfect" target.
+**The test:**
+1. Take the motion from checkpoint 1 (for example from `references/how2sign/judy.mp4`).
+2. Render it two ways, same framing: a **skeleton video** and a **human-shaped puppet** (VRM or mannequin).
+3. Repaint both with each candidate, within the agreed budget. Log request id, cost, seconds, and check the frame count matches.
+4. Compare fingers, palm and face with the **real signer** and with the Recast result from day one (`assets/demo/judy-avatar-clean.mp4`). Flag any sign part that was added, removed or changed.
+5. Go / no-go: is the repaint clearly better than the plain puppet, and worth the extra time and cost?
 
-### 6.2 Getting good finger data
+### 6.2 Getting good finger data (checkpoint 2)
 
-**Known:** MediaPipe gives 21 points per hand. It struggles with fast motion, hands crossing, and hands in front of the face.
+**Known:** MediaPipe gives 21 points per hand. It struggles with fast motion, hands crossing, and hands in front of the face. Even on day one, Recast blurred 1 or 2 frames of fast fingerspelling. Fingers carry meaning in ASL; they are not a cosmetic detail.
+
+**What to check, frame by frame:** thumb position, finger curl, finger spread, palm direction, wrist angle, and fingers bending in impossible ways. Save each frame's confidence/visibility so lost frames are easy to find.
+
+**Where it can break:** the **tracking** (MediaPipe loses a finger), the **cleanup** (smoothing wipes out a quick handshape), the **puppet** (the 3D hand can't make that shape, or body and hand points use different origins). Note which one it was.
 
 **Ideas:**
 - Smoothing filters (for example One Euro filter) without killing fast handshape changes.
@@ -220,10 +250,31 @@ The puppet only has to be readable by the repaint model, not pretty.
 
 Same as Method A. ASL is its own language: `Are you going to the store?` is roughly `STORE YOU GO?` with raised eyebrows.
 
+**The plan: one small format between "English" and "the puppet".** Whatever makes the gloss (hard-coded at first, an LLM later) outputs a **plan**, and everything after it only reads the plan. A suggested shape (a proposal, change it together):
+
+```json
+{
+  "input_text": "Hello, my name is Maria.",
+  "signs": [
+    { "gloss": "HELLO", "motion_id": "HELLO", "hold_ms": 0 },
+    { "gloss": "MY",    "motion_id": "MY" },
+    { "gloss": "NAME",  "motion_id": "NAME" }
+  ],
+  "fingerspelling": [ { "word": "MARIA", "after_sign": 2 } ],
+  "nonmanual_markers": [],
+  "unsupported_tokens": [],
+  "caption": "Hello, my name is Maria."
+}
+```
+
+- **`unsupported_tokens`**: words we have no sign for. The app shows "can't sign this yet". We never quietly swap in a different sign, and we only fingerspell on purpose.
+- The same plan also drives the fallback (Recast clips), so the app doesn't care which engine renders it.
+
 **Ideas:**
-- An LLM (Claude) turns English into gloss, **only** using signs in our motion dictionary, marking names for fingerspelling (`fs:MARIA`) and questions for facial grammar (`Q`).
-- A small test set of 20 English sentences + correct gloss, ideally checked by a signer.
-- Share the gloss code with Method A: it's identical.
+- Start **hard-coded**: 2 or 3 checked signs, one sentence, no LLM. Add the LLM only when that works end to end.
+- Then an LLM (Claude) turns English into a plan, **only** using signs in our motion dictionary, marking names for fingerspelling and questions for facial grammar.
+- Looking up English words one by one and reordering them is **not** real ASL grammar. Be honest about that in demos.
+- A small test set of 20 English sentences + correct plan, checked by a signer.
 
 ### 6.6 Facial grammar
 
@@ -238,8 +289,9 @@ In ASL, eyebrows, mouth and head movement are grammar. Method B can **control** 
 
 **Ideas:**
 - One JSON per sign: fps, frames, each frame with body, hands, face points (the GSL repo has a clip format to start from).
-- Metadata: gloss name, source clip, signer, license, start and end of the actual sign, dominant hand.
+- Metadata: gloss name, source clip, signer, license, start and end of the actual sign (timecodes in the source), dominant hand, who checked it.
 - Keep raw and cleaned versions, so cleanup can be redone.
+- **Where the signs come from:** our 4 How2Sign clips are **full sentences**, not single signs. Good for checkpoints 1 and 2, not a dictionary. For single signs, use word-level sources (ASL Signbank, ASL Citizen, WLASL) or record our own. See [`references/README.md`](references/README.md).
 
 ### 6.8 Speed, and maybe live
 
@@ -257,7 +309,7 @@ The first thing a user touches. Keep it simple:
 
 ## 7. Existing pieces we can reuse
 
-Our hackathon team built a Greek Sign Language app with much of Method B's first half: **`fourlhs/gsl-pharmacy-bridge`** (private, ask for access).
+Our hackathon team built a Greek Sign Language app with much of Method B's first half: **`fourlhs/gsl-pharmacy-bridge`** (private, ask Nikos for access). **Check it before building checkpoint 1 from scratch** (see issue #4).
 
 | Its folder | What it does | Useful here for |
 |---|---|---|
@@ -361,13 +413,14 @@ Tip: fal's MCP tools (in Claude Code) have `recommend_model` and `search_models`
 We're 3 people. **Nobody is assigned anything.** Each time, each of us picks what to build.
 
 - **Read first:** this README and `docs/findings-2026-11-14.md`.
-- **Pick something:** an open problem in section 6, a GitHub issue, or your own idea. Section 6.1 (the repaint test) unlocks everything else, so it's a good first pick.
+- **Pick something:** a checkpoint in section 4, an open problem in section 6, a GitHub issue, or your own idea. Checkpoint 1 (the motion proof) unlocks everything else, so it's a good first pick.
+- **Already started something locally (or with Codex / ChatGPT)?** Push the branch and link it on the issue, so nobody builds it twice.
 - **Say it:** comment on the issue (or open one) so the others know. Two people on the same thing is fine if they try different approaches.
 - **Log it:** one file in `experiments/` per experiment (copy `_template.md`). Failures are as useful as wins.
 - **Share results:** commit small results to `assets/` or link the fal URL. Big videos stay in `out/`.
 - **Branches:** `yourname/what-you-try`, open a PR when it works or when you want eyes on it.
 - **Decisions:** when we agree on something, write it in "Decisions" below with the date.
-- **Cross-pollinate:** the gloss step, the dictionary sources and the finishing scripts are the same in both repos. If something helps Method A, open an issue there.
+- **Repo A is reference only.** We don't develop there; anything useful from it gets copied here.
 
 ### Decisions so far
 
@@ -375,7 +428,11 @@ We're 3 people. **Nobody is assigned anything.** Each time, each of us picks wha
 |---|---|
 | 2026-11-14 | Language: **ASL**. Avatar: the AI woman in `assets/avatar/`. |
 | 2026-11-14 | Recast is the quality target: whatever B makes is compared with `judy-avatar-clean.mp4`. |
-| 2026-11-14 | Try both Method A and Method B, race them, keep the winner. |
+| 2026-11-14 | ~~Try both Method A and Method B, race them, keep the winner.~~ Replaced below. |
+| 2026-11-14 | **We build Method B only.** Repo A stays as a reference. |
+| 2026-11-14 | Work goes through **4 checkpoints, free ones first**: motion proof, finger test, repaint, end-to-end plan (section 4). From Alex's review in issues #1, #2, #4, #5. |
+| 2026-11-14 | If the repaint fails, the fallback is **Recast on real signer clips**, so we keep the realistic avatar. |
+| 2026-11-14 | One shared **plan** format between English and the renderer (section 6.5). |
 
 ---
 
@@ -385,7 +442,9 @@ We're 3 people. **Nobody is assigned anything.** Each time, each of us picks wha
 - **No real faces as avatars** without written consent. Never a famous person.
 - **Licenses:** How2Sign, Signbank, ASL Citizen are non-commercial. Fine for this private repo and private demos. Not for a paid product. Credit the source when you show anything.
 - **No keys in git.** `FAL_KEY` lives in your shell or a local `.env` (ignored).
-- **Deaf people decide what's good.** Before we call anything "correct", a Deaf or fluent signer checks it.
+- **Deaf people decide what's good.** Before we call anything "correct", a Deaf or fluent signer checks it. Matching motion is not the same as correct ASL.
+- **Never fake a sign.** If we can't sign a word, we say so ("can't sign this yet"). We never quietly swap in another sign, and never show a nice-looking AI video with wrong hands.
+- **Write down where every clip came from:** source, signer, license, timecodes.
 - **No personal photos** in this repo (the `photos/` folder is git-ignored on purpose).
 
 ---
@@ -418,3 +477,4 @@ We're 3 people. **Nobody is assigned anything.** Each time, each of us picks wha
 - Avatar: AI-generated with Google Nano Banana 2.1 on fal. Not a real person.
 - Video: MiniMax H3 Max Recast and Reference to Video on fal. Background removal by VEED on fal.
 - Method B builds on ideas and code from our team's GSL Pharmacy Bridge.
+- The 4-checkpoint path, the plan format and the finger test come from Alexandros Nomikos's review (issues #1, #2, #4, #5).
