@@ -254,6 +254,8 @@ The realistic look depends on this. If no model repaints a puppet precisely, we 
 4. Compare fingers, palm and face with the **real signer** and with the Recast result from day one (`assets/demo/judy-avatar-clean.mp4`). Flag any sign part that was added, removed or changed.
 5. Go / no-go: is the repaint clearly better than the plain puppet, and worth the extra time and cost?
 
+**E0 preparation:** [`pipeline/e0.mjs`](pipeline/e0.mjs) checks a future puppet MP4 with ffprobe, prepares model adapters in a free dry run, and writes comparison reports. See [`experiments/e0/README.md`](experiments/e0/README.md). It does not call fal unless an operator explicitly enables a guarded paid run.
+
 ### 6.2 Getting good finger data (checkpoint 2)
 
 **Known:** MediaPipe gives 21 points per hand. It struggles with fast motion, hands crossing, and hands in front of the face. Even on day one, Recast blurred 1 or 2 frames of fast fingerspelling. Fingers carry meaning in ASL; they are not a cosmetic detail.
@@ -449,12 +451,13 @@ node pipeline/render-layers.mjs --out-dir out/layers --text "Hello, my name is M
 
 ## 10. The pipeline scripts
 
-Shared with Method A. All tested on 14 Nov 2026.
+Shared with Method A. The existing finishing scripts were tested on 14 Nov 2026; the E0 harness has its own tests.
 
 | Script | What it does | Paid? |
 |---|---|---|
 | `prepare-clip.sh <in> <out> [x]` | Crop to 3:4 (540x720), 24 fps, no audio. `x` = left edge of the crop. | no |
 | `recast.mjs --video --avatar --out [--resolution] [--seed] [--prompt]` | Swap the person in a video for the avatar, same motion. **Try it on a puppet render.** | yes |
+| `e0.mjs --puppet --source [--generated] [--model]` | Validate metadata, prepare endpoint inputs, and make signer/puppet/repaint comparison reports. Dry run by default. | no by default; guarded paid option |
 | `remove-bg.mjs --video --out-dir` | Cut the person out: `color.mp4` + `alpha.mp4` | yes |
 | `composite.sh <color> <alpha> <wall> <out>` | Person on the wall (`REMOVE_RED=0` if there's no red chair) | no |
 | `render-layers.mjs --text --out-dir [--credit --left --right]` | Caption, labels, credit as PNG layers | no |
