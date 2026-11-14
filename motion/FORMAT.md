@@ -28,6 +28,8 @@ Files come in pairs:
   "extractor": { "name": "mediapipe-holistic-landmarker", "version": "1.2.3", "model": "holistic_landmarker.task float16" },
   "cleaned": false,                   // false in .raw.json, true in .clean.json
   "cleanup": null,                    // in .clean.json: { "smoothing": "one-euro", "params": {...}, "trim": [startFrame, endFrame], "filled_frames": {...} }
+                                      //   trim: first and last kept frame of the RAW file, both inclusive; frames are renumbered from i=0, t=0
+                                      //   filled_frames: { "leftHand": [i, ...], ... } frame indices in THIS file that were interpolated
   "frames": [
     {
       "i": 0,                         // frame index in this file
@@ -35,11 +37,11 @@ Files come in pairs:
       "pose":           [[0.51, 0.32, -0.41, 0.99], ...],  // 33 x [x, y, z, visibility]; x,y in 0..1 image coords, y down
       "poseWorld":      [[0.01, -0.55, -0.12], ...],       // 33 x [x, y, z] metres, origin between the hips, y down
       "face":           [[0.50, 0.21, -0.02], ...],        // 478 x [x, y, z] image coords (468 mesh + 10 iris)
-      "faceBlendshapes": { "browInnerUp": 0.12, ... },     // 52 ARKit-style scores 0..1, optional
+      "faceBlendshapes": { "browInnerUp": 0.12, ... },     // 51 ARKit-style scores 0..1 (MediaPipe has no tongueOut; its "_neutral" is dropped), optional
       "leftHand":       [[0.62, 0.55, -0.01], ...],        // 21 x [x, y, z] image coords, subject's LEFT hand
-      "leftHandWorld":  [[0.00, 0.00, 0.00], ...],         // 21 x [x, y, z] metres, origin at the hand's centre, optional
+      "leftHandWorld":  [[0.05, -0.24, -0.31], ...],       // 21 x [x, y, z] metres, SAME frame as poseWorld (origin between the hips); point 0 = poseWorld 15, optional
       "rightHand":      [[...], ...],                      // 21 points, subject's RIGHT hand
-      "rightHandWorld": [[...], ...]
+      "rightHandWorld": [[...], ...]                       // point 0 = poseWorld 16
     }
   ]
 }
