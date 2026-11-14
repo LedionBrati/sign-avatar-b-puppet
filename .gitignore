@@ -21,3 +21,8 @@ raw/
 photos/
 
 .DS_Store
+
+# puppet/
+puppet/models/
+puppet/node_modules/
+puppet/dist/
