@@ -2,7 +2,7 @@
 
 **Status:** Proposed for team review — not an assignment or a replacement for the README  
 **Date:** 14 November 2026 · **Submission target:** 15 November 2026, 18:00 Europe/Athens  
-**Related:** [Nikos's product plan PR #7](../pull/7) · [Method B checkpoints](../README.md#4-the-path-4-checkpoints) · [cross-team audit #6](../issues/6)
+**Related:** [Nikos's product plan PR #7](https://github.com/LedionBrati/sign-avatar-b-puppet/pull/7) · [Method B checkpoints](../README.md#4-the-path-4-checkpoints) · [cross-team audit #6](https://github.com/LedionBrati/sign-avatar-b-puppet/issues/6)
 
 ## The proposal in one paragraph
 
@@ -21,8 +21,8 @@ The already-verified **Recast-on-real-signer video** is a visual asset and fallb
 
 | Person | Proposed lead | Concrete output to integrate | Existing work to keep |
 |---|---|---|---|
-| **Nikos** | ASL data + intelligence | WLASL ingestion / metadata, constrained text→plan, pretrained sign / fingerspelling recognition, diagnostic evaluation | Continue his existing `ai-summit` work and [PR #7](../pull/7); do not restart |
-| **Alex** | Motion + 3D signer | Source clip → MediaPipe extraction → raw/cleaned motion → VRM retargeting/playback; finger and palm QA; optional puppet→repaint experiment | Reuse existing GSL recorder/VRM work if access is authorized; track [#4](../issues/4), [#2](../issues/2), [#1](../issues/1) |
+| **Nikos** | ASL data + intelligence | WLASL ingestion / metadata, constrained text→plan, pretrained sign / fingerspelling recognition, diagnostic evaluation | Continue his existing `ai-summit` work and [PR #7](https://github.com/LedionBrati/sign-avatar-b-puppet/pull/7); do not restart |
+| **Alex** | Motion + 3D signer | Source clip → MediaPipe extraction → raw/cleaned motion → VRM retargeting/playback; finger and palm QA; optional puppet→repaint experiment | Reuse existing GSL recorder/VRM work if access is authorized; track [#4](https://github.com/LedionBrati/sign-avatar-b-puppet/issues/4), [#2](https://github.com/LedionBrati/sign-avatar-b-puppet/issues/2), [#1](https://github.com/LedionBrati/sign-avatar-b-puppet/issues/1) |
 | **Ledi** | App + integration + demo | Unified front end and API composition, UX for both directions, existing Recast/video scripts and assets, demo flow / fallback | Continue current avatar, presentation and processing pipeline |
 
 **Agreement requested:** Are these useful starting owners? Name any overlap or work already running locally. No one is automatically assigned by this document.
