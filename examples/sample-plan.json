@@ -1,0 +1,12 @@
+{
+  "input_text": "Hello, my name is Maria.",
+  "items": [
+    { "type": "sign", "gloss": "HELLO", "motion_id": "HELLO" },
+    { "type": "sign", "gloss": "MY", "motion_id": "MY" },
+    { "type": "sign", "gloss": "NAME", "motion_id": "NAME" },
+    { "type": "fingerspell", "word": "MARIA" }
+  ],
+  "nonmanual_markers": [],
+  "unsupported_tokens": [],
+  "caption": "Hello, my name is Maria."
+}

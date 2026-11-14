@@ -291,33 +291,38 @@ The puppet only has to be readable by the repaint model, not pretty.
 
 ### 6.5 English to ASL: the gloss step
 
-Same as Method A. ASL is its own language: `Are you going to the store?` is roughly `STORE YOU GO?` with raised eyebrows.
+ASL is its own language: `Are you going to the store?` is roughly `STORE YOU GO?` with raised eyebrows.
 
-**The plan: one small format between "English" and "the puppet".** Whatever makes the gloss (hard-coded at first, an LLM later) outputs a **plan**, and everything after it only reads the plan. A suggested shape (a proposal, change it together):
+**One ordered plan between English and the puppet.** Whatever produces the gloss (hard-coded first, LLM later) outputs a structured plan; the UI and both rendering routes consume that plan. Signs and fingerspelling are in **the same ordered `items` array**, so a fingerspelled word can appear anywhere:
 
 ```json
 {
   "input_text": "Hello, my name is Maria.",
-  "signs": [
-    { "gloss": "HELLO", "motion_id": "HELLO", "hold_ms": 0 },
-    { "gloss": "MY",    "motion_id": "MY" },
-    { "gloss": "NAME",  "motion_id": "NAME" }
+  "items": [
+    { "type": "sign", "gloss": "HELLO", "motion_id": "HELLO" },
+    { "type": "sign", "gloss": "MY", "motion_id": "MY" },
+    { "type": "sign", "gloss": "NAME", "motion_id": "NAME" },
+    { "type": "fingerspell", "word": "MARIA" }
   ],
-  "fingerspelling": [ { "word": "MARIA", "after_sign": 2 } ],
   "nonmanual_markers": [],
   "unsupported_tokens": [],
   "caption": "Hello, my name is Maria."
 }
 ```
 
-- **`unsupported_tokens`**: words we have no sign for. The app shows "can't sign this yet". We never quietly swap in a different sign, and we only fingerspell on purpose.
-- The same plan also drives the fallback (Recast clips), so the app doesn't care which engine renders it.
+- **Facial/nonmanual markers** refer to zero-based *inclusive* item spans: e.g. `{ "type": "question_yn", "from": 0, "to": 3 }` covers items 0 through 3. This describes where the expression belongs, not whether we can already animate it accurately.
+- **Canonical sign catalog:** `catalog/signs.json`. Each sign has a stable ID, a gloss, optional sense and recognizer label, and a QA status. The catalog currently starts **empty**, on purpose: do not treat the example sentence as runnable until verified assets are registered.
+- **Runtime contract:** `shared/contracts.mjs`; validate plans and resolve them against catalog entries before attempting playback. `preparePlayback()` returns all ordered motion references or an explicit unsupported result; `loadPlayback()` accepts an engine-owned loader without assuming a frame format. Missing signs, missing A–Z movements and unsupported tokens block the whole sequence. See [`shared/INTEGRATION.md`](shared/INTEGRATION.md) and run `node --test shared/contracts.test.mjs`.
+- **Motion format:** Nikos's `motion/FORMAT.md` is the planned source of truth for landmark frames, once his branch is pushed. Do not independently redefine it here.
+- This one plan should also drive the real-signer-video fallback, so the app does not need a separate translation mechanism for each render mode.
 
 **Ideas:**
-- Start **hard-coded**: 2 or 3 checked signs, one sentence, no LLM. Add the LLM only when that works end to end.
-- Then an LLM (Claude) turns English into a plan, **only** using signs in our motion dictionary, marking names for fingerspelling and questions for facial grammar.
-- Looking up English words one by one and reordering them is **not** real ASL grammar. Be honest about that in demos.
-- A small test set of 20 English sentences + correct plan, checked by a signer.
+- Start **hard-coded**: 2 or 3 checked signs, one sentence; add the LLM when the whole route works end to end.
+- Then an LLM (Claude) turns English into a plan **only using IDs in the catalog**, marking names for fingerspelling and questions for facial grammar.
+- Looking up English words one by one and reordering them is **not** real ASL grammar. Have a fluent signer review examples before making correctness claims.
+- Build a small test set of signer-checked sentences, including homographs, unsupported words and fingerspelled names.
+
+---
 
 ### 6.6 Facial grammar
 
@@ -499,12 +504,12 @@ From Alex's [`docs/one-product-collaboration-proposal.md`](docs/one-product-coll
 
 | Lead | Area | Ends up as |
 |---|---|---|
-| **Nikos** | Sign data and intelligence | WLASL catalog, English → plan (6.5), sign → speech recognition (6.10) |
-| **Alex** | Motion and the 3D signer | Checkpoints 1 to 4: MediaPipe → cleaned motion → VRM puppet, finger test, repaint test |
-| **Ledi** | App, integration, demo | One app with two tabs (Text/Speech → Sign, Sign → Speech), the avatar and Recast videos, the fallback, the pitch |
+| **Nikos** | Motion, 3D signer, sign data and recognition | `nikos/motion` extraction and finger QA, `nikos/puppet` VRM player, WLASL research and sign recognition |
+| **Alex** | Shared integration | Plan and catalog contract, translation-to-motion handoff, adapter to Nikos's outputs and Ledi's app; later help with repaint |
+| **Ledi** | App, avatar pipeline and demo | One app with two tabs, existing realistic avatar and Recast videos, the fallback, the pitch |
 
 **Shared pieces everyone uses:**
-- **Sign catalog:** `motion/catalog.json`. One entry per sign: `sign_id`, gloss, meaning (for words like RIGHT or BANK), source, signer, time range, fps, dominant hand, license, and a status: `verified`, `experimental` or `unsupported`.
+- **Sign catalog:** `catalog/signs.json`. One entry per canonical ID, with gloss, optional sense/recognizer label, provenance, motion path and a status: `verified`, `experimental` or `unsupported`.
 - **Plan:** the JSON in 6.5. The app only reads the plan; it never makes its own gloss rules.
 - **Motion:** the frame format in 6.7, raw and cleaned kept side by side.
 
@@ -543,8 +548,8 @@ From Alex's [`docs/one-product-collaboration-proposal.md`](docs/one-product-coll
 | 2026-11-14 | Repaint candidates to test: Recast, Kling v3 motion-control, DreamActor v2, one-to-all (if it exists). Plus the **B0** baseline. |
 | Open | The app stack in 6.9 is a proposal. Agree on it before building the app. |
 | 2026-11-14 | **One product, one repo (this one).** Alex's collaboration proposal merged (PR #8). |
-| 2026-11-14 | **Leads:** Nikos = data, plan, recognition. Alex = motion and puppet. Ledi = app, integration, demo. Leads, not assignments. |
-| 2026-11-14 | Plan format = 6.5. Sign catalog lives at `motion/catalog.json`. |
+| 2026-11-15 | **Updated ownership:** Nikos = motion, puppet, data, recognition. Alex = shared integration. Ledi = app, avatar pipeline, demo. Leads, not assignments. |
+| 2026-11-15 | Plan format = 6.5. Sign catalog lives at `catalog/signs.json`. |
 | 2026-11-14 | Demo uses 1 or 2 WLASL-only sentences, no fingerspelling, checked by a fluent signer if we can find one. |
 | 2026-11-14 | fal cap ~$30. First full connection 15 Nov 12:00, feature freeze 15:00, deadline 18:00 Athens. |
 | 2026-11-14 | Nikos shares his WLASL builder code (not videos) here, and GSL repo access with Alex. |
