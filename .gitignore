@@ -2,6 +2,7 @@
 out/
 node_modules/
 pipeline/node_modules/
+experiments/e0/runs/
 
 # secrets
 .env
