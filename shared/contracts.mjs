@@ -5,6 +5,7 @@
 const object = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const nonempty = (v) => typeof v === "string" && v.trim().length > 0;
 const integer = (v) => Number.isInteger(v) && v >= 0;
+const canonicalId = (v) => typeof v === "string" && /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/.test(v);
 
 function throwErrors(label, errors) {
   if (errors.length) throw new TypeError(label + ":\n- " + errors.join("\n- "));
@@ -29,7 +30,7 @@ export function assertPlan(plan) {
     if (!object(item)) { errors.push(`items[${i}] must be an object`); return; }
     if (item.type === "sign") {
       if (!nonempty(item.gloss)) errors.push(`items[${i}].gloss required`);
-      if (!nonempty(item.motion_id)) errors.push(`items[${i}].motion_id required`);
+      if (!canonicalId(item.motion_id)) errors.push(`items[${i}].motion_id must be an uppercase canonical ID`);
       if (item.hold_ms !== undefined && !integer(item.hold_ms)) {
         errors.push(`items[${i}].hold_ms must be a nonnegative integer`);
       }
@@ -71,15 +72,22 @@ export function assertCatalog(catalog) {
   const ids = new Set();
   for (const [i, sign] of signs.entries()) {
     if (!object(sign)) { errors.push(`signs[${i}] must be an object`); continue; }
-    if (!nonempty(sign.id)) errors.push(`signs[${i}].id required`);
+    if (!canonicalId(sign.id)) errors.push(`signs[${i}].id must be an uppercase canonical ID`);
     else if (ids.has(sign.id)) errors.push(`duplicate sign ID: ${sign.id}`);
     else ids.add(sign.id);
     if (!nonempty(sign.gloss)) errors.push(`signs[${i}].gloss required`);
     if (!["experimental", "verified", "unsupported"].includes(sign.status)) {
       errors.push(`signs[${i}].status invalid`);
     }
-    for (const key of ["sense", "recognizer_label", "motion_path", "source", "license"]) {
+    for (const key of ["sense", "recognizer_label", "motion_path", "source", "source_url", "signer", "license"]) {
       if (sign[key] !== undefined && !nonempty(sign[key])) errors.push(`signs[${i}].${key} must be nonempty if present`);
+    }
+    if (sign.letter !== undefined && !/^[A-Z]$/.test(sign.letter)) {
+      errors.push(`signs[${i}].letter must be one uppercase A-Z letter`);
+    }
+    if (nonempty(sign.motion_path) &&
+        (sign.motion_path.startsWith("/") || sign.motion_path.split("/").includes("..") || /^[a-z]+:/i.test(sign.motion_path))) {
+      errors.push(`signs[${i}].motion_path must be a project-relative path`);
     }
     if (sign.status === "verified") {
       for (const key of ["motion_path", "source", "license"]) {
@@ -93,12 +101,25 @@ export function assertCatalog(catalog) {
       for (const [letter, signId] of Object.entries(catalog.fingerspelling)) {
         if (!/^[A-Z]$/.test(letter) || !nonempty(signId) || !ids.has(signId)) {
           errors.push(`invalid fingerspelling mapping for ${letter}`);
+        } else if (signs.find((sign) => sign?.id === signId)?.letter !== letter) {
+          errors.push(`fingerspelling ${letter} must map to an entry with letter ${letter}`);
         }
       }
     }
   }
   throwErrors("Invalid sign catalog", errors);
   return catalog;
+}
+
+/** Recognition labels can be ambiguous; never guess a sense from one label. */
+export function lookupRecognizerLabel(label, catalog) {
+  assertCatalog(catalog);
+  if (!nonempty(label)) throw new TypeError("recognizer label must be nonempty");
+  const candidates = catalog.signs.filter((sign) => sign.recognizer_label === label)
+    .map(({ id, gloss, sense, status }) => ({ id, gloss, sense, status }));
+  if (candidates.length === 0) return { status: "unknown", label };
+  if (candidates.length > 1) return { status: "ambiguous", label, candidates };
+  return { status: "matched", label, sign: candidates[0] };
 }
 
 /**
@@ -115,13 +136,20 @@ export function resolvePlan(plan, catalog) {
   const append = (id, itemIndex, details = {}) => {
     const sign = byId.get(id);
     if (!sign || sign.status !== "verified" || !nonempty(sign.motion_path)) {
-      blocked.push({ item_index: itemIndex, motion_id: id, reason: "No verified motion asset in catalog" });
+      const code = !sign ? "unknown_sign" : sign.status === "unsupported" ? "unsupported_sign" : "unverified_motion";
+      blocked.push({ item_index: itemIndex, motion_id: id, code, reason: "No verified motion asset in catalog" });
       return;
     }
     sequence.push({ item_index: itemIndex, motion_id: id, motion_path: sign.motion_path, ...details });
   };
   plan.items.forEach((item, index) => {
     if (item.type === "sign") {
+      const listed = byId.get(item.motion_id);
+      if (listed && listed.gloss !== item.gloss) {
+        blocked.push({ item_index: index, motion_id: item.motion_id, code: "gloss_mismatch",
+          reason: `Plan gloss ${item.gloss} does not match catalog gloss ${listed.gloss}` });
+        return;
+      }
       append(item.motion_id, index, { type: "sign", gloss: item.gloss, hold_ms: item.hold_ms ?? 0 });
       return;
     }
@@ -132,20 +160,60 @@ export function resolvePlan(plan, catalog) {
       !id || byId.get(id)?.status !== "verified" || !nonempty(byId.get(id)?.motion_path)
         ? [letters[i]] : []);
     if (missing.length) {
-      blocked.push({ item_index: index, word: item.word, reason: "Missing verified fingerspelling letters: " + [...new Set(missing)].join(", ") });
+      blocked.push({ item_index: index, word: item.word, code: "missing_fingerspelling",
+        reason: "Missing verified fingerspelling letters: " + [...new Set(missing)].join(", ") });
       return;
     }
     mapped.forEach((id, letter_index) => append(id, index, { type: "fingerspell", letter: letters[letter_index], letter_index }));
   });
   for (const token of plan.unsupported_tokens) {
-    blocked.push({ token, reason: "Unsupported English token; do not invent a sign" });
+    blocked.push({ token, code: "unsupported_token", reason: "Unsupported English token; do not invent a sign" });
   }
+  // A renderer must never accidentally play a valid prefix of an unsupported plan.
+  const playable = blocked.length === 0 ? sequence : [];
+  const markers = blocked.length === 0 ? plan.nonmanual_markers.map((mark) => {
+    const from_sequence = playable.findIndex((item) => item.item_index === mark.from);
+    const to_sequence = playable.findLastIndex((item) => item.item_index === mark.to);
+    return { ...mark, from_sequence, to_sequence };
+  }) : [];
   return {
     resolvable: blocked.length === 0,
-    sequence,
+    sequence: playable,
     blocked,
-    nonmanual_markers: plan.nonmanual_markers,
+    nonmanual_markers: markers,
     caption: plan.caption,
     input_text: plan.input_text,
   };
+}
+
+/** Frontend boundary: either all ordered motion references are ready, or none are. */
+export function preparePlayback(plan, catalog) {
+  const result = resolvePlan(plan, catalog);
+  if (!result.resolvable) return { status: "unsupported", caption: result.caption,
+    input_text: result.input_text, blocked: result.blocked };
+  return { status: "ready", caption: result.caption, input_text: result.input_text,
+    items: result.sequence, nonmanual_markers: result.nonmanual_markers };
+}
+
+/**
+ * Optional engine boundary. loadMotion(path, item) is supplied by Nikos's motion
+ * package or Ledi's app; this module does not define or fabricate frame data.
+ */
+export async function loadPlayback(plan, catalog, loadMotion) {
+  const request = preparePlayback(plan, catalog);
+  if (request.status !== "ready") return request;
+  if (typeof loadMotion !== "function") throw new TypeError("loadMotion must be a function");
+  const items = [];
+  for (const item of request.items) {
+    try {
+      const motion = await loadMotion(item.motion_path, item);
+      if (motion == null) throw new Error("loader returned no motion");
+      items.push({ ...item, motion });
+    } catch (error) {
+      return { status: "unsupported", caption: request.caption, input_text: request.input_text,
+        blocked: [{ item_index: item.item_index, motion_id: item.motion_id,
+          code: "motion_load_failed", reason: `Motion asset could not be loaded: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+  return { ...request, items };
 }
