@@ -1,0 +1,10 @@
+{
+  "name": "sign-avatar-pipeline",
+  "private": true,
+  "type": "module",
+  "description": "Small scripts that turn a real signer clip into a realistic AI avatar video (fal + ffmpeg + headless Chrome).",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@fal-ai/client": "^1.2.0"
+  }
+}

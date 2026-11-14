@@ -1,0 +1,18 @@
+# outputs and dependencies
+out/
+node_modules/
+pipeline/node_modules/
+
+# secrets
+.env
+.env.*
+*.key
+
+# raw datasets are big, keep them outside the repo
+*.zip
+raw/
+
+# personal photos never go in this repo
+photos/
+
+.DS_Store
