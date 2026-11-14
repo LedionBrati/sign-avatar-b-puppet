@@ -291,33 +291,38 @@ The puppet only has to be readable by the repaint model, not pretty.
 
 ### 6.5 English to ASL: the gloss step
 
-Same as Method A. ASL is its own language: `Are you going to the store?` is roughly `STORE YOU GO?` with raised eyebrows.
+ASL is its own language: `Are you going to the store?` is roughly `STORE YOU GO?` with raised eyebrows.
 
-**The plan: one small format between "English" and "the puppet".** Whatever makes the gloss (hard-coded at first, an LLM later) outputs a **plan**, and everything after it only reads the plan. A suggested shape (a proposal, change it together):
+**One ordered plan between English and the puppet.** Whatever produces the gloss (hard-coded first, LLM later) outputs a structured plan; the UI and both rendering routes consume that plan. Signs and fingerspelling are in **the same ordered `items` array**, so a fingerspelled word can appear anywhere:
 
 ```json
 {
   "input_text": "Hello, my name is Maria.",
-  "signs": [
-    { "gloss": "HELLO", "motion_id": "HELLO", "hold_ms": 0 },
-    { "gloss": "MY",    "motion_id": "MY" },
-    { "gloss": "NAME",  "motion_id": "NAME" }
+  "items": [
+    { "type": "sign", "gloss": "HELLO", "motion_id": "HELLO" },
+    { "type": "sign", "gloss": "MY", "motion_id": "MY" },
+    { "type": "sign", "gloss": "NAME", "motion_id": "NAME" },
+    { "type": "fingerspell", "word": "MARIA" }
   ],
-  "fingerspelling": [ { "word": "MARIA", "after_sign": 2 } ],
   "nonmanual_markers": [],
   "unsupported_tokens": [],
   "caption": "Hello, my name is Maria."
 }
 ```
 
-- **`unsupported_tokens`**: words we have no sign for. The app shows "can't sign this yet". We never quietly swap in a different sign, and we only fingerspell on purpose.
-- The same plan also drives the fallback (Recast clips), so the app doesn't care which engine renders it.
+- **Facial/nonmanual markers** refer to zero-based *inclusive* item spans: e.g. `{ "type": "question_yn", "from": 0, "to": 3 }` covers items 0 through 3. This describes where the expression belongs, not whether we can already animate it accurately.
+- **Canonical sign catalog:** `catalog/signs.json`. Each sign has a stable ID, a gloss, optional sense and recognizer label, and a QA status. The catalog currently starts **empty**, on purpose: do not treat the example sentence as runnable until verified assets are registered.
+- **Runtime contract:** `shared/contracts.mjs`; validate plans and resolve them against catalog entries before attempting playback. Missing signs, missing A–Z movements and unsupported tokens must produce explicit blocking feedback; never invent signs. Run `node --test shared/contracts.test.mjs` for schema checks.
+- **Motion format:** Nikos's `motion/FORMAT.md` is the planned source of truth for landmark frames, once his branch is pushed. Do not independently redefine it here.
+- This one plan should also drive the real-signer-video fallback, so the app does not need a separate translation mechanism for each render mode.
 
 **Ideas:**
-- Start **hard-coded**: 2 or 3 checked signs, one sentence, no LLM. Add the LLM only when that works end to end.
-- Then an LLM (Claude) turns English into a plan, **only** using signs in our motion dictionary, marking names for fingerspelling and questions for facial grammar.
-- Looking up English words one by one and reordering them is **not** real ASL grammar. Be honest about that in demos.
-- A small test set of 20 English sentences + correct plan, checked by a signer.
+- Start **hard-coded**: 2 or 3 checked signs, one sentence; add the LLM when the whole route works end to end.
+- Then an LLM (Claude) turns English into a plan **only using IDs in the catalog**, marking names for fingerspelling and questions for facial grammar.
+- Looking up English words one by one and reordering them is **not** real ASL grammar. Have a fluent signer review examples before making correctness claims.
+- Build a small test set of signer-checked sentences, including homographs, unsupported words and fingerspelled names.
+
+---
 
 ### 6.6 Facial grammar
 
