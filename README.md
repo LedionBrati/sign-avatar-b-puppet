@@ -8,6 +8,8 @@ This repo explores **Method B**: store every sign as **motion data** (hand, body
 
 > **Status (14 Nov 2026):** the realistic avatar works on real sentences (see the demo below). Method B itself is **untested**: nobody has yet driven a 3D figure from sign data and repainted it. We get there through **4 checkpoints, free ones first** (section 4). Nothing here is assigned to anyone: read, pick what interests you, write down what you learn.
 
+> **Hackathon deadline: 15 Nov 2026, 18:00 Athens time.** First full connection by **12:00**, feature freeze at **15:00**, then rehearse and record a backup video. See "Hackathon plan" in section 12.
+
 ---
 
 ## Contents
@@ -385,7 +387,8 @@ It's built for **GSL**, not ASL, and a pharmacy vocabulary. The code is language
 ├── README.md                     you are here
 ├── docs/
 │   ├── findings-2026-11-14.md    day one: what worked, what failed, numbers
-│   └── product-plan.md           the full product plan: two-way app, stack, costs, experiments
+│   ├── product-plan.md           the full product plan: two-way app, stack, costs, experiments
+│   └── one-product-collaboration-proposal.md   how the team builds one product: leads, shared pieces, timeline
 ├── assets/
 │   ├── avatar/                   the AI woman (3 poses) + empty wall, and how she was made
 │   └── demo/                     the Judy demo videos (the quality target)
@@ -488,6 +491,42 @@ We're a small team (5 people as of 14 Nov). **Nobody is assigned anything.** Eac
 - **Decisions:** when we agree on something, write it in "Decisions" below with the date.
 - **Repo A is reference only.** We don't develop there; anything useful from it gets copied here.
 
+### Hackathon plan (15 Nov)
+
+From Alex's [`docs/one-product-collaboration-proposal.md`](docs/one-product-collaboration-proposal.md) (PR #8). **One product, built in this repo.** Repo A, `ai-summit` and the GSL repo are sources, not separate products.
+
+**Leads, not assignments.** A lead keeps their area moving and answers questions about it. Anyone can help anywhere.
+
+| Lead | Area | Ends up as |
+|---|---|---|
+| **Nikos** | Sign data and intelligence | WLASL catalog, English → plan (6.5), sign → speech recognition (6.10) |
+| **Alex** | Motion and the 3D signer | Checkpoints 1 to 4: MediaPipe → cleaned motion → VRM puppet, finger test, repaint test |
+| **Ledi** | App, integration, demo | One app with two tabs (Text/Speech → Sign, Sign → Speech), the avatar and Recast videos, the fallback, the pitch |
+
+**Shared pieces everyone uses:**
+- **Sign catalog:** `motion/catalog.json`. One entry per sign: `sign_id`, gloss, meaning (for words like RIGHT or BANK), source, signer, time range, fps, dominant hand, license, and a status: `verified`, `experimental` or `unsupported`.
+- **Plan:** the JSON in 6.5. The app only reads the plan; it never makes its own gloss rules.
+- **Motion:** the frame format in 6.7, raw and cleaned kept side by side.
+
+**Timeline:**
+
+| When | What |
+|---|---|
+| Tonight | Everyone pushes what they have. Pick the 1 or 2 demo sentences. |
+| 15 Nov 12:00 | **First full connection**: plan → app → puppet (fake or stub data is fine), plus the Recast fallback video. |
+| 15 Nov 15:00 | **Feature freeze.** Only fixes after this. |
+| 15:00 to 18:00 | Rehearse, record a backup video of the demo, label every part honestly. |
+
+**Demo sentences:** 1 or 2 short sentences whose signs are **all in WLASL**, with no fingerspelling (A to Z is not recorded yet). `Hello, my name is Maria` waits until we have the alphabet. Someone fluent in ASL should check them before the pitch.
+
+**Pitch labels:** every part is shown as **works live**, **works on prepared clips**, or **experimental**. Clean-clip recognition scores are not live webcam scores. A smooth puppet is not proof of correct ASL.
+
+**Money:** fal cap of about **$30** for the hackathon. Repaint is always a button, never automatic.
+
+**Sharing work:** Nikos pushes his WLASL builder **code** here (not the videos: license). Nikos gives Alex access to the GSL repo for the recorder and VRM player.
+
+**How to work:** small branches and PRs, connect early with stubs and swap in the real parts. When you report, say: works / tested / blocked / next.
+
 ### Decisions so far
 
 | Date | Decision |
@@ -503,6 +542,12 @@ We're a small team (5 people as of 14 Nov). **Nobody is assigned anything.** Eac
 | 2026-11-14 | **WLASL (1,945 signs)** is the source of single signs; How2Sign stays the quality reference. |
 | 2026-11-14 | Repaint candidates to test: Recast, Kling v3 motion-control, DreamActor v2, one-to-all (if it exists). Plus the **B0** baseline. |
 | Open | The app stack in 6.9 is a proposal. Agree on it before building the app. |
+| 2026-11-14 | **One product, one repo (this one).** Alex's collaboration proposal merged (PR #8). |
+| 2026-11-14 | **Leads:** Nikos = data, plan, recognition. Alex = motion and puppet. Ledi = app, integration, demo. Leads, not assignments. |
+| 2026-11-14 | Plan format = 6.5. Sign catalog lives at `motion/catalog.json`. |
+| 2026-11-14 | Demo uses 1 or 2 WLASL-only sentences, no fingerspelling, checked by a fluent signer if we can find one. |
+| 2026-11-14 | fal cap ~$30. First full connection 15 Nov 12:00, feature freeze 15:00, deadline 18:00 Athens. |
+| 2026-11-14 | Nikos shares his WLASL builder code (not videos) here, and GSL repo access with Alex. |
 
 ---
 
