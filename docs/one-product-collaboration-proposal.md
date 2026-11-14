@@ -123,4 +123,4 @@ If realistic repaint damages hands, keep the faithful programmable puppet and th
 5. **Data and access:** How can Nikos's existing builder/results and the GSL recorder/VRM implementation be shared lawfully without redoing work?
 6. **Integration and cost:** Agree the first integration checkpoint, a repaint spending cap, and when to freeze features.
 
-**If approved:** add decisions to the README/issue tracker, merge this coordination document, then develop the three components concurrently. This PR intentionally contains **documentation only** and should be reviewed alongside Nikos's [product plan PR #7](../pull/7), not instead of it.
+**If approved:** add decisions to the README/issue tracker, merge this coordination document, then develop the three components concurrently. This PR intentionally contains **documentation only** and should be reviewed alongside Nikos's [product plan PR #7](https://github.com/LedionBrati/sign-avatar-b-puppet/pull/7), not instead of it.
