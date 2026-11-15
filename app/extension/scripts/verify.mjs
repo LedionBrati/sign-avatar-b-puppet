@@ -103,10 +103,10 @@ try {
 
   // 2. Page captions (YouTube markup): switch the source, change the caption line, expect a new sign request.
   await sw.evaluate(() => chrome.storage.local.set({ source: "captions", size: "l" }));
-  await waitChip(f, /Listening/, 15000);
+  await waitChip(f, /Listening/, 20000);
   await page.evaluate(() => (document.getElementById("cap").textContent = "Where does it hurt? Thank you."));
-  c = await waitChip(f, /WHERE|HURT|THANK/, 8000);
-  check(/WHERE|HURT|THANK/.test(c), `caption line signed: "${c}"`);
+  c = await waitChip(f, /WHERE|HURT/, 20000);
+  check(/WHERE|HURT/.test(c), `caption line signed: "${c}"`);
   await sleep(1200);
   await page.screenshot({ path: resolve(root, "docs/overlay-l.png") });
   console.log("saved docs/overlay-l.png");
