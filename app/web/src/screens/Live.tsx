@@ -310,7 +310,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         <div className="fc-stage">
           <div className="halo" data-level aria-hidden="true" />
           <SignerStage onReady={onPlayer} on={revealed} label={blocked || latestError ? "Signing paused; caption shown" : "Signer"}
-            safety={safety} error={latestError ? { caption: phrases.at(-1)?.text ?? "", message: latestError } : undefined}>
+>
             {revealed ? null : <span className="fc-idle" aria-hidden="true"><i /><i /><i /></span>}
             {generating ? <span className="gen-chip" role="status">{generating}</span> : null}
           </SignerStage>
@@ -319,7 +319,6 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         <div className="capzone" aria-label="Transcript">
           <Captions words={capWords} now={prefs.captions ? view.now : -1} plain={!prefs.captions} lines={float.size === "s" && !float.docked ? 2 : 3}
             placeholder={!revealed && micOn ? (phase === "transcribing" ? "Transcribing…" : "Start speaking…") : undefined} />
-          {revealed ? <Hints u={latestUnsupported} f={latestFingerspell} /> : null}
           {done ? (
             <p className="sumline sr-only">
               {latestError ? "Signing unavailable: server connection failed." : blocked ? "Caption only: no signing for this message." : `Signed: ${total} sign${total === 1 ? "" : "s"}, ${Math.round(secs)} seconds.`}
