@@ -32,7 +32,7 @@ try {
   await page.screenshot({ path: resolve(shots, "supported.png") });
   console.log("PASS supported message played two synthetic clips");
 
-  await page.click(".footrow .textlink");
+  await page.click("#typebtn");
   await send("I don't want that.");
   await page.waitForFunction(() => document.querySelector(".safety-card")?.textContent?.includes("I don't want that."));
   assert.equal(await page.$eval(".safety-card", (el) => el.textContent.includes("Caption only")), true);
@@ -83,7 +83,7 @@ try {
     await rapid.type(input, "Hello, thank you.");
     await rapid.click(".typebox button");
     await rapid.waitForFunction(() => [...document.querySelectorAll("video")].some((v) => !v.paused && v.currentTime > 0.05), { timeout: 12000 });
-    await rapid.click(".footrow .textlink");
+    await rapid.click("#typebtn");
     await rapid.type(input, "Turn right at the bank.");
     await rapid.click(".typebox button");
     await rapid.waitForSelector(".safety-card", { timeout: 5000 });

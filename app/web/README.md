@@ -2,9 +2,11 @@
 
 **Hear anything. See it signed.** The installable web app (PWA): tap to listen, and an AI signer card signs what it hears with live captions. The other direction, **Sign to speak** (`#/sign`), reads signs from the camera and speaks them. Vite + React + TypeScript, built on the shared contract in `../core` (`@signlayer/core`).
 
-| Home | Live (signing) | Done |
-|---|---|---|
-| ![home](docs/home.png) | ![live](docs/live.png) | ![done](docs/done.png) |
+| Home | Live (signing) | Done | Light |
+|---|---|---|---|
+| ![home](docs/2030-home-phone-dark.png) | ![live](docs/2030-live-phone-dark.png) | ![done](docs/2030-done-phone-dark.png) | ![live, light](docs/2030-live-phone-light.png) |
+
+Design principles, tokens and motion specs: [docs/DESIGN.md](docs/DESIGN.md). `node scripts/shots-2030.mjs` re-captures every screen in light + dark at phone and desktop sizes and traces playback seams.
 
 ## Quickstart
 
@@ -23,6 +25,7 @@ No server yet? `npm run dev:mock` serves a toy `/api/sign` plus the real clips f
 | `npm run typecheck` | `tsc` for the app and the Vite config |
 | `npm run sign-test` | fake-camera end-to-end test of `#/sign` (see below); also saves `docs/sign-home.png`, `sign-tracking.png`, `sign-result.png` |
 | `npm run shots` | headless Chrome types "Thank you, see you later." and saves `docs/home.png`, `live.png`, `done.png` (needs a running dev server; `APP_URL`, `TEXT`, `MID`, `CHROME`) |
+| `node scripts/shots-2030.mjs` | every screen in light + dark, 390x844 and 1440x900, to `docs/2030-*.png`, plus a seam trace of typed signing (`APP_URL`, `ONLY`, `THEMES`, `SIZES`, `DPR`, `REC=1`) |
 
 **API base:** the gear on the home screen sets the server URL (saved in localStorage). On a phone, use your computer's LAN address (`http://192.168.x.x:8787`) and start Vite with `--host` (on by default here). The order is the settings field, then `VITE_API_URL`, then `http://localhost:8787`.
 
