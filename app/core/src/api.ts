@@ -169,6 +169,8 @@ export interface RecognizeResponse {
   text?: string;
   frames: number;
   timings: { inference_ms: number; total_ms: number };
+  motion?: number;
+  reject?: boolean;
 }
 
 /** POST /api/compose. The signs read so far (1-8), each with the recognizer's guesses (best first, up to 5). */

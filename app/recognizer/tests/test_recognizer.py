@@ -8,7 +8,8 @@ import pytest
 
 from conftest import needs_models
 import templates as T
-from recognizer import COUNTS, OFFSETS, RecognizeError, label_text, parse_frames, spell_columns
+from recognizer import (COUNTS, KID_LABELS, OFFSETS, RecognizeError, apply_prior, label_text, motion_energy, parse_frames,
+                        should_reject, spell_columns)
 
 
 def body(frames, fill=None, seed=0):
@@ -44,6 +45,56 @@ def test_label_text_matches_compose():
     assert label_text("TV") == "TV"
     assert label_text("hello") == "hello"
     assert label_text("minemy") == "my"
+
+
+def test_label_text_adult_mapping():
+    want = {"potty": "bathroom", "callonphone": "call", "minemy": "my", "weus": "we", "hesheit": "he", "yourself": "you",
+            "haveto": "have to", "thankyou": "thank you", "frenchfries": "french fries", "glasswindow": "window",
+            "icecream": "ice cream"}
+    assert {k: label_text(k) for k in want} == want
+
+
+# ── kid-vocabulary prior ───────────────────────────────────────────────────────
+def test_kid_prior_scales_only_kid_labels():
+    idx = {0: "animal", 1: "tired", 2: "zebra", 3: "hello"}
+    p = np.array([0.88, 0.05, 0.04, 0.03])
+    q = apply_prior(p, idx, 0.35)
+    assert np.allclose(q, [0.88 * 0.35, 0.05, 0.04 * 0.35, 0.03]) and p[0] == 0.88  # input untouched, not renormalised
+    assert apply_prior(p, idx, 1.0) is p  # KID_PRIOR=1.0 disables it
+    assert {"animal", "zebra", "underwear", "potty"} - KID_LABELS == {"potty"}
+
+
+# ── "no sign" signal ───────────────────────────────────────────────────────────
+def hands(frames, step=0.0, jitter=0.0, seed=0):
+    """Shoulders 0.25 wide + both hands; the hands move step (image units) per frame, plus Gaussian jitter."""
+    x = np.full((frames, 543, 3), np.nan, np.float32)
+    x[:, 489 + 11, :2], x[:, 489 + 12, :2] = (0.625, 0.5), (0.375, 0.5)
+    rng = np.random.default_rng(seed)
+    for h in (468, 522):
+        base = np.stack([np.linspace(0.3, 0.4, 21), np.linspace(0.6, 0.7, 21)], 1)
+        for t in range(frames):
+            x[t, h:h + 21, :2] = base + [step * t, 0] + rng.normal(0, jitter, (21, 2))
+    return x
+
+
+def test_motion_energy():
+    assert motion_energy(hands(20)) == 0.0
+    assert abs(motion_energy(hands(20, step=0.01)) - 0.04) < 1e-4  # 0.01 / 0.25 shoulder widths per frame
+    assert motion_energy(hands(20, jitter=0.002)) < 0.025 < motion_energy(hands(20, step=0.015))
+    assert motion_energy(np.full((10, 543, 3), np.nan, np.float32)) == 0.0  # no hands at all
+    assert motion_energy(hands(1, step=0.1)) == 0.0
+    x = hands(20, step=0.01)
+    x[::2, 468:489] = np.nan  # left hand lost every other frame; the right hand still counts
+    x[:, 489 + 11] = np.nan  # no shoulders: falls back to a typical width, stays finite
+    assert np.isfinite(motion_energy(x)) and motion_energy(x) > 0
+
+
+def test_should_reject():
+    opts = [{"label": "hello", "text": "hello", "confidence": 0.6}, {"label": "cat", "text": "cat", "confidence": 0.1}]
+    assert not should_reject(opts, 0.1, 0.025, 0.2)
+    assert should_reject(opts, 0.01, 0.025, 0.2)  # hands barely moved
+    assert should_reject([{**opts[0], "confidence": 0.15}], 0.1, 0.025, 0.2)  # nothing confident
+    assert should_reject([], 0.1, 0.025, 0.2)
 
 
 # ── spell column mapping ───────────────────────────────────────────────────────
@@ -85,6 +136,13 @@ def test_sign_top5_sorted_normalized(rec):
     known = set(rec.labels) | ({T.gloss_label(g) for g in rec.templates.glosses} if rec.templates else set())
     assert all(o["label"] in known and isinstance(o["text"], str) for o in opts)
     assert set(out["timings"]) == {"inference_ms", "total_ms"}
+    assert isinstance(out["motion"], float) and out["motion"] > 0.025 and out.get("reject", False) in (True, False)
+
+
+@needs_models
+def test_still_hands_rejected_with_options(rec):
+    out = rec.recognize("sign", hands(30))
+    assert out["motion"] == 0.0 and out["reject"] is True and len(out["options"]) == 5
 
 
 @needs_models
@@ -95,6 +153,7 @@ def test_all_nan_segment_does_not_crash(rec, mode):
     assert out["mode"] == mode and out["frames"] == 20
     if mode == "sign":
         assert len(out["options"]) == 5 and all(np.isfinite(o["confidence"]) for o in out["options"])
+        assert out["motion"] == 0.0 and out["reject"] is True
     else:
         assert isinstance(out["text"], str)
 
