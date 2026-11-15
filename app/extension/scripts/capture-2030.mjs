@@ -122,13 +122,30 @@ try {
     await sleep(500);
     if (only.includes("signing")) await shot("signing", f);
     if (only.includes("seq")) {
-      // A frame sequence across clip boundaries: look for black frames or jumps.
+      // Seams between clips, measured in the signer itself: on every animation frame, is a painted clip on screen?
+      // (A frame with no visible, decoded video would show the empty tile: a "black frame".)
+      await signText("Hello, my name is. Thank you, see you later. Where do you hurt?");
+      await waitState(f, ["signing"]);
+      const probe = f.evaluate(() => new Promise((done) => {
+        const vids = [...document.querySelectorAll("video")];
+        let frames = 0, gaps = 0, swaps = 0, last = "";
+        const t0 = performance.now();
+        const tick = () => {
+          frames++;
+          const vis = vids.filter((v) => v.classList.contains("on") && v.readyState >= 2);
+          if (!vis.length && document.getElementById("card").dataset.state === "signing") gaps++;
+          const top = vids.find((v) => v.classList.contains("top"))?.getAttribute("src") ?? "";
+          if (top !== last) { swaps++; last = top; }
+          if (performance.now() - t0 < 7000) requestAnimationFrame(tick); else done({ frames, gaps, swaps });
+        };
+        requestAnimationFrame(tick);
+      }));
       const b = await box(f);
-      for (let i = 0; i < 24; i++) {
+      for (let i = 0; i < 6; i++) {
         await page.screenshot({ path: resolve(out, `${prefix}seq-${String(i).padStart(2, "0")}.png`), clip: { x: b.x, y: b.y, width: b.width, height: b.height } });
-        await sleep(60);
+        await sleep(250);
       }
-      log("saved seq");
+      log("seams", await probe);
     }
     await waitState(f, ["listening", "paused"], 15000);
   }

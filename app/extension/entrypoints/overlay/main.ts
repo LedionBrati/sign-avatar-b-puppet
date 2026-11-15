@@ -98,12 +98,18 @@ function toggleMenu(open: boolean = srcMenu.hidden === true) {
   srcMenu.querySelectorAll<HTMLButtonElement>("[data-src]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.src === s.source)));
   if (open) srcMenu.querySelector<HTMLButtonElement>(`[data-src="${s.source}"]`)?.focus();
 }
-srcBtn.addEventListener("click", () => toggleMenu());
+srcBtn.addEventListener("click", (e) => {
+  const closing = !srcMenu.hidden;
+  toggleMenu();
+  // Closed with the mouse: let go of focus too, so the toolbar folds back into the island when the pointer leaves.
+  if (closing && e.detail > 0) srcBtn.blur();
+});
 srcMenu.addEventListener("click", async (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-src]");
   if (!b) return;
   const src = b.dataset.src as Source;
   toggleMenu(false);
+  if (e.detail > 0) (document.activeElement as HTMLElement | null)?.blur();
   await setSettings({ source: src, enabled: true });
   if (src === "tab") send({ type: "tab-audio", on: true });
   if (src === "mic") openMicPanel();
@@ -493,9 +499,11 @@ function renderCaptions() {
   const frame = res.playlist.length ? captionFrame(res, res.words.length, playing) : null;
   const states = frame?.states ?? res.words.map(() => "heard" as const);
   const unsupported = new Set([...res.unsupported, ...(res.fingerspell ?? [])].map(bare));
-  const n = CHUNK[s.size];
+  // Balanced chunks (9 words at 8 a line -> 5 + 4, never a lone last word).
+  const len = res.words.length;
+  const n = Math.ceil(len / Math.max(1, Math.ceil(len / CHUNK[s.size])));
   let focus = states.indexOf("now");
-  if (focus < 0) focus = job ? Math.max(0, states.lastIndexOf("signed")) : res.words.length - 1;
+  if (focus < 0) focus = job ? Math.max(0, states.lastIndexOf("signed")) : len - 1;
   const start = Math.floor(Math.max(0, focus) / n) * n;
   const key = `${res.text}|${start}|${n}`;
   if (key !== chunkKey) {
