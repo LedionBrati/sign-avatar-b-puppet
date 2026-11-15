@@ -1,6 +1,7 @@
-// Live screen: one floating glass card. The voice wave rides on top, the signer sits in a soft cobalt halo, the
-// captions light up word by word underneath, and the header carries the status chip + the few controls (type,
-// stop / listen again, replay, size). Drag it anywhere on a desktop (lib/float.ts); on a phone it docks full width.
+// Live screen: one glass card. The voice wave rides on top, the signer sits in a soft cobalt halo, and underneath is
+// the transcript: what was heard, live as each chunk arrives (always shown), with the word being signed lit up (the
+// Captions toggle only hides that highlight). Drag the card anywhere on a desktop (lib/float.ts), its controls in the
+// header; on a phone it docks full width and the controls sit in a thumb-height row at the bottom.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createSignClient, generatingLabel, type SignResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
@@ -249,12 +250,27 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
 
   const signing = revealed && !done && !!view.nowGloss;
 
+  // Type / replay / stop-or-listen-again: in the card header on a desktop, in the bottom thumb row on a phone.
+  const controls = (
+    <>
+      <button className={`fc-btn${typing ? " on" : ""}`} id="typebtn" aria-label="Type" aria-pressed={typing} title="Type" onClick={() => setTyping((t) => !t)}><KeyboardIcon /></button>
+      <button className="fc-btn later" id="replay" aria-label="Replay" title="Replay" onClick={() => player.current?.replay()} disabled={!done || !total || !!blocked || !!latestError}><ReplayIcon /></button>
+      {done ? (
+        <button className="fc-btn prime" id="again" aria-label={canSpeak ? "Listen again" : "Type again"} title={canSpeak ? "Listen again" : "Type again"} onClick={again}>
+          <span className="swap" key="again">{canSpeak ? <MicIcon /> : <KeyboardIcon />}</span>
+        </button>
+      ) : (
+        <button className="fc-btn prime" id="stop" aria-label="Stop" title="Stop" onClick={stop}><span className="swap" key="stop"><StopIcon /></span></button>
+      )}
+    </>
+  );
+
   return (
     <div ref={root} className={`screen live${revealed ? "" : " listening"}${done ? " done" : ""}${float.docked ? " docked" : ""}`}>
       <header className="topbar">
         <span className="brand"><Mark /><Wordmark /></span>
         <span className="topbar-end">
-          <button className={`circbtn${prefs.captions ? " on" : ""}`} aria-label="Captions" aria-pressed={prefs.captions} title="Captions" onClick={() => setPrefs({ captions: !prefs.captions })}>
+          <button className={`circbtn${prefs.captions ? " on" : ""}`} aria-label="Highlight signed words" aria-pressed={prefs.captions} title="Highlight signed words" onClick={() => setPrefs({ captions: !prefs.captions })}>
             <CaptionsIcon off={!prefs.captions} />
           </button>
           <button className="circbtn" aria-label="Close" title="Close" onClick={onHome}><CloseIcon /></button>
@@ -268,8 +284,6 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         </div>
       ) : null}
 
-      {float.docked ? null : <p className="drag-hint" aria-hidden="true">Drag the card anywhere</p>}
-
       <section ref={card} className={`fcard${done ? "" : " on"}${signing ? " signing" : ""}${float.dragging ? " dragging" : ""}`} data-size={float.size} aria-label="Signer">
         <i className="fc-aura" data-level aria-hidden="true" />
         <i className="fc-shine" aria-hidden="true" />
@@ -282,15 +296,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
           )}
           <Island tone={tone} label={label} detail={detail} />
           <span className="fc-sp" />
-          <button className={`fc-btn${typing ? " on" : ""}`} id="typebtn" aria-label="Type" aria-pressed={typing} title="Type" onClick={() => setTyping((t) => !t)}><KeyboardIcon /></button>
-          <button className="fc-btn later" id="replay" aria-label="Replay" title="Replay" onClick={() => player.current?.replay()} disabled={!done || !total || !!blocked || !!latestError}><ReplayIcon /></button>
-          {done ? (
-            <button className="fc-btn prime" id="again" aria-label={canSpeak ? "Listen again" : "Type again"} title={canSpeak ? "Listen again" : "Type again"} onClick={again}>
-              <span className="swap" key="again">{canSpeak ? <MicIcon /> : <KeyboardIcon />}</span>
-            </button>
-          ) : (
-            <button className="fc-btn prime" id="stop" aria-label="Stop" title="Stop" onClick={stop}><span className="swap" key="stop"><StopIcon /></span></button>
-          )}
+          {float.docked ? null : controls}
           {float.docked ? null : (
             <Segmented<FloatSize> label="Signer size" value={float.size} onChange={float.setSize}
               options={[{ value: "s", label: "S" }, { value: "m", label: "M" }, { value: "l", label: "L" }]} />
@@ -310,8 +316,9 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
           </SignerStage>
         </div>
 
-        <div className={`capzone${prefs.captions ? "" : " hidden-cap"}`} aria-label="Captions">
-          <Captions words={capWords} now={view.now} lines={2} placeholder={!revealed && micOn ? "Start speaking…" : undefined} />
+        <div className="capzone" aria-label="Transcript">
+          <Captions words={capWords} now={prefs.captions ? view.now : -1} plain={!prefs.captions} lines={float.size === "s" && !float.docked ? 2 : 3}
+            placeholder={!revealed && micOn ? (phase === "transcribing" ? "Transcribing…" : "Start speaking…") : undefined} />
           {revealed ? <Hints u={latestUnsupported} f={latestFingerspell} /> : null}
           {done ? (
             <p className="sumline sr-only">
@@ -326,6 +333,8 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
             <TypeBox onSubmit={submit} autoFocus placeholder="Type to sign" />
           </div>
         ) : null}
+
+        {float.docked ? <div className="fc-dock">{controls}</div> : null}
       </section>
     </div>
   );

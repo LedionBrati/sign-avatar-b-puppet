@@ -1,12 +1,13 @@
-// Live captions, set large under the signer: words blur in as they are heard, go solid once signed, and a soft
-// highlight glides to the word being signed. The text rolls up so the newest line stays in view.
-// Words we can't sign stay muted and dotted, never faked.
+// The live transcript, set large under the signer: words blur in as they are heard (readable straight away), go
+// solid once signed, and a cobalt highlight glides to the word being signed. The text rolls up so the newest
+// `lines` stay in view. `plain` drops the signing highlight and keeps just the transcript.
+// Words we can't sign stay dotted, never faked.
 import { useLayoutEffect, useRef } from "react";
 import type { CapWord } from "../lib/session";
 
 const HINT = { unsupported: "Can't sign yet", fingerspell: "Fingerspelling not available yet" } as const;
 
-export function Captions({ words, now, lines = 2, placeholder }: { words: CapWord[]; now: number; lines?: number; placeholder?: string }) {
+export function Captions({ words, now, lines = 2, placeholder, plain }: { words: CapWord[]; now: number; lines?: number; placeholder?: string; plain?: boolean }) {
   const roll = useRef<HTMLDivElement>(null);
   const hl = useRef<HTMLElement>(null);
 
@@ -32,7 +33,7 @@ export function Captions({ words, now, lines = 2, placeholder }: { words: CapWor
   }, [words, now, lines]);
 
   return (
-    <div className="sl-cap" style={{ ["--lines" as string]: lines }} aria-live="off">
+    <div className={`sl-cap${plain ? " plain" : ""}`} style={{ ["--lines" as string]: lines }} aria-live="off">
       <div className="view">
         <div className="roll" ref={roll}>
           <i className="hl" ref={hl} />

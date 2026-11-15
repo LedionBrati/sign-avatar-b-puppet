@@ -1,4 +1,4 @@
-// Settings as a clean sheet: appearance, captions, and where the sign server runs.
+// Settings as a clean sheet: appearance, the signed-word highlight, and where the sign server runs.
 import { useState } from "react";
 import { copy, createSignClient } from "@signlayer/core";
 import { ARTIFACT, ENV_API, apiBase, getApiSetting, setApiSetting } from "../config";
@@ -34,11 +34,11 @@ export function Settings({ onClose }: { onClose(): void }) {
         <div className="group">
           <div className="row">
             <span>Appearance</span>
-            <Segmented<Theme> label="Appearance" value={prefs.theme === "light" ? "light" : "dark"} onChange={(theme: Theme) => setPrefs({ theme })}
-              options={[{ value: "dark", label: "Dark" }, { value: "light", label: "Light" }]} />
+            <Segmented<Theme> label="Appearance" value={prefs.theme === "dark" ? "dark" : "light"} onChange={(theme: Theme) => setPrefs({ theme })}
+              options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
           </div>
           <div className="row">
-            <span id="cap-l">Captions</span>
+            <span id="cap-l">Highlight signed words</span>
             <button type="button" className="switch" role="switch" aria-labelledby="cap-l" aria-checked={prefs.captions} onClick={() => setPrefs({ captions: !prefs.captions })} />
           </div>
         </div>
