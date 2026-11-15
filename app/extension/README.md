@@ -2,19 +2,15 @@
 
 A signer that rides along with anything you play: a frosted signer card in the corner of any page, with captions under it that light up word by word as they are signed. It follows YouTube's transcript or captions, any video with caption tracks, the tab's own audio, your microphone, or text you select. Built with WXT (Manifest V3, TypeScript, no framework). It uses `@signlayer/core` (`../core`) for the API client, caption word states and design tokens.
 
-All screenshots below come from `scripts/verify-youtube.mjs` on a real YouTube video (a TED talk), with the API from this branch on port 8795 (34 signs, strict safety gate, OpenAI speech-to-text).
+Design notes: [docs/DESIGN.md](docs/DESIGN.md). Screenshots come from real Chrome on a real YouTube video (`scripts/verify-youtube.mjs`, `scripts/capture-2030.mjs`) and a local podcast page (`scripts/verify-tab-page.mjs`), with the API on port 8787.
 
-| Signing (M) | Captions only | Confirm signs? |
+| Signing (hover controls) | Can't sign yet | Dark page |
 |---|---|---|
-| ![Signing HELLO for "Hello, thank you."](docs/v2-signing-text.png) | ![A transcript line the signer can't sign yet: the caption and the reason](docs/v2-overlay-m.png) | ![A paraphrase waiting for "Show signs"](docs/v2-confirm.png) |
+| ![Signing the transcript, controls on hover](docs/2030-hover-controls.png) | ![Caption-only: blurred still, caption large](docs/2030-caption-only-card.png) | ![Dark YouTube](docs/2030-dark-hover.png) |
 
-| Hover controls | Source menu | Size L |
-|---|---|---|
-| ![S/M/L, captions, source, close appear on hover](docs/v2-hover-controls.png) | ![Captions, Tab audio, Microphone, Selected text](docs/v2-source-menu.png) | ![Large signer](docs/v2-overlay-l.png) |
-
-| Fullscreen YouTube | Tab audio | Popup | First run |
+| Fullscreen | Tab audio | Popup | First run |
 |---|---|---|---|
-| ![The signer inside the fullscreen player](docs/v2-fullscreen.png) | ![Tab audio transcribed into the signer](docs/v2-tab-audio.png) | ![Popup](docs/v2-popup.png) | ![Onboarding](docs/v2-onboarding.png) |
+| ![Fullscreen](docs/2030-fullscreen.png) | ![Tab audio on a podcast page](docs/2030-tab-audio.png) | ![Popup](docs/2030-popup.png) | ![Onboarding](docs/2030-onboarding.png) |
 
 ## Build and load
 
@@ -38,7 +34,7 @@ The first time you open the menu (toolbar icon) it shows one screen on the four 
 - **Selected text.** Select text, then right-click › **Sign with SIGNLAYER**, or press **Alt+Shift+S**. Works with any source.
 - **Alt+Shift+K** shows or hides the signer (and starts tab audio when that is the source).
 
-**On the signer.** Hover it for the controls: S/M/L, captions on/off, the source menu and close. Drag it anywhere: it snaps to the nearest corner and remembers it. In fullscreen YouTube it moves into the player and stays clear of the control bar. The status pill says what is happening: *Listening · Transcript / Captions / Tab audio*, *Signing · GLOSS*, *Captions only*, *Confirm signs?*, *Paused*, *Ad playing*, *Offline*.
+**On the signer.** Move the pointer over it and the status capsule expands into the controls: size (cycles S/M/L), captions on/off, the source menu and close. Drag it anywhere: it snaps to the nearest corner and remembers it. In fullscreen YouTube it moves into the player and stays clear of the control bar. The status capsule says what is happening: *Listening · Transcript / Captions / Tab audio*, *Signing · GLOSS*, *Can't sign yet*, *Confirm signs?*, *Paused*, *Ad playing*, *Offline*.
 
 **When a phrase can't be signed** (the server's safety gate, `docs/semantic-safety.md`), the signer never just goes quiet and never shows a stale clip: the player stops and clears, the caption sheet shows the exact caption (even with captions turned off), words without a sign are underlined, and the stage says why in plain words (*No sign yet for "college", "government"*, *Numbers and times stay as captions*, ...). For `needs_confirmation` (a paraphrase or an ambiguous word) it shows the signs it would use and waits: **Show signs** plays exactly that plan, **Skip** moves on. Nothing plays without that click.
 

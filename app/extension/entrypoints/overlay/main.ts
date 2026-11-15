@@ -437,6 +437,8 @@ function syncPlayback() {
 }
 
 function enqueue(j: Job) {
+  // An explicit request (selected text) never waits behind media lines (e.g. ones held while the video is paused).
+  if (j.source === "selection" && (job?.source ?? "selection") !== "selection") clearQueuedVideo();
   if (j.source !== "selection") {
     // Live media: never fall far behind. Drop whole not-yet-started lines beyond ~8 s of backlog.
     while (jobs.length && backlog() > 8) jobs.shift();

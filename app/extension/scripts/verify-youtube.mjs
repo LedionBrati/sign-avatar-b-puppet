@@ -217,11 +217,11 @@ try {
     while (Date.now() - t0 < 8000) { s = await snap(f); if (s.state === "signing" && s.playing) break; await sleep(150); }
     check(s?.state === "signing" && s.playing, `supported phrase signs: [${s?.state}] ${s?.pill}`);
     await shot("signing-text");
-    await sw.evaluate((id) => globalThis.__slSign(id, "Turn right at the bank."), tabId);
+    await sw.evaluate((id) => globalThis.__slSign(id, "Quantum chromodynamics is fascinating."), tabId);
     const t1 = Date.now();
     while (Date.now() - t1 < 10000) { s = await snap(f); if (s.state === "caption_only" || s.state === "confirm") break; await sleep(150); }
     const vids = await f.evaluate(() => [...document.querySelectorAll("video")].map((v) => ({ src: v.getAttribute("src"), paused: v.paused })));
-    check((s.state === "caption_only" || s.state === "confirm") && s.cc.includes("Turn right at the bank.") && vids.every((v) => !v.src && v.paused),
+    check((s.state === "caption_only" || s.state === "confirm") && s.cc.includes("Quantum chromodynamics is fascinating.") && vids.every((v) => !v.src && v.paused),
       `blocked phrase: exact caption + reason, no stale video: [${s.state}] ${s.cc} (${s.note})`);
     await shot("caption-only-text");
     // needs_confirmation (a paraphrase): stopped until the viewer clicks "Show signs".
