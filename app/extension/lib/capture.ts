@@ -1,29 +1,26 @@
-// Tab audio, captured inside the side panel itself (no offscreen document needed):
+// Audio → text, in the offscreen document (tab audio and the microphone use the same path):
 //
-//   tabCapture.getMediaStreamId({ targetTabId })  (allowed because the toolbar click invoked the extension on that tab)
-//   getUserMedia({ chromeMediaSource: "tab" }) ─► AudioContext ─► speakers  (capturing a tab mutes it otherwise)
-//                                             └► AnalyserNode (level, silence) + MediaRecorder (audio/webm opus)
+//   MediaStream ─► AudioContext ─► speakers (tab audio only: capturing a tab mutes it otherwise)
+//               └► AnalyserNode (level, silence) + MediaRecorder (audio/webm opus)
 //   chunks of 2-4 s, cut at a short silence when possible (a hard cut overlaps the next chunk by 0.4 s),
 //   silent chunks skipped ─► POST {apiUrl}/api/transcribe ─► text, in order, overlap words dropped.
-import { browser } from "wxt/browser";
 import { ROUTES, type TranscribeResponse } from "@signlayer/core";
+import type { ChunkInfo } from "./messages";
 
 const MIN_MS = 2000, MAX_MS = 4000, SILENCE_MS = 280, OVERLAP_MS = 400, MIN_VOICED_MS = 250, NO_AUDIO_MS = 6000;
 
-export interface TabAudioHandlers {
-  onText(text: string): void;
-  onLevel(level: number): void;
+export interface ChunkHandlers {
+  onText(text: string, chunk: ChunkInfo): void;
+  /** Every chunk that went to the server (diagnostics), text or not. */
+  onChunk(chunk: ChunkInfo): void;
+  onLevel(level: number, voiced: boolean): void;
   /** Soft hint (still capturing), e.g. nothing audible yet. "" clears it. */
   onHint(text: string): void;
   /** Fatal: capture stopped. */
   onError(text: string): void;
 }
 
-/** Diagnostics (read by scripts/verify.mjs): per-chunk length, size, round trip, text. */
-export const tabDebug = { chunks: [] as { ms: number; bytes: number; latency_ms: number; text: string }[] };
-(globalThis as { __slTab?: typeof tabDebug }).__slTab = tabDebug;
-
-/** Plain words for the errors Chrome throws at getMediaStreamId / getUserMedia. */
+/** Plain words for the errors Chrome throws at getMediaStreamId / getUserMedia (tab audio). */
 export function captureError(e: unknown) {
   const m = e instanceof Error ? `${e.name} ${e.message}` : String(e);
   // Chrome's "not invoked" error also says "Chrome pages cannot be captured", so check the grant first.
@@ -36,8 +33,7 @@ export function captureError(e: unknown) {
 
 interface Seg { rec: MediaRecorder; started: number; voicedMs: number; parts: Blob[] }
 
-export class TabAudio {
-  private stream: MediaStream | null = null;
+export class Chunker {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private cur: Seg | null = null;
@@ -53,32 +49,18 @@ export class TabAudio {
   private stopped = false;
   private mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
 
-  constructor(private apiUrl: string, private h: TabAudioHandlers) {}
+  constructor(private stream: MediaStream, private apiUrl: string, private h: ChunkHandlers, private opts: { monitor: boolean; silentHint: string }) {}
 
-  /** Call from the Start click. Throws a plain-language Error when Chrome refuses. */
-  async start(tabId: number) {
-    // Created inside the click, so it may start playing without another gesture.
+  async start() {
     this.ctx = new AudioContext();
-    try {
-      const id = await browser.tabCapture.getMediaStreamId({ targetTabId: tabId });
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: id } } as unknown as MediaTrackConstraints,
-        video: false,
-      });
-    } catch (e) {
-      this.ctx.close().catch(() => {});
-      this.ctx = null;
-      throw new Error(captureError(e));
-    }
-    if (this.stopped) { this.stream.getTracks().forEach((t) => t.stop()); return; }
     await this.ctx.resume().catch(() => {});
     const src = this.ctx.createMediaStreamSource(this.stream);
-    src.connect(this.ctx.destination); // keep the tab audible
+    if (this.opts.monitor) src.connect(this.ctx.destination); // keep the tab audible
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 1024;
     src.connect(this.analyser);
     this.stream.getAudioTracks()[0]?.addEventListener("ended", () => {
-      if (!this.stopped) { this.stop(); this.h.onError("The tab stopped sharing audio (closed or navigated away)."); }
+      if (!this.stopped) { this.stop(); this.h.onError(this.opts.monitor ? "The tab stopped sharing audio (closed or navigated away)." : "The microphone was disconnected."); }
     });
     this.startedAt = performance.now();
     this.cur = this.newSeg();
@@ -86,20 +68,19 @@ export class TabAudio {
   }
 
   private newSeg(): Seg {
-    const rec = new MediaRecorder(this.stream!, { mimeType: this.mime, audioBitsPerSecond: 48_000 });
+    const rec = new MediaRecorder(this.stream, { mimeType: this.mime, audioBitsPerSecond: 48_000 });
     const seg: Seg = { rec, started: performance.now(), voicedMs: 0, parts: [] };
     rec.ondataavailable = (e) => { if (e.data.size) seg.parts.push(e.data); };
     rec.start();
     return seg;
   }
 
+  private buf = new Float32Array(1024);
   private rms() {
-    const a = this.analyser!;
-    const buf = new Float32Array(a.fftSize);
-    a.getFloatTimeDomainData(buf);
+    this.analyser!.getFloatTimeDomainData(this.buf);
     let sum = 0;
-    for (const x of buf) sum += x * x;
-    return Math.sqrt(sum / buf.length);
+    for (const x of this.buf) sum += x * x;
+    return Math.sqrt(sum / this.buf.length);
   }
 
   private tick() {
@@ -113,11 +94,11 @@ export class TabAudio {
       this.silenceRun = 0;
       if (!this.everVoiced) { this.everVoiced = true; this.h.onHint(""); }
     } else this.silenceRun += 50;
-    this.h.onLevel(Math.min(1, level * 6));
+    this.h.onLevel(Math.min(1, level * 6), voiced);
     const now = performance.now();
     if (!this.everVoiced && now - this.startedAt > NO_AUDIO_MS) {
       this.startedAt = now;
-      this.h.onHint("No sound from this tab yet. Press play on the video or call.");
+      this.h.onHint(this.opts.silentHint);
     }
     const age = now - this.cur.started;
     if (age >= MIN_MS && this.silenceRun >= SILENCE_MS) this.cut(false);
@@ -157,15 +138,15 @@ export class TabAudio {
       this.h.onHint("Can't reach the SIGNLAYER server for speech-to-text.");
     }
     this.done.set(id, text);
-    tabDebug.chunks.push({ ms: Math.round(ms), bytes: blob.size, latency_ms: Math.round(performance.now() - t0), text });
-    if (tabDebug.chunks.length > 50) tabDebug.chunks.shift();
+    const chunk: ChunkInfo = { ms: Math.round(ms), bytes: blob.size, latency_ms: Math.round(performance.now() - t0), text };
+    if (!this.stopped) this.h.onChunk(chunk);
     // Emit in order, dropping words the overlap repeated.
     while (this.done.has(this.emitted + 1)) {
       const t = dedupe(this.prevText, this.done.get(++this.emitted)!);
       this.done.delete(this.emitted);
       if (!t) continue;
       this.prevText = `${this.prevText} ${t}`.trim().split(" ").slice(-60).join(" ");
-      if (!this.stopped) this.h.onText(t);
+      if (!this.stopped) this.h.onText(t, chunk);
     }
   }
 
@@ -174,9 +155,9 @@ export class TabAudio {
     this.stopped = true;
     clearInterval(this.timer);
     try { if (this.cur && this.cur.rec.state !== "inactive") this.cur.rec.stop(); } catch { /* already stopped */ }
-    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream.getTracks().forEach((t) => t.stop());
     this.ctx?.close().catch(() => {});
-    this.h.onLevel(0);
+    this.h.onLevel(0, false);
   }
 }
 
