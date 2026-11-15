@@ -16,6 +16,37 @@ export interface SignRequest {
   text: string;
   /** Default true. false = rules only (sub-millisecond, no local model). */
   semantic?: boolean;
+  /**
+   * LLM agent layer (server-side, OpenAI). Default "auto": only when the local translator is not fully supported,
+   * and only used if the safety gate rates the agent plan better. "always": prefer the agent plan. "off": local only.
+   * With the agent on, the sentence text is sent to OpenAI.
+   */
+  agent?: AgentMode;
+}
+
+export type AgentMode = "auto" | "always" | "off";
+
+/** Debug trace of the agent call, present whenever the agent was asked. */
+export interface AgentTrace {
+  /** true when this response's playlist/safety/plan come from the agent. */
+  used: boolean;
+  /** Safety status of the agent plan and of the local plan. */
+  status?: SigningSafety["status"];
+  local_status: SigningSafety["status"];
+  paraphrase?: string;
+  notes?: string;
+  model?: string;
+  cached?: boolean;
+  latency_ms?: number;
+  usage?: { input_tokens: number; output_tokens: number; cached_tokens: number } | null;
+  /** Proposed items that failed validation (e.g. a motion_id not in the vocab); never played. */
+  rejected?: { reason: string; id?: string | null; letters?: string | null; source?: string | number | null }[];
+  /** One-line summary of the plan that was NOT returned ("~" marks a paraphrased sign). */
+  plan?: string;
+  local_plan?: string;
+  /** Set when the agent failed and the local result was returned. */
+  code?: string;
+  error?: string;
 }
 
 /** Engineering playback decision; it does not certify linguistic ASL correctness. */
@@ -54,7 +85,14 @@ export interface SignResponse {
   markers: { type: string; from: number; to: number }[];
   /** The full translator plan (shared/contracts.mjs format) for debugging. */
   plan: unknown;
-  timings: { translate_ms: number; total_ms: number };
+  /** Which translator produced this response. Older servers omit it (= "local"). */
+  translator?: "local" | "agent";
+  /** translator "agent" only: the English the signs actually express (show it for needs_confirmation). */
+  paraphrase?: string;
+  agent?: AgentTrace;
+  /** Non-fatal notes, e.g. "agent unavailable (timeout); local translation used". */
+  warnings?: string[];
+  timings: { translate_ms: number; agent_ms?: number; total_ms: number };
 }
 
 /** GET /api/vocab response: the signs that have clips right now. */
@@ -66,6 +104,8 @@ export interface HealthResponse {
   ok: true;
   signs: number;
   semantic: "ready" | "loading" | "off";
+  /** LLM agent layer: "ready" when an OpenAI key is configured. Older servers omit it. */
+  agent?: "ready" | "off";
   /** Sign -> voice recognizer service status. */
   recognizer?: "ready" | "down";
 }
