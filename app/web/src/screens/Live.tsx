@@ -13,6 +13,7 @@ import { prefetchClip, type GaplessPlayer } from "../lib/player";
 import { setPrefs, usePrefs } from "../lib/prefs";
 import { sessionView, splitWords, type Phrase } from "../lib/session";
 import { createListener, speechSupported } from "../lib/speech";
+import { captureSupported, createCapture, type CapturePhase } from "../lib/capture";
 import { useLevel, type LevelSource } from "../lib/useLevel";
 
 export type LiveStart = { kind: "mic" } | { kind: "typed"; text: string };
@@ -37,7 +38,8 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   const root = useRef<HTMLDivElement>(null);
   const [waveGone, setWaveGone] = useState(false); // unmount the wave once the card is up, so it stops drawing
   const prefs = usePrefs();
-  const listener = useRef<ReturnType<typeof createListener> | null>(null);
+  const listener = useRef<{ stop(): void } | null>(null);
+  const [phase, setPhase] = useState<CapturePhase>("listening");
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const gate = useRef<{ p: Promise<void>; open(): void } | null>(null);
   const t0 = useRef(performance.now());
@@ -110,11 +112,20 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
     });
   }, [client, reveal, start.kind]);
 
-  // Mic
-  const startMic = useCallback(() => {
-    if (!speechSupported()) { setTyping(true); return; }
-    setBanner(null);
-    setMicRetry(false);
+  // Mic. Our own capture + POST /api/transcribe when the server has speech-to-text: the mic opens once and never
+  // restarts, so no system beeps (the browser engine beeps on every restart on Android). The browser speech engine
+  // (lib/speech.ts) is only the fallback when the server's transcribe is off.
+  const micError = useCallback((kind: string) => {
+    setMicOn(false);
+    setTyping(true);
+    setMicRetry(true);
+    setBanner(kind === "denied" ? "Microphone access is blocked. Allow it from the icon in the address bar (or site settings) and tap Retry, or type below."
+      : kind === "no-mic" ? "No microphone found. Plug one in, or type below."
+      : "Speech recognition needs an internet connection in this browser. You can type below.");
+  }, []);
+
+  const startBrowserSpeech = useCallback(() => {
+    if (!speechSupported()) { setMicOn(false); setTyping(true); return; }
     const l = createListener({
       onInterim: (t) => alive.current && setInterim(t),
       onFinal: (t) => { if (alive.current) { setInterim(""); submit(t); } },
@@ -128,25 +139,44 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
           setBanner("Tap Retry to keep listening (this browser pauses the mic between phrases).");
           return;
         }
-        setMicOn(false);
-        setTyping(true);
-        setMicRetry(true);
-        setBanner(kind === "denied" ? "Microphone access is blocked. Allow it from the icon in the address bar (or site settings) and tap Retry, or type below."
-          : kind === "no-mic" ? "No microphone found. Plug one in, or type below."
-          : "Speech recognition needs an internet connection in this browser. You can type below.");
+        micError(kind);
       },
     });
     listener.current = l;
     l.start();
     setMicOn(true);
-  }, [submit]);
+  }, [submit, micError]);
+
+  const startMic = useCallback(async () => {
+    if (!speechSupported() && !captureSupported()) { setTyping(true); return; }
+    setBanner(null);
+    setMicRetry(false);
+    setMicOn(true);
+    const ready = captureSupported() && await client.health().then((h) => h.transcribe === "ready").catch(() => false);
+    if (!alive.current) return;
+    if (!ready) { startBrowserSpeech(); return; }
+    const c = createCapture(client, {
+      onFinal: (t) => { if (alive.current) submit(t); },
+      onPhase: (p) => alive.current && setPhase(p),
+      onError: (kind) => {
+        if (!alive.current) return;
+        if (kind === "unavailable") { startBrowserSpeech(); return; }
+        if (kind === "network") { setBanner(`Can't reach the server at ${apiLabel()} for speech-to-text. Still listening.`); return; }
+        if (kind === "other") { startBrowserSpeech(); return; }
+        micError(kind);
+      },
+    });
+    listener.current = c;
+    setPhase("listening");
+    await c.start();
+  }, [client, submit, startBrowserSpeech, micError]);
 
   const stopMic = useCallback(() => { listener.current?.stop(); setMicOn(false); setInterim(""); }, []);
 
   useEffect(() => {
     alive.current = true;
     t0.current = performance.now();
-    if (start.kind === "mic") startMic();
+    if (start.kind === "mic") void startMic();
     else submit(start.text);
     return () => { alive.current = false; listener.current?.stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -186,13 +216,15 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   const secs = phrases.reduce((s, p) => s + (p.res?.playlist.reduce((a, x) => a + x.duration_s, 0) ?? 0), 0);
 
   let tone: IslandTone, label: string, detail: string | undefined;
-  if (!revealed) [tone, label] = micOn ? ["live", "Listening"] : start.kind === "typed" ? ["live", "Reading"] : ["idle", "Mic off"];
+  const micLabel = phase === "transcribing" ? "Transcribing…" : "Listening…";
+  const micTone: IslandTone = phase === "transcribing" ? "busy" : "live";
+  if (!revealed) [tone, label] = micOn ? [micTone, micLabel] : start.kind === "typed" ? ["live", "Reading"] : ["idle", "Mic off"];
   else if (latestError) [tone, label] = ["warn", "Offline"];
   else if (blocked) [tone, label] = ["warn", safety.status === "needs_confirmation" ? "Meaning unclear" : "Caption only"];
   else if (done) [tone, label, detail] = ["done", "Done", total ? `${total} sign${total === 1 ? "" : "s"}` : undefined];
   else if (view.nowGloss) [tone, label, detail] = ["sign", "Signing", view.nowGloss];
   else if (pending) [tone, label] = ["busy", "Translating"];
-  else if (micOn) [tone, label] = ["live", "Listening"];
+  else if (micOn) [tone, label] = [micTone, micLabel];
   else [tone, label] = ["idle", "Ready"];
 
   const source: LevelSource = !revealed ? (micOn ? "mic" : start.kind === "typed" ? "voice" : "rest") : micOn && !view.nowGloss ? "mic" : done ? "rest" : "calm";
@@ -205,7 +237,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
     player.current?.stop();
     setStopped(true);
   }
-  const canSpeak = speechSupported();
+  const canSpeak = speechSupported() || captureSupported();
   const again = () => onRestart(canSpeak ? { kind: "mic" } : { kind: "typed", text: "" });
 
   // Before the card is up, the captions carry what has been heard so far (typed text builds up at speaking pace; the
@@ -225,7 +257,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
       {banner ? (
         <div className="banner" role="alert">
           <span>{banner}</span>
-          {micRetry ? <button className="retry" onClick={startMic}>Retry</button> : null}
+          {micRetry ? <button className="retry" onClick={() => void startMic()}>Retry</button> : null}
         </div>
       ) : null}
 

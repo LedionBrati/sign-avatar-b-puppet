@@ -1,33 +1,22 @@
-// Microphone level via Web Audio, for the ambient glow and the island's level bars. Best effort: it runs next
-// to speech recognition (Chrome/Edge share the mic fine). Skipped on iOS, where a second capture can stall the
-// recognizer; callers fall back to a gentle synthetic level.
+// Microphone level for the ambient glow and the island's level bars. It reuses the page's one shared mic
+// (lib/mic.ts), so it never opens a second capture next to the listener. On iOS, when the browser speech engine
+// (lib/speech.ts fallback) owns the mic, a second capture can stall it: skipped there, callers use a synthetic level.
+import { acquireMic, micHeld, releaseMic } from "./mic";
+
 export interface Meter { level(): number; stop(): void }
 
 export async function openMeter(): Promise<Meter | null> {
-  if (!navigator.mediaDevices?.getUserMedia || /iPhone|iPad|iPod/.test(navigator.userAgent)) return null;
-  const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AC) return null;
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !micHeld()) return null;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-    const ctx = new AC();
-    const an = ctx.createAnalyser();
-    an.fftSize = 1024;
-    an.smoothingTimeConstant = 0.5;
-    ctx.createMediaStreamSource(stream).connect(an);
-    void ctx.resume().catch(() => {});
-    const buf = new Float32Array(an.fftSize);
-    let smooth = 0;
+    const mic = await acquireMic();
+    let smooth = 0, stopped = false;
     return {
       level() {
-        an.getFloatTimeDomainData(buf);
-        let s = 0;
-        for (let i = 0; i < buf.length; i++) s += buf[i]! * buf[i]!;
-        const db = 20 * Math.log10(Math.sqrt(s / buf.length) + 1e-8);
-        const l = Math.min(1, Math.max(0, (db + 58) / 40)); // ~-58 dB (room) .. -18 dB (close speech)
+        const l = Math.min(1, Math.max(0, (mic.rmsDb() + 58) / 40)); // ~-58 dB (room) .. -18 dB (close speech)
         smooth += (l - smooth) * (l > smooth ? 0.4 : 0.07); // fast attack, slow release
         return smooth;
       },
-      stop() { stream.getTracks().forEach((t) => t.stop()); void ctx.close().catch(() => {}); },
+      stop() { if (!stopped) { stopped = true; releaseMic(); } },
     };
   } catch {
     return null;

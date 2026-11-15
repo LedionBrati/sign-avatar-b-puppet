@@ -1,4 +1,4 @@
-import { FRAMES_HEADER, ROUTES, type ApiError, type HealthResponse, type RecognizeMode, type RecognizeResponse, type SignRequest, type SignResponse, type VocabResponse } from "./api";
+import { FRAMES_HEADER, ROUTES, type ApiError, type HealthResponse, type RecognizeMode, type RecognizeResponse, type SignRequest, type SignResponse, type TranscribeResponse, type VocabResponse } from "./api";
 import { LEGACY_POINTS } from "./landmarks";
 
 export class SignApiError extends Error {
@@ -59,6 +59,13 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
         headers: { "content-type": "application/octet-stream", [FRAMES_HEADER]: String(n) },
         signal,
       });
+    },
+    /** Speech -> text for one short audio chunk (MediaRecorder webm/opus or mp4/aac). text is "" for silence. */
+    transcribe(audio: Blob, { lang = "en", ms, signal }: { lang?: string; ms?: number; signal?: AbortSignal } = {}): Promise<TranscribeResponse> {
+      const type = (audio.type || "audio/webm").split(";")[0]!.trim();
+      const headers: Record<string, string> = { "content-type": type };
+      if (ms) headers["x-audio-ms"] = String(Math.min(30_000, Math.round(ms)));
+      return request<TranscribeResponse>(`${ROUTES.transcribe}?lang=${lang}`, { method: "POST", body: audio, headers, signal });
     },
   };
 }

@@ -6,11 +6,12 @@ import { navigate, useRoute } from "./lib/route";
 import { transition } from "./lib/motion";
 import { Settings } from "./components/Settings";
 import { speechSupported } from "./lib/speech";
+import { captureSupported } from "./lib/capture";
 
 export function App() {
   const [live, setLive] = useState<{ start: LiveStart; key: number } | null>(null);
   const [settings, setSettings] = useState(false);
-  const canListen = speechSupported();
+  const canListen = speechSupported() || captureSupported();
   const go = useCallback((start: LiveStart) => {
     if (start.kind === "typed" && !start.text.trim()) { transition(() => setLive(null)); return; }
     transition(() => setLive({ start, key: Date.now() }));
