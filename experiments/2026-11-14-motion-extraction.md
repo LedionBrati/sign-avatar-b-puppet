@@ -14,7 +14,7 @@
   ```bash
   uv sync && uv run python fetch_model.py
   bash run_how2sign.sh                       # extract -> clean -> report for the 4 clips into out/motion/
-  uv run python batch_library.py --index C:/Users/DELL/Desktop/ai-summit/data/signs/index.json \
+  uv run python batch_library.py --index <path-to>/signs/index.json \
       --out-dir ../out/motion/wlasl --limit 20 --workers 4
   uv run pytest -q                           # 24 tests, all pass
   ```

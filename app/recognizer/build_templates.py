@@ -7,12 +7,19 @@ Glosses = every sign the avatar can sign (realtime clip manifests) + the demo wo
 Gloss -> instance: the library index (data/signs/index.json) plus every other extracted instance of the same gloss
 (e.g. all-a1, all-a3, have-a1..a3, nice-a1/a2, lucky-b1). Landmarks are biometric: the bank stores only the
 derived hand features, and nothing is printed.
+
+Inputs (flag or env; nothing machine-specific is assumed):
+    --motion / MOTION_DIR       extracted WLASL motion (*.raw.json), default <repo>/out/motion/wlasl
+    --index  / SIGN_DICTIONARY  the WLASL library index.json (required to build)
+    CLIPS_DIR=dirA,dirB         realtime clip sets whose manifests add glosses, default <repo>/out/realtime/clips*
+                                (a worktree without them falls back to the main checkout ../sign-avatar-b-puppet)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -23,10 +30,21 @@ import numpy as np
 
 import templates as T
 
-DESKTOP = Path(r"C:\Users\DELL\Desktop")
-MOTION = DESKTOP / "sbp-motion" / "out" / "motion" / "wlasl"
-INDEX = DESKTOP / "ai-summit" / "data" / "signs" / "index.json"
-MANIFESTS = [DESKTOP / "sign-avatar-b-puppet" / "out" / "realtime" / d / "manifest.json" for d in ("clips", "clips-demo", "clips-phrases", "clips-mass")]
+REPO = Path(__file__).resolve().parents[2]
+MOTION = Path(os.environ.get("MOTION_DIR") or REPO / "out" / "motion" / "wlasl")
+INDEX = Path(os.environ["SIGN_DICTIONARY"]) if os.environ.get("SIGN_DICTIONARY") else None
+
+
+def clip_dirs() -> list[Path]:
+    if os.environ.get("CLIPS_DIR"):
+        return [Path(d.strip()) for d in re.split(r"[,;]", os.environ["CLIPS_DIR"]) if d.strip()]
+    realtime = REPO / "out" / "realtime"
+    if not realtime.exists():
+        realtime = REPO.parent / "sign-avatar-b-puppet" / "out" / "realtime"
+    return [realtime / d for d in ("clips", "clips-demo", "clips-phrases", "clips-mass")]
+
+
+MANIFESTS = [d / "manifest.json" for d in clip_dirs()]
 NEEDED = ["HOW", "DAY", "GOOD", "EVENING", "I", "ME", "YOU", "YOUR", "SOME", "WANT", "BUILD", "COMPANY", "NICE", "MEET",
           "JUDGE", "LUCKY", "TODAY", "COFFEE", "ALL", "HAVE", "CAN", "WATER", "PLEASE", "HELLO", "THANK YOU", "WHERE",
           "BATHROOM", "NAME", "MY", "SEE", "LATER", "HELP", "SORRY", "YES", "NO", "MORNING", "WHAT", "LOVE", "TIRED",
@@ -156,10 +174,16 @@ def main():
     ap.add_argument("--eval", action="store_true", help="leave-one-out check after building")
     ap.add_argument("--eval-only", action="store_true")
     ap.add_argument("--gislr", action="store_true", help="also report the merged GISLR + template top-5")
+    ap.add_argument("--motion", type=Path, help="extracted motion dir (default MOTION_DIR or <repo>/out/motion/wlasl)")
+    ap.add_argument("--index", type=Path, help="WLASL library index.json (default SIGN_DICTIONARY)")
     a = ap.parse_args()
+    global MOTION, INDEX
+    MOTION, INDEX = a.motion or MOTION, a.index or INDEX
     if not a.eval_only:
         if not MOTION.exists():
-            sys.exit(f"no motion at {MOTION}")
+            sys.exit(f"no motion at {MOTION} (set --motion or MOTION_DIR)")
+        if not INDEX or not INDEX.exists():
+            sys.exit(f"no library index at {INDEX} (set --index or SIGN_DICTIONARY to the WLASL index.json)")
         build(a.out)
     if a.eval or a.eval_only:
         evaluate(a.out, a.gislr)

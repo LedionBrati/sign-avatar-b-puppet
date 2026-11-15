@@ -2,11 +2,18 @@
 // Later dirs add signs; the first dir wins when two dirs have the same motion_id.
 // Only files listed in a manifest AND present on disk are exposed, so a sign is never invented
 // and /clips/* can never serve anything outside the manifests.
+// Env: CLIPS_DIR=dirA,dirB. Default <repo>/out/realtime/clips; a git worktree without clips of its own
+// falls back to the main checkout next to it (../sign-avatar-b-puppet/out/realtime/clips).
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const DEFAULT_CLIPS_DIR = "C:\\Users\\DELL\\Desktop\\sign-avatar-b-puppet\\out\\realtime\\clips";
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const OWN_CLIPS = join(REPO, "out/realtime/clips");
+const SIBLING_CLIPS = resolve(REPO, "../sign-avatar-b-puppet/out/realtime/clips");
+export const DEFAULT_CLIPS_DIR = !existsSync(join(OWN_CLIPS, "manifest.json")) && existsSync(join(SIBLING_CLIPS, "manifest.json"))
+  ? SIBLING_CLIPS : OWN_CLIPS;
 const FPS = 24;
 const LETTER = /^FS_([A-Z])$/;
 

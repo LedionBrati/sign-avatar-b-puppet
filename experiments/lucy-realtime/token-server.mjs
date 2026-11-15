@@ -9,8 +9,10 @@
 //   FAL_KEY_FILE   path to a file holding the fal key (read + trimmed once at startup, never logged)
 //   PORT           default 8799
 //   MEDIA_JUDY, MEDIA_SENTENCE, MEDIA_AVATAR  optional overrides for the media files
+//                  (defaults: <repo>/out/puppet/judy-vrm.mp4, <repo>/out/sentences/thank-you-see-you-later-vrm.mp4,
+//                  assets/avatar/avatar-main.jpg)
 //
-// Usage: FAL_KEY_FILE=C:/Users/DELL/Desktop/fal-key.txt node token-server.mjs
+// Usage: FAL_KEY_FILE=<path-to>/fal-key.txt node token-server.mjs
 
 import http from "node:http";
 import fs from "node:fs";
@@ -35,10 +37,8 @@ if (!FAL_KEY) {
 const redact = (s) => (FAL_KEY ? String(s).split(FAL_KEY).join("[REDACTED]") : String(s));
 
 const MEDIA = {
-  "judy.mp4": process.env.MEDIA_JUDY || "C:/Users/DELL/Desktop/sbp-puppet/out/puppet/judy-vrm.mp4",
-  "sentence.mp4":
-    process.env.MEDIA_SENTENCE ||
-    "C:/Users/DELL/Desktop/sign-avatar-b-puppet/out/sentences/thank-you-see-you-later-vrm.mp4",
+  "judy.mp4": process.env.MEDIA_JUDY || path.join(repo, "out/puppet/judy-vrm.mp4"),
+  "sentence.mp4": process.env.MEDIA_SENTENCE || path.join(repo, "out/sentences/thank-you-see-you-later-vrm.mp4"),
   "avatar.jpg": process.env.MEDIA_AVATAR || path.join(repo, "assets/avatar/avatar-main.jpg"),
   "avatar-hands-down.jpg": path.join(repo, "assets/avatar/avatar-hands-down.jpg"),
 };

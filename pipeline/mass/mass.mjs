@@ -19,13 +19,15 @@
 // --budget-usd (a cap on the TOTAL recorded in state.json across all runs, checked before every
 // call), and goes through the gated harness pipeline/e0.mjs (--authorize-paid E0-PAID --max-usd N).
 //
-// Paths (flag or env, defaults are this laptop's):
-//   --index       MASS_INDEX       WLASL index.json (videos resolve relative to it)
-//   --motion-dir  MASS_MOTION_DIR  extractor output (raw/clean JSON + rows/), shared and resumable
-//   --extractor   MASS_EXTRACTOR   motion/ folder with .venv + MediaPipe model (batch_library.py)
-//   --neutral     MASS_NEUTRAL     the shared neutral pose (same as the existing clips)
+// Paths (flag or env; relative defaults are from the repo root, "realtime" = out/realtime, or the main checkout's
+// ../sign-avatar-b-puppet/out/realtime when this worktree has none):
+//   --index       MASS_INDEX       WLASL index.json (videos resolve relative to it); required by rank / extract
+//   --motion-dir  MASS_MOTION_DIR  extractor output (raw/clean JSON + rows/), shared and resumable (out/motion/wlasl)
+//   --extractor   MASS_EXTRACTOR   motion/ folder with .venv + MediaPipe model (batch_library.py) (motion)
+//   --neutral     MASS_NEUTRAL     the shared neutral pose, same as the existing clips (realtime/neutral.clean.json)
 //   --existing    MASS_EXISTING    comma list: clip manifests and batch dirs whose signs are already done
-//   --clips-dir   MASS_CLIPS_DIR   output clip set (default out/realtime/clips-mass)
+//                                  (realtime/clips/manifest.json,realtime/vocab)
+//   --clips-dir   MASS_CLIPS_DIR   output clip set (out/realtime/clips-mass)
 
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -44,13 +46,18 @@ for (let i = 0; i < rest.length; i++) {
   else opt[k] = rest[++i];
 }
 const env = process.env;
+const REALTIME = [join(ROOT, "out/realtime"), resolve(ROOT, "../sign-avatar-b-puppet/out/realtime")].find(existsSync) ?? join(ROOT, "out/realtime");
+const INDEX = opt.index ?? env.MASS_INDEX;
 const C = {
-  index: resolve(opt.index ?? env.MASS_INDEX ?? "C:/Users/DELL/Desktop/ai-summit/data/signs/index.json"),
-  motionDir: resolve(opt["motion-dir"] ?? env.MASS_MOTION_DIR ?? "C:/Users/DELL/Desktop/sbp-motion/out/motion/wlasl"),
-  extractor: resolve(opt.extractor ?? env.MASS_EXTRACTOR ?? "C:/Users/DELL/Desktop/sbp-motion/motion"),
-  neutral: resolve(opt.neutral ?? env.MASS_NEUTRAL ?? "C:/Users/DELL/Desktop/sign-avatar-b-puppet/out/realtime/neutral.clean.json"),
+  get index() {
+    if (!INDEX) throw new Error("no WLASL library index: pass --index <path-to>/index.json or set MASS_INDEX");
+    return resolve(INDEX);
+  },
+  motionDir: resolve(opt["motion-dir"] ?? env.MASS_MOTION_DIR ?? join(ROOT, "out/motion/wlasl")),
+  extractor: resolve(opt.extractor ?? env.MASS_EXTRACTOR ?? join(ROOT, "motion")),
+  neutral: resolve(opt.neutral ?? env.MASS_NEUTRAL ?? join(REALTIME, "neutral.clean.json")),
   existing: String(opt.existing ?? env.MASS_EXISTING ??
-    "C:/Users/DELL/Desktop/sign-avatar-b-puppet/out/realtime/clips/manifest.json,C:/Users/DELL/Desktop/sign-avatar-b-puppet/out/realtime/vocab")
+    `${join(REALTIME, "clips/manifest.json")},${join(REALTIME, "vocab")}`)
     .split(",").map((p) => p.trim()).filter(Boolean),
   clips: resolve(opt["clips-dir"] ?? env.MASS_CLIPS_DIR ?? join(ROOT, "out/realtime/clips-mass")),
   out: join(ROOT, "out/mass"),

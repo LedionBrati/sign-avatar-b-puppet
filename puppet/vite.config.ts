@@ -9,7 +9,7 @@ const repoRoot = resolve(__dirname, "..");
 
 export function resolveLocal(p: string): string {
   let s = decodeURIComponent(p).replace(/\\/g, "/");
-  const gitBash = /^\/([a-zA-Z])\/(.*)$/.exec(s); // /c/Users/... (Git Bash style)
+  const gitBash = /^\/([a-zA-Z])\/(.*)$/.exec(s); // /c/path/... (Git Bash style)
   if (gitBash) s = `${gitBash[1]}:/${gitBash[2]}`;
   if (/^\/[a-zA-Z]:\//.test(s)) s = s.slice(1); // /C:/Users/... from a URL path
   return isAbsolute(s) ? s : resolve(repoRoot, s);

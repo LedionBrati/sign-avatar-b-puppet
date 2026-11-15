@@ -32,7 +32,7 @@
 - **Commands:**
   ```bash
   cd experiments/lucy-realtime && npm install && npm run build
-  FAL_KEY_FILE=C:/Users/DELL/Desktop/fal-key.txt node token-server.mjs &
+  FAL_KEY_FILE=<path-to>/fal-key.txt node token-server.mjs &
   node run.mjs --model lucy-2-6 --clip judy            # also: --clip sentence, --ref hands-down, --model lucy-2-5
   node run.mjs --dry 1 --clip judy                     # free: local WebRTC loopback, checks the pipeline and lag estimator
   node analyze.mjs out/lucy-2-6-judy.json 1.88 2.92 4.17 5.62

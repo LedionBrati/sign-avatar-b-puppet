@@ -1,6 +1,6 @@
 """Batch the WLASL isolated-sign library into raw + clean motion files (resumable).
 
-    uv run python batch_library.py --index C:/Users/DELL/Desktop/ai-summit/data/signs/index.json \
+    uv run python batch_library.py --index <path-to>/signs/index.json \
         --out-dir ../out/motion/wlasl --limit 20 --workers 4
 
 Per sign: extract -> detect the dominant hand -> if left-dominant, re-extract with --mirror
