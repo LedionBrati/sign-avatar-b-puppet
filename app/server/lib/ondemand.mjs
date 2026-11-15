@@ -248,9 +248,7 @@ export function createOnDemand(o) {
 
 
   mkdirSync(o.stateDir, { recursive: true });
-  mkdirSync(o.clipsDir, { recursive: true });
-  const manifestPath = join(o.clipsDir, "manifest.json");
-  if (!existsSync(manifestPath)) writeFileSync(manifestPath, "{}\n");
+  prepareClipsDir(o.clipsDir);
 
   const state = loadState();
   rescan(true);
@@ -495,4 +493,11 @@ function disabled(reason) {
   const h = { enabled: false, queued: 0, running: 0, done_today: 0, spent_today_est: 0 };
   return { enabled: false, reason, version: 0, has: () => false, motionVocab: () => [], rescan() {}, request: () => [],
     health: () => h, status: () => ({ ...h, reason }), idle: () => Promise.resolve(), stop() {} };
+}
+
+/** The generated-clips dir with an (empty) manifest, so the clip loader can read it before the first batch. */
+export function prepareClipsDir(dir) {
+  mkdirSync(dir, { recursive: true });
+  const manifestPath = join(dir, "manifest.json");
+  if (!existsSync(manifestPath)) writeFileSync(manifestPath, "{}\n");
 }

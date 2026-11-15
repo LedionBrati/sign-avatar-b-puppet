@@ -28,7 +28,7 @@ import { planToPlaylist } from "./lib/sign.mjs";
 import { assessSigning } from "./lib/semantic-safety.mjs";
 import { createAgent } from "./lib/agent.mjs";
 import { loadApiKey, loadFalKey, redactor } from "./lib/secrets.mjs";
-import { createOnDemand, onDemandConfig } from "./lib/ondemand.mjs";
+import { createOnDemand, onDemandConfig, prepareClipsDir } from "./lib/ondemand.mjs";
 import { virtualClips } from "./lib/eval-vocab.mjs";
 
 export const MAX_TEXT = 500;
@@ -80,6 +80,7 @@ export function createApp(o = {}) {
   if (odConfig.enabled && odConfig.falKey && !process.env.FAL_KEY) process.env.FAL_KEY = odConfig.falKey;   // for pipeline/lib/fal.mjs, this process only
   // Generated clips are one more clip dir, after the configured ones (a configured clip always wins).
   const clipsDirs = [...(o.clipsDirs ?? parseClipsDirs()), ...(odConfig.enabled ? [odConfig.clipsDir] : [])];
+  if (odConfig.enabled) prepareClipsDir(odConfig.clipsDir);
 
   // Planning vocab + the clip set the playlist builder and the safety gate check against (the real clips, except in eval mode).
   // All three are reloaded when on-demand generation adds clips (reloadClips), so new signs work without a restart.
