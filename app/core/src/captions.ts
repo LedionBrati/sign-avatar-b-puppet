@@ -19,6 +19,16 @@ export interface CaptionFrame {
  * @param heardCount how many words have been heard so far (live speech), or words.length for typed text
  * @param playing    index of the playlist item currently playing (-1 = not started, playlist.length = finished)
  */
+/** Chip text for signs being generated on demand: "Generating SICK… ~2 min" ("" when nothing is generating). */
+export function generatingLabel(res: Pick<SignResponse, "generating"> | null | undefined): string {
+  const g = res?.generating ?? [];
+  if (!g.length) return "";
+  const names = g.length <= 2 ? g.map((x) => x.gloss).join(", ") : `${g[0]!.gloss} +${g.length - 1}`;
+  const eta = Math.max(...g.map((x) => x.eta_s));
+  const when = eta < 60 ? "<1 min" : `~${Math.round(eta / 60)} min`;
+  return `Generating ${names}… ${when}`;
+}
+
 export function captionFrame(res: SignResponse, heardCount: number, playing: number): CaptionFrame {
   const n = res.words.length;
   const done = playing >= res.playlist.length && res.playlist.length > 0;

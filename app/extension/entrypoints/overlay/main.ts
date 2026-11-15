@@ -1,6 +1,6 @@
 import "./style.css";
 import { browser } from "wxt/browser";
-import { captionFrame, createSignClient, ROUTES, type PlaylistItem, type SignResponse } from "@signlayer/core";
+import { captionFrame, createSignClient, generatingLabel, ROUTES, type PlaylistItem, type SignResponse } from "@signlayer/core";
 import type { FromOverlay, ToOverlay } from "@/lib/messages";
 import { getSettings, onSettings, setSettings, type Settings, type Size, type Source } from "@/lib/settings";
 import { $, esc, MARK, WORDMARK } from "@/lib/brand";
@@ -11,7 +11,7 @@ import { $, esc, MARK, WORDMARK } from "@/lib/brand";
 
 type Job = { res: SignResponse; source: Source };
 
-const card = $("card"), grip = $("grip"), cc = $("cc"), idleEl = $("idle"), live = $("live");
+const card = $("card"), grip = $("grip"), cc = $("cc"), idleEl = $("idle"), live = $("live"), gen = $("gen");
 const chipState = $("chipState"), chipSub = $("chipSub");
 const vids = [$("v0") as HTMLVideoElement, $("v1") as HTMLVideoElement];
 $("brand").innerHTML = MARK + WORDMARK;
@@ -223,6 +223,10 @@ const CHUNK: Record<Size, number> = { s: 6, m: 9, l: 12 };
 let chunkKey = "";
 
 function renderCaptions() {
+  // Generate-on-use chip next to the captions: "Generating SICK… ~2 min" while the server makes a missing clip.
+  const g = generatingLabel((job ?? shown)?.res);
+  gen.textContent = g;
+  gen.hidden = !g;
   if (heardText && !job) {
     const words = heardText.split(/\s+/).filter(Boolean).slice(-CHUNK[s.size]);
     cc.innerHTML = `<i class="hl"></i>${words.map((w) => `<span class="w heard">${esc(w)}</span>`).join(" ")}`;

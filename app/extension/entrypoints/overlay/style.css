@@ -60,6 +60,9 @@ body { font-size: 12px; }
   transition: transform .38s cubic-bezier(.2,.8,.2,1), width .38s cubic-bezier(.2,.8,.2,1), height .38s ease, opacity .3s ease; }
 .cc .hl.show { opacity: 1; }
 .card.nocc .cc { display: none; }
+/* Generate-on-use: the server is making a missing sign's clip */
+.gen { align-self: flex-start; margin: -2px 4px 0; padding: 3px 9px; border-radius: 999px; background: rgb(255 255 255 / .85); color: var(--ink-blue); font-size: 10px; font-weight: 600; white-space: nowrap; }
+.gen[hidden] { display: none; }
 
 /* Sizes */
 body[data-size="s"] #brand .wm { display: none; }

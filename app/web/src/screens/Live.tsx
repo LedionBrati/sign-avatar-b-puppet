@@ -1,7 +1,7 @@
 // Live screen: listen (or read typed text) -> the signer card forms out of the wave -> clips play back to back while
 // the captions light up word by word -> done (summary, Replay / Listen again).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { copy, createSignClient, type SignResponse } from "@signlayer/core";
+import { copy, createSignClient, generatingLabel, type SignResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
 import { Captions } from "../components/Captions";
 import { Mark } from "../components/Icons";
@@ -168,6 +168,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   const latestUnsupported = phrases.at(-1)?.res?.unsupported ?? [];
   const latestFingerspell = phrases.at(-1)?.res?.fingerspell ?? [];
   const latestError = phrases.at(-1)?.error;
+  const generating = generatingLabel(phrases.at(-1)?.res);   // "Generating SICK… ~2 min": the server is making the missing clip
   const blocked = safety && safety.status !== "fully_supported";
   const settled = phrases.length > 0 && phrases.every((p) => p.offset !== -1);
   const drained = total === 0 || playing >= total;
@@ -211,7 +212,10 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         <Lane index={0} label="Speaker 1" mode={revealed ? (done ? "rest" : "lit") : "unseen"} arrive={arrive} speaking={view.now >= 0}
           stage={<SignerStage onReady={onPlayer} on={revealed} label={blocked || latestError ? "Signing paused; caption shown" : "Speaker 1, signed"}
             safety={safety} error={latestError ? { caption: phrases.at(-1)?.text ?? "", message: latestError } : undefined} />}
-          caption={<Captions words={view.words} now={view.now} lines={2} />} />
+          caption={<div className="capwrap">
+            <Captions words={view.words} now={view.now} lines={2} />
+            {generating ? <span className="gen-chip" role="status">{generating}</span> : null}
+          </div>} />
         <div className={`listen${revealed ? " off" : ""}`} aria-live="polite">
           <Wave level={0.95} talking={!revealed && (micOn || start.kind === "typed")} />
           <span className="lbl">{micOn || start.kind === "typed" ? "Listening…" : "Not listening"}</span>
