@@ -1,10 +1,11 @@
+import "@/lib/fonts";
 import "@/lib/base.css";
 import { browser } from "wxt/browser";
-import { $, MARK, WORDMARK } from "@/lib/brand";
+import { $, mark, WORDMARK } from "@/lib/brand";
 
 // One-time permission tab: the card (an iframe) and the offscreen document can't show Chrome's permission prompt; a normal extension tab can.
 // Asks at once, tells the card, closes itself (Chrome returns to the tab that opened it).
-$("brand").innerHTML = MARK + WORDMARK;
+$("brand").innerHTML = mark() + WORDMARK;
 const msg = $("msg"), btn = $("go");
 
 async function ask() {

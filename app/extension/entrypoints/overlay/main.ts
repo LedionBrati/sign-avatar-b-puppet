@@ -1,7 +1,8 @@
+import "@/lib/fonts";
 import "./style.css";
 import { browser, type Browser } from "wxt/browser";
 import { captionFrame, createSignClient, ROUTES, type PlaylistItem, type SignResponse } from "@signlayer/core";
-import { $, esc, ICON, WORDMARK } from "@/lib/brand";
+import { $, esc, ICON, mark, WORDMARK } from "@/lib/brand";
 import { OVERLAY_PORT, type ChunkInfo, type StartReply, type ToBg, type ToOverlay } from "@/lib/messages";
 import { getSettings, setSettings, SIZE_PX, type Size, type Source } from "@/lib/settings";
 import { createWave } from "@/lib/wave";
@@ -10,29 +11,26 @@ import { createWave } from "@/lib/wave";
 //   Mic or Tab audio, captured and transcribed in the offscreen document ─► text messages here ─► phrases
 //   ─► POST /api/sign (in parallel; applied in order; overtaken live results skipped) ─► playlist
 //   ─► two stacked <video>s: the next clip preloads in the hidden one and crossfades in on its first painted frame.
-// Safety gate (docs/semantic-safety.md): caption_only / needs_confirmation stop and clear the player at once; the
-// still blurs back and the exact caption comes forward with the reason. needs_confirmation plays only after a click.
+// Like the web app's Live card: a phrase that can't be signed (the safety gate says caption_only / needs_confirmation)
+// isn't played. No popup, no hint: the signer just stays still and the transcript still shows the words.
 
-type Job = { res: SignResponse; confirmed?: boolean };
-type View = "ready" | "starting" | "listening" | "signing" | "caption_only" | "confirm" | "offline" | "error";
-type Tone = "live" | "sign" | "warn" | "off" | "idle";
-const BLOCKED = new Set<View>(["caption_only", "confirm", "offline", "error"]);
+type Job = { res: SignResponse };
+type View = "ready" | "starting" | "listening" | "signing" | "offline" | "error";
+type Tone = "live" | "sign" | "off" | "idle";
 const SRC_LABEL: Record<Source, string> = { mic: "Mic", tab: "Tab" };
 const SIZES: Size[] = ["s", "m", "l"];
 
 const params = new URLSearchParams(location.search);
 const TAB = Number(params.get("tab")) || 0;
 const card = $("card"), stageWrap = $("stageWrap");
-const stage = $("stage"), cc = $("cc"), note = $("note"), focusText = $("focusText"), actions = $("actions");
-const island = $("pill"), islandIn = $("islandIn"), dot = $("dot"), pillState = $("pillState"), pillSub = $("pillSub");
-const go = $("go"), seg = $("seg"), sizeBtn = $("size");
+const stage = $("stage"), cc = $("cc"), note = $("note");
+const statusEl = $("pill"), dot = $("dot");
+const go = $("go"), seg = $("seg"), sizeSeg = $("size"), gear = $("gear");
 const vids = [$("v0") as HTMLVideoElement, $("v1") as HTMLVideoElement];
 const still = $("still") as HTMLCanvasElement;
-$("brand").innerHTML = WORDMARK;
-$("gear").innerHTML = ICON.gear;
+$("brand").innerHTML = mark() + WORDMARK;
+gear.innerHTML = ICON.gear;
 $("close").innerHTML = ICON.close;
-$("icMic").innerHTML = ICON.mic;
-$("icTab").innerHTML = ICON.tab;
 const wave = createWave($("wv") as HTMLCanvasElement);
 
 let s = await getSettings();
@@ -51,8 +49,8 @@ function fitStage() {
 function applySize() {
   card.dataset.size = s.size;
   card.style.width = `${SIZE_PX[s.size]}px`;
-  sizeBtn.textContent = s.size.toUpperCase();
-  sizeBtn.setAttribute("aria-label", `Card size: ${s.size.toUpperCase()}. Change`);
+  sizeSeg.dataset.size = s.size;
+  sizeSeg.querySelectorAll<HTMLButtonElement>("[data-size]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.size === s.size)));
   fitStage();
 }
 new ResizeObserver(() => {
@@ -68,30 +66,42 @@ addEventListener("message", (e) => {
 });
 
 // Drag by the header: the frame (float.ts) lays a transparent grip over the header's non-button part and drags
-// the card in page coordinates. We tell it where that part is.
+// the card in page coordinates. We tell it where that part is (up to the gear).
 const grip = $("grip");
 let gripKey = "";
 function postGrip() {
-  const g = grip.getBoundingClientRect(), b = sizeBtn.getBoundingClientRect();
+  const g = grip.getBoundingClientRect(), b = gear.getBoundingClientRect();
   const r = { x: Math.round(g.left), y: Math.round(g.top), w: Math.round(b.left - 4 - g.left), h: Math.round(g.height) };
   const key = JSON.stringify(r);
   if (key !== gripKey) { gripKey = key; toFrame({ type: "grip", ...r }); }
 }
 new ResizeObserver(postGrip).observe(grip);
 
-sizeBtn.addEventListener("click", () => {
-  s.size = SIZES[(SIZES.indexOf(s.size) + 1) % SIZES.length]!;
-  setSettings({ size: s.size });
+// Card size: S / M / L, in the gear menu.
+function setSize(size: Size) {
+  if (size === s.size) return;
+  s.size = size;
+  setSettings({ size });
   applySize();
-  islandKey = ""; render();
   chunkKey = ""; renderCaptions();
+}
+sizeSeg.addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-size]");
+  if (b) setSize(b.dataset.size as Size);
+});
+sizeSeg.addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const i = SIZES.indexOf(s.size) + (e.key === "ArrowRight" ? 1 : -1);
+  setSize(SIZES[Math.min(SIZES.length - 1, Math.max(0, i))]!);
+  sizeSeg.querySelector<HTMLButtonElement>(`[data-size="${s.size}"]`)?.focus();
 });
 $("close").addEventListener("click", () => { stopListening(); toFrame({ type: "close" }); });
 
 // ── Listening state ──
 let listening: "off" | "starting" | "on" = "off";
-let errorText = ""; // capture / mic error: shown on the stage until the next Start
-let hint = ""; // soft line under the captions
+let errorText = ""; // capture / mic error: one small line under the transcript until the next Start
+let hint = ""; // soft placeholder in the transcript
 let isOffline = false, offlineMsg = "";
 
 // ── Controls ──
@@ -127,11 +137,11 @@ seg.addEventListener("keydown", (e) => {
 });
 go.addEventListener("click", () => (listening === "off" ? startListening() : stopListening()));
 
-// Server URL: a tiny gear, an inline field.
+// Settings: a small gear opens an inline menu (card size, server URL).
 const form = $("server") as HTMLFormElement, urlIn = $("apiUrl") as HTMLInputElement;
 const setForm = (open: boolean) => {
   form.hidden = !open;
-  $("gear").setAttribute("aria-expanded", String(open));
+  gear.setAttribute("aria-expanded", String(open));
   fitStage();
 };
 function openServerForm() {
@@ -140,7 +150,7 @@ function openServerForm() {
   urlIn.focus();
   urlIn.select();
 }
-$("gear").addEventListener("click", () => (form.hidden ? openServerForm() : setForm(false)));
+gear.addEventListener("click", () => (form.hidden ? openServerForm() : setForm(false)));
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const v = urlIn.value.trim().replace(/\/+$/, "");
@@ -149,7 +159,7 @@ form.addEventListener("submit", (e) => {
   s.apiUrl = v;
   setSettings({ apiUrl: v });
   client = createSignClient(v, { timeoutMs: 12_000 });
-  vocab = new Map(); neutralId = null; stillDone = false;
+  neutralId = null; stillDone = false;
   setForm(false);
   checkHealth();
 });
@@ -171,7 +181,7 @@ async function startListening() {
   listening = "starting";
   renderControls();
   render();
-  if (!TAB) return fail("This card lost track of its tab. Close it and click the SIGNLAYER icon again.");
+  if (!TAB) return fail("This card lost track of its tab. Close it and click the Flux icon again.");
   ensurePort();
   const token = ++startToken;
   const r = await toBg<StartReply>({ target: "bg", type: "start", tabId: TAB, source: s.source, apiUrl: s.apiUrl })
@@ -252,10 +262,11 @@ function setLevel(x: number, v: boolean) {
     lvlRaf = 0;
     go.style.setProperty("--lvl", lvl.toFixed(3));
     dot.style.setProperty("--lvl", lvl.toFixed(3));
+    stageWrap.style.setProperty("--lvl", lvl.toFixed(3));
   });
 }
 let stateKey = "";
-function postState(tone = island.dataset.tone ?? "idle") {
+function postState(tone = dot.dataset.tone ?? "idle") {
   const key = `${tone}|${voiced}`;
   if (key === stateKey) return;
   stateKey = key;
@@ -270,112 +281,48 @@ let idx = -1;
 let front = 0;
 let heardText = "";
 let pending = false;
-const blocked = (j: Job | null) => !!j && !j.confirmed && !!j.res.safety && j.res.safety.status !== "fully_supported";
+/** The safety gate held this phrase back: it isn't signed (the transcript still shows it). */
+const blocked = (j: Job | null) => !!j && !!j.res.safety && j.res.safety.status !== "fully_supported";
 
 function view(): View {
   if (isOffline) return "offline";
   if (errorText) return "error";
   if (job) return "signing";
-  if (blocked(shown)) return shown!.res.safety!.status === "needs_confirmation" ? "confirm" : "caption_only";
   if (listening === "starting") return "starting";
   if (listening === "on") return "listening";
   return "ready";
 }
 
-const quoteList = (xs: string[]) => {
-  const u = [...new Set(xs.map((x) => x.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}']+$/gu, "")).filter(Boolean))];
-  const head = u.slice(0, 3).map((x) => `<q>${esc(x)}</q>`).join(", ");
-  return u.length > 3 ? `${head} +${u.length - 3}` : head;
-};
-
-/** Plain-language reason for a blocked phrase (Alex's rule: say why, never just go quiet). */
-function reasonLine(res: SignResponse) {
-  const r = res.safety!.reasons;
-  const has = (code: string) => r.some((x) => x.code === code);
-  const toks = (...codes: string[]) => r.filter((x) => codes.includes(x.code)).flatMap((x) => x.tokens);
-  if (has("unrepresented_negation")) return `${quoteList(toks("unrepresented_negation"))} can't be signed reliably yet`;
-  if (has("numerical_meaning")) return "Numbers and times stay as captions for now";
-  if (has("missing_fingerspelling")) return `Names like ${quoteList(toks("missing_fingerspelling"))} need fingerspelling, not available yet`;
-  const missing = toks("unsupported_token", "missing_clip", "dropped_meaning");
-  if (missing.length) return `No sign yet for ${quoteList(missing)}`;
-  return esc(res.safety!.next_actions[0] ?? "This phrase can't be signed yet");
-}
-
-// ── Status chip: width springs to each label, the label blurs in ──
-let islandKey = "";
-function setIsland(tone: Tone, state: string, sub = "", subGloss = false) {
+// ── Status: a tiny coloured dot by the wordmark (the label is for screen readers) ──
+const LABEL: Record<View, string> = { ready: "Ready", starting: "Starting", listening: "Listening", signing: "Signing", offline: "Offline", error: "Off" };
+function setStatus(tone: Tone, label: string) {
   postState(tone);
-  if (s.size !== "l") sub = ""; // only the large card has room for the gloss
-  const key = `${tone}|${state}|${sub}`;
-  if (key === islandKey) return;
-  const first = !islandKey;
-  islandKey = key;
-  island.dataset.tone = tone;
-  const from = island.getBoundingClientRect().width;
-  pillState.textContent = state;
-  pillSub.textContent = sub;
-  pillSub.className = subGloss ? "gl" : "";
-  pillSub.hidden = !sub;
-  island.style.width = "auto";
-  const to = islandIn.getBoundingClientRect().width;
-  if (!first && from > 0) { island.style.width = `${from}px`; void island.offsetWidth; }
-  island.style.width = `${Math.ceil(to)}px`;
-  if (!first) { islandIn.classList.remove("morph"); void islandIn.offsetWidth; islandIn.classList.add("morph"); }
+  dot.dataset.tone = tone;
+  if (statusEl.textContent !== label) statusEl.textContent = label;
 }
 
 function render() {
   const v = view();
   stage.dataset.state = v;
-  stage.classList.toggle("blocked", BLOCKED.has(v));
   document.body.dataset.state = v;
   document.body.dataset.listening = listening;
-  const cur = job?.res.playlist[idx];
-  if (v === "signing") setIsland("sign", "Signing", cur?.gloss ?? "", true);
-  else if (v === "caption_only") setIsland("warn", "Can't sign yet");
-  else if (v === "confirm") setIsland("warn", "Confirm");
-  else if (v === "offline") setIsland("off", "Offline");
-  else if (v === "error") setIsland("off", "Off", s.source === "tab" ? "Tab" : "Mic");
-  else if (v === "starting") setIsland("idle", "Starting");
-  else if (v === "listening") setIsland("live", "Listening", SRC_LABEL[s.source]);
-  else setIsland("idle", "Ready");
-  renderFocus(v);
-  if (!BLOCKED.has(v) && v !== "signing") showNeutral();
+  const tone: Tone = v === "signing" ? "sign" : v === "listening" ? "live" : v === "offline" || v === "error" ? "off" : "idle";
+  setStatus(tone, v === "listening" ? `${LABEL[v]} to ${SRC_LABEL[s.source]}` : LABEL[v]);
+  renderNote(v);
+  if (v !== "signing") showNeutral();
 }
 
-let focusKey = "";
-function setFocus(html: string, reason = "", acts = "", len = 0) {
-  const key = `${html}|${acts}`;
-  if (key !== focusKey) {
-    focusKey = key;
-    focusText.innerHTML = html;
-    focusText.dataset.len = len > 22 ? "l" : len > 11 ? "m" : "s";
-    actions.innerHTML = acts;
+// Real problems that need the user (server unreachable, capture off): one small, clean line under the transcript.
+let noteKey = "";
+function renderNote(v: View) {
+  const html = v === "offline"
+    ? `<span>${offlineMsg}</span><button type="button" data-act="server">Set server</button><button type="button" data-act="retry">Retry</button>`
+    : v === "error" ? `<span>${esc(errorText)}</span>` : "";
+  if (html !== noteKey) {
+    noteKey = html;
+    note.innerHTML = html;
+    fitStage();
   }
-  note.innerHTML = reason;
-}
-const bare = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, "");
-const words = (text: string, bad?: Set<string>) =>
-  text.split(/\s+/).filter(Boolean).map((w, k) => `<span class="w${bad?.has(bare(w)) ? " nosign" : ""}" style="--k:${k}">${esc(w)}</span>`).join(" ");
-
-function renderFocus(v: View) {
-  const res = shown?.res;
-  if (v === "caption_only" && res) {
-    const caption = res.safety!.caption;
-    const bad = new Set([...res.unsupported, ...(res.fingerspell ?? []), ...res.safety!.reasons.flatMap((r) => r.tokens)].map(bare));
-    return setFocus(words(caption, bad), reasonLine(res), "", caption.split(/\s+/).length);
-  }
-  if (v === "confirm" && res) {
-    const amb = res.safety!.reasons.filter((r) => r.code === "ambiguous_sense").flatMap((r) => r.tokens);
-    const glosses = confirmPlaylist(res)?.map((p) => p.gloss).join(" · ");
-    const why = amb.length ? `${quoteList(amb)} could mean more than one thing` : "These signs are a paraphrase. Show them?";
-    const caption = res.safety!.caption;
-    const acts = (glosses ? `<button class="primary" data-act="confirm">${ICON.play}Show signs</button>` : "") + `<button data-act="skip">Skip</button>`;
-    return setFocus(words(caption) + (glosses ? `<span class="gl">${esc(glosses)}</span>` : ""), why, acts, caption.split(/\s+/).length + 4);
-  }
-  if (v === "offline") return setFocus(`<span class="ic">${ICON.offline}</span><br/>Can't reach the server`, offlineMsg,
-    `<button class="primary" data-act="server">${ICON.gear}Set server</button><button data-act="retry">Try again</button>`);
-  if (v === "error") return setFocus(`<span class="ic">${s.source === "tab" ? ICON.tab : ICON.mic}</span><br/>${s.source === "tab" ? "Tab audio is off" : "Mic is off"}`, esc(errorText));
-  setFocus("", "");
   cc.dataset.empty = hint ? hint
     : v === "listening" ? (s.source === "tab" ? "Listening to this tab…" : "Listening… speak near your computer.")
     : v === "starting" ? ""
@@ -383,22 +330,10 @@ function renderFocus(v: View) {
     : "Press Start and speak.";
 }
 
-actions.addEventListener("click", (e) => {
+note.addEventListener("click", (e) => {
   const act = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-act]")?.dataset.act;
   if (act === "retry") checkHealth();
   if (act === "server") openServerForm();
-  if (act === "skip") { shown = null; heardText = ""; renderCaptions(); render(); }
-  if (act === "confirm" && shown) {
-    const list = confirmPlaylist(shown.res);
-    if (!list) return;
-    const j: Job = { res: { ...shown.res, playlist: list }, confirmed: true };
-    shown = j;
-    jobs.length = 0;
-    jobs.push(j);
-    clearTimeout(holdTimer);
-    holdTimer = 0;
-    advance();
-  }
 });
 
 // ── Gapless playlist player with a crossfade ──
@@ -425,7 +360,7 @@ const rate = () => { const b = backlog(); return b > 6 ? 1.3 : b > 3 ? 1.15 : 1;
 
 let swapToken = 0;
 let swapping = false; // the back video is starting: don't load anything else into it until it is on screen
-let holdTimer = 0; // a caption-only phrase stays readable this long before the next phrase plays
+let holdTimer = 0; // a phrase that can't be signed stays readable in the transcript this long before the next one plays
 function advance() {
   clearTimeout(holdTimer);
   holdTimer = 0;
@@ -438,12 +373,11 @@ function advance() {
       shown = j;
       heardText = "";
       if (blocked(j)) {
-        // Its turn came (after the phrase before it finished signing): the player stops and clears, the exact
-        // caption and the reason come forward.
-        stopVideo();
+        // Its turn came (after the phrase before it finished signing): nothing plays, the signer stays still on its
+        // last frame, and the words stay readable in the transcript for a moment.
         renderCaptions();
         render();
-        holdTimer = window.setTimeout(() => { holdTimer = 0; if (!job && jobs.length) advance(); }, Math.min(4000, 1600 + j.res.words.length * 180));
+        holdTimer = window.setTimeout(() => { holdTimer = 0; if (!job && jobs.length) advance(); }, Math.min(3000, 1200 + j.res.words.length * 150));
         return;
       }
       if (j.res.playlist.length) { job = j; idx = 0; break; }
@@ -527,23 +461,7 @@ function stopVideo() {
   vids.forEach((v) => { v.pause(); v.removeAttribute("src"); delete v.dataset.url; v.load(); v.classList.remove("on", "top"); });
 }
 
-/** needs_confirmation: the plan's signs as a playlist, only if every item is a sign we have a clip for. */
-let vocab = new Map<string, number>();
-function confirmPlaylist(res: SignResponse): PlaylistItem[] | null {
-  const plan = res.plan as { items?: { type: string; motion_id?: string; gloss?: string; source_index?: number }[]; unsupported_tokens?: string[] } | null;
-  if (res.safety?.status !== "needs_confirmation" || !plan?.items?.length || plan.unsupported_tokens?.length) return null;
-  const soft = new Set(["ambiguous_sense", "semantic_uncertainty", "semantic_substitution"]);
-  if (res.safety.reasons.some((r) => !soft.has(r.code))) return null;
-  const out: PlaylistItem[] = [];
-  for (const it of plan.items) {
-    if (it.type !== "sign" || !it.motion_id || !vocab.has(it.motion_id)) return null;
-    out.push({ motion_id: it.motion_id, gloss: it.gloss ?? it.motion_id.replace(/_/g, " "), url: `${client.base}${ROUTES.clips}${it.motion_id}.mp4`,
-      duration_s: vocab.get(it.motion_id)!, word_index: Number.isInteger(it.source_index) ? it.source_index! : -1 });
-  }
-  return out;
-}
-
-// ── Captions: words blur in, the word being signed is highlighted, words without a sign are muted ──
+// ── Transcript: words blur in, the word being signed is highlighted ──
 const chunkSize = () => (s.size === "s" ? 5 : s.size === "m" ? 6 : 8);
 let chunkKey = "";
 function renderCaptions() {
@@ -559,16 +477,16 @@ function renderCaptions() {
     return;
   }
   const j = job ?? shown;
-  if (!j || blocked(j)) {
+  if (!j) {
     if (cc.innerHTML) cc.innerHTML = "";
     chunkKey = "";
     return;
   }
   const res = j.res;
   const playing = job ? idx : res.playlist.length;
-  const frame = res.playlist.length ? captionFrame(res, res.words.length, playing) : null;
+  // Not signed (safety gate): the words simply stay as heard.
+  const frame = res.playlist.length && !blocked(j) ? captionFrame(res, res.words.length, playing) : null;
   const states = frame?.states ?? res.words.map(() => "heard" as const);
-  const unsupported = new Set([...res.unsupported, ...(res.fingerspell ?? [])].map(bare));
   // Balanced chunks (never a lone last word).
   const len = res.words.length;
   const n = Math.ceil(len / Math.max(1, Math.ceil(len / CHUNK)));
@@ -578,10 +496,7 @@ function renderCaptions() {
   const key = `${res.text}|${start}|${n}`;
   if (key !== chunkKey) {
     chunkKey = key;
-    cc.innerHTML = `<i class="hl"></i>` + res.words.slice(start, start + n).map((w, k) => {
-      const ns = unsupported.has(bare(w));
-      return `<span class="w${ns ? " nosign" : ""}" data-i="${start + k}" style="--k:${k}"${ns ? ' title="No sign yet"' : ""}>${esc(w)}</span>`;
-    }).join(" ");
+    cc.innerHTML = `<i class="hl"></i>` + res.words.slice(start, start + n).map((w, k) => `<span class="w" data-i="${start + k}" style="--k:${k}">${esc(w)}</span>`).join(" ");
   }
   let now: HTMLElement | null = null;
   cc.querySelectorAll<HTMLElement>(".w").forEach((el) => {
@@ -627,22 +542,22 @@ function sign(text: string) {
     try {
       res = await p;
     } catch (e) {
-      if (id === seq) { pending = false; clearVideo(); offline(e, t); }
+      if (id === seq) { pending = false; clearVideo(); offline(e); renderCaptions(); }
       return;
     }
     if (id === seq) pending = false;
     if (isOffline) { isOffline = false; render(); }
     dbg.phrases.push({ text: t, status: res.safety?.status ?? "?", glosses: res.playlist.map((x) => x.gloss).join(" ") });
     if (id < seq - 2) return; // overtaken while waiting: keep up with the speech
-    // Blocked phrases queue in order like the rest: one arriving mid-signing waits for that phrase to finish.
+    // Phrases that can't be signed queue in order like the rest (they just don't play).
     enqueue({ res });
   });
 }
 
-function offline(e: unknown, caption = "") {
+function offline(e: unknown) {
   let host = s.apiUrl;
   try { host = new URL(s.apiUrl).host; } catch { /* keep */ }
-  offlineMsg = caption ? `Caption: <q>${esc(caption)}</q>` : `${esc(host)} doesn't answer. Set your SIGNLAYER server in ⚙.`;
+  offlineMsg = `Can't reach <b>${esc(host)}</b>.`;
   console.warn("[signlayer]", e);
   isOffline = true;
   render();
@@ -655,7 +570,6 @@ async function checkHealth() {
   try {
     await client.health();
     if (isOffline) { isOffline = false; render(); }
-    if (!vocab.size) client.vocab().then((v) => { vocab = new Map(v.signs.map((x) => [x.motion_id, x.duration_s])); }).catch(() => {});
     showNeutral();
   } catch (e) {
     offline(e);
@@ -666,18 +580,18 @@ async function checkHealth() {
 let neutralId: string | null = null;
 let stillDone = false;
 async function showNeutral() {
-  if (job || blocked(shown) || vids[front]!.dataset.url) return;
+  if (job || vids[front]!.dataset.url) return;
   try {
     neutralId ??= (await client.vocab()).signs[0]?.motion_id ?? null;
-    if (!neutralId || job || blocked(shown) || vids[front]!.dataset.url) return;
+    if (!neutralId || job || vids[front]!.dataset.url) return;
     const v = vids[front]!;
     load(v, `${client.base}${ROUTES.clips}${neutralId}.mp4`);
     v.addEventListener("loadeddata", () => {
       paintStill(v);
-      if (!job && !blocked(shown)) v.classList.add("on");
+      if (!job) v.classList.add("on");
     }, { once: true });
   } catch {
-    /* idle tile stays dark */
+    /* idle tile keeps its pastel glass */
   }
 }
 function paintStill(v: HTMLVideoElement) {
@@ -687,7 +601,7 @@ function paintStill(v: HTMLVideoElement) {
   try {
     still.getContext("2d")!.drawImage(v, 0, 0, still.width, still.height);
     stillDone = true;
-  } catch { /* cross-origin without CORS: the tile keeps its dark backdrop */ }
+  } catch { /* cross-origin without CORS: the tile keeps its studio backdrop */ }
 }
 
 applySize();

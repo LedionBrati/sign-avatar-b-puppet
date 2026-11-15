@@ -24,7 +24,7 @@ export interface ChunkHandlers {
 export function captureError(e: unknown) {
   const m = e instanceof Error ? `${e.name} ${e.message}` : String(e);
   // Chrome's "not invoked" error also says "Chrome pages cannot be captured", so check the grant first.
-  if (/invoked|activeTab/i.test(m)) return "Go to the tab that's playing audio and click the SIGNLAYER icon in the toolbar. It starts listening there.";
+  if (/invoked|activeTab/i.test(m)) return "Go to the tab that's playing audio and click the Flux icon in the toolbar. It starts listening there.";
   if (/chrome pages|cannot be captured|chrome:\/\//i.test(m)) return "Chrome's own pages can't be captured. Switch to a tab that plays audio.";
   if (/active stream/i.test(m)) return "This tab is already being captured. Stop the other capture and try again.";
   if (/NotAllowed|Permission|denied/i.test(m)) return "Chrome refused to share this tab's audio.";
@@ -148,7 +148,7 @@ export class Chunker {
       const body = (await res.json().catch(() => null)) as (TranscribeResponse & { error?: { code: string; message: string } }) | null;
       if (!res.ok) {
         const code = body?.error?.code ?? `http_${res.status}`;
-        if (code === "transcribe_off") { this.stop(); this.h.onError("Speech-to-text is off on the SIGNLAYER server (it needs an OpenAI key)."); }
+        if (code === "transcribe_off") { this.stop(); this.h.onError("Speech-to-text is off on the Flux server (it needs an OpenAI key)."); }
         else console.warn("[signlayer] transcribe", code, body?.error?.message);
       } else text = body?.text ?? "";
     } catch (e) {
