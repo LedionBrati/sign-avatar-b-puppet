@@ -117,7 +117,7 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
               />
             ) : (
               <View style={s.listen}>
-                <SignWave level={0.95} talking={listening || pending > 0} height={170} />
+                <SignWave level={listening || pending > 0 ? 0.95 : 0.4} talking height={170} />
                 <Text style={s.lbl}>{listening ? "Listening…" : pending > 0 ? "Signing…" : canListen && !typed ? "Starting the microphone…" : "Type something and it will be signed"}</Text>
                 <Text style={s.heard} numberOfLines={3}>{heardLine}</Text>
               </View>

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { ImageBackground, StyleSheet, View } from "react-native";
+import { ImageBackground, Platform, StyleSheet, View } from "react-native";
+import { Asset } from "expo-asset";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Defs, Ellipse, RadialGradient, Stop } from "react-native-svg";
 import { liveGradient } from "../theme";
@@ -8,6 +9,11 @@ const noise = require("../../assets/noise.png");
 
 /** Film grain over everything below it (tiled PNG; the prototype uses SVG feTurbulence + soft-light). */
 export function Grain({ opacity = 0.55 }: { opacity?: number }) {
+  if (Platform.OS === "web") {
+    // react-native-web ignores resizeMode="repeat" on ImageBackground; tile with CSS instead.
+    const uri = Asset.fromModule(noise).uri;
+    return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity, backgroundImage: `url(${uri})`, backgroundRepeat: "repeat", backgroundSize: "160px 160px" } as object]} />;
+  }
   return <ImageBackground source={noise} resizeMode="repeat" style={[StyleSheet.absoluteFill, { opacity }]} imageStyle={{ resizeMode: "repeat" }} pointerEvents="none" />;
 }
 

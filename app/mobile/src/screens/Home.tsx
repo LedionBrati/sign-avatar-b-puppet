@@ -54,7 +54,7 @@ export function Home({ onListen, onType, onSettings }: { onListen: () => void; o
         </View>
         <View style={s.orbwrap}>
           <Pressable onPress={onListen} style={{ width: "100%" }} accessible={false}>
-            <SignWave level={0.22} talking height={140} />
+            <SignWave level={0.3} talking height={140} />
           </Pressable>
           <Pressable onPress={onListen} accessibilityRole="button" testID="listen" style={({ pressed }) => [s.listen, shadow(18, 40, "rgba(5,15,90,0.55)"), { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
             <Text style={s.listenTxt}>{copy.listen}</Text>
@@ -64,7 +64,7 @@ export function Home({ onListen, onType, onSettings }: { onListen: () => void; o
           </Pressable>
         </View>
         <Text style={s.any}>{copy.any}</Text>
-        <Glass radius={22} tint="rgba(255,255,255,0.13)" intensity={40} style={s.ext}>
+        <Glass radius={22} tint="rgba(255,255,255,0.13)" intensity={20} style={s.ext}>
           <View style={s.extIcon}><ExtIcon /></View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={s.extB}>{copy.extTitle}</Text>

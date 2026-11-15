@@ -4,11 +4,11 @@ import { BlurView } from "expo-blur";
 import { colors, fontMedium } from "../theme";
 
 /** Frosted glass surface (expo-blur) with a light tint. */
-export function Glass({ children, style, intensity = 30, tint = "rgba(255,255,255,0.13)", radius = 999 }: { children?: ReactNode; style?: StyleProp<ViewStyle>; intensity?: number; tint?: string; radius?: number }) {
+export function Glass({ children, style, intensity = 18, tint = "rgba(255,255,255,0.13)", radius = 999 }: { children?: ReactNode; style?: StyleProp<ViewStyle>; intensity?: number; tint?: string; radius?: number }) {
   return (
-    <View style={[{ borderRadius: radius, overflow: "hidden" }, style]}>
-      <BlurView intensity={intensity} tint="light" style={StyleSheet.absoluteFill} experimentalBlurMethod={Platform.OS === "android" ? "dimezisBlurView" : undefined} />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} />
+    <View style={[{ borderRadius: radius, overflow: "hidden", zIndex: 0 }, style]}>
+      <BlurView intensity={intensity} tint="light" style={[StyleSheet.absoluteFill, { zIndex: -1 }]} experimentalBlurMethod={Platform.OS === "android" ? "dimezisBlurView" : undefined} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: tint, zIndex: -1 }]} />
       {children}
     </View>
   );

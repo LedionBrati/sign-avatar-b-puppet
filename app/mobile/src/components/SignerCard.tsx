@@ -11,34 +11,36 @@ import { Grain } from "./Field";
 export function SignerCard({ video, caption, speaking }: { video: ReactNode; caption: ReactNode; speaking: boolean }) {
   const [stage, setStage] = useState({ w: 0, h: 0 });
   const onLayout = (e: LayoutChangeEvent) => setStage({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height });
-  const size = stage.h * 1.28;
+  // Prototype: a square 128% of the stage height (capped); also capped by width so the whole vignette stays on the card.
+  const size = Math.min(stage.h * 1.28, 560, stage.w * 1.3);
   return (
     <View style={[s.card, shadow(30, 70, spk.glow, 0.55)]}>
       <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBase }]} />
-      <LinearGradient colors={["rgba(255,255,255,0.30)", "rgba(255,255,255,0)"]} locations={[0, 0.22]} style={StyleSheet.absoluteFill} />
-      <LinearGradient colors={["rgba(5,15,90,0)", "rgba(5,15,90,0.22)"]} locations={[0.55, 1]} style={StyleSheet.absoluteFill} />
       <View style={s.stage} onLayout={onLayout}>
         {stage.h > 0 && (
           <View style={{ position: "absolute", width: size, height: size, left: (stage.w - size) / 2, top: stage.h * 0.54 - size / 2 }}>
             {video}
             <Svg style={StyleSheet.absoluteFill} width={size} height={size} pointerEvents="none">
               <Defs>
-                <RadialGradient id="vig" cx="0.5" cy="0.46" rx="0.4" ry="0.5" fx="0.5" fy="0.46" gradientUnits="objectBoundingBox">
-                  <Stop offset="0.58" stopColor={cardBase} stopOpacity={0} />
-                  <Stop offset="0.82" stopColor={cardBase} stopOpacity={0.75} />
-                  <Stop offset="1" stopColor={cardBase} stopOpacity={1} />
+                <RadialGradient id="vig" cx="0.5" cy="0.48" rx="0.42" ry="0.46" fx="0.5" fy="0.48" gradientUnits="objectBoundingBox">
+                  <Stop offset="0.6" stopColor={cardBase} stopOpacity={0} />
+                  <Stop offset="0.84" stopColor={cardBase} stopOpacity={0.8} />
+                  <Stop offset="0.98" stopColor={cardBase} stopOpacity={1} />
                 </RadialGradient>
               </Defs>
               <Rect x={0} y={0} width={size} height={size} fill="url(#vig)" />
             </Svg>
           </View>
         )}
-        <View style={s.chip}>
-          <View style={s.dot} />
-          <Text style={s.chipTxt}>Speaker 1{speaking ? <Text style={{ opacity: 0.8 }}> · Speaking</Text> : null}</Text>
-        </View>
       </View>
+      {/* Sheen + floor shade over the whole card (video included) so the vignette edge never shows. */}
+      <LinearGradient pointerEvents="none" colors={["rgba(255,255,255,0.22)", "rgba(255,255,255,0)"]} locations={[0, 0.2]} style={StyleSheet.absoluteFill} />
+      <LinearGradient pointerEvents="none" colors={["rgba(5,15,90,0)", "rgba(5,15,90,0.22)"]} locations={[0.55, 1]} style={StyleSheet.absoluteFill} />
       <Grain opacity={0.3} />
+      <View style={s.chip}>
+        <View style={s.dot} />
+        <Text style={s.chipTxt}>Speaker 1{speaking ? <Text style={{ opacity: 0.8 }}> · Speaking</Text> : null}</Text>
+      </View>
       <View style={s.cap}>{caption}</View>
       <View pointerEvents="none" style={s.edge} />
     </View>
