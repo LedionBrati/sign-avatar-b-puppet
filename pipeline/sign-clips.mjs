@@ -11,9 +11,8 @@
 //        node pipeline/sign-clips.mjs say --clips out/realtime/clips --out sentence.mp4 THANK_YOU SEE YOU LATER
 //   joins the clips with stream copy (no re-encode) and prints how long it took.
 
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { ffmpeg, joinClips, toId } from "./lib/clips.mjs";
+import { readFileSync } from "node:fs";
+import { cutClips, joinClips, toId } from "./lib/clips.mjs";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const opt = {};
@@ -23,29 +22,12 @@ for (let i = 0; i < rest.length; i++) {
   else positional.push(rest[i]);
 }
 
-// Every clip gets the same encoding so `say` can join them without re-encoding.
-const ENCODE = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "24", "-g", "12", "-movflags", "+faststart"];
-
 if (cmd === "cut") {
   const { video, segments: segPath, "out-dir": outDir } = opt;
   if (!video || !segPath || !outDir) throw new Error("cut needs --video --segments --out-dir");
   const { segments } = JSON.parse(readFileSync(segPath, "utf8"));
-  mkdirSync(outDir, { recursive: true });
-  const manifestPath = join(outDir, "manifest.json");
-  const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : {};
-  // Neutral segments have gloss null; cut at the middle of each one.
-  const mids = segments.filter((s) => !s.gloss).map((s) => Math.floor((s.start + s.end) / 2));
-  const signs = segments.filter((s) => s.gloss);
-  if (mids.length !== signs.length + 1) throw new Error("expected NEUTRAL around every sign");
-  signs.forEach((s, k) => {
-    const id = toId(s.gloss);
-    const [a, b] = [mids[k], mids[k + 1]];
-    const file = `${id}.mp4`;
-    ffmpeg(["-i", video, "-vf", `trim=start_frame=${a}:end_frame=${b},setpts=PTS-STARTPTS`, ...ENCODE, join(outDir, file)]);
-    manifest[id] = { gloss: s.gloss, file, frames: b - a, seconds: Number(((b - a) / 24).toFixed(3)), source_video: resolve(video), source_frames: [a, b] };
-    console.log(`${id}: frames ${a}-${b} (${b - a})`);
-  });
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 1));
+  // Neutral segments have gloss null; lib/clips.mjs cuts at the middle of each one (same encoding for every clip).
+  await cutClips({ video, segments, outDir, log: (line) => console.log(line) });
 } else if (cmd === "say") {
   const { clips, out } = opt;
   if (!clips || !out || positional.length === 0) throw new Error("say needs --clips --out and glosses");
