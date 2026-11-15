@@ -12,6 +12,8 @@
 //     curl -L -O https://downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2 ; bunzip2 it
 //     -> eng_sentences.tsv
 // Plus translate/coverage-domain.txt (our own ~50 doctor / pharmacy / travel / announcement / small-talk lines).
+// Optional: RECOGNIZER_MAP (default app/recognizer/models/gislr_labels.json, from app/recognizer/fetch_models.py) adds
+// the 250-sign recognizer vocab as a third column; skipped when the file is missing.
 //
 // Rules layer for everything (sync, cheap). Semantic layer (local MiniLM, 1 ONNX thread by default) only on
 // samples: the top unsupported words and ~200 sentences. Prints markdown tables; JSON in cache/coverage/results.json.
@@ -20,7 +22,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { translate, translateRules, toMotionId } from "./index.mjs";
 import { DROP, tokenize } from "./rules.mjs";
-import { CACHE_DIR, HERE, createNodeMatcher, loadEnglishWords, loadVocab } from "./node.mjs";
+import { CACHE_DIR, HERE, REPO, createNodeMatcher, loadEnglishWords, loadVocab } from "./node.mjs";
 
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(`--${n}`);
@@ -30,7 +32,7 @@ const SEM_WORDS = num("semantic-words", 5000), SEED = num("seed", 42), THREADS =
 const DATA = join(CACHE_DIR, "coverage");
 const SUBTLEX = join(DATA, "SUBTLEXus74286wordstextversion.txt");
 const TATOEBA = join(DATA, "eng_sentences.tsv");
-const RECOGNIZER_MAP = process.env.RECOGNIZER_MAP ?? "C:/Users/DELL/AppData/Local/Temp/claude/C--Users-DELL-Desktop-ai-summit/d0736f17-77ac-4311-a8e8-87de17536e75/scratchpad/map.json";
+const RECOGNIZER_MAP = process.env.RECOGNIZER_MAP ?? join(REPO, "app/recognizer/models/gislr_labels.json");
 for (const p of [SUBTLEX, TATOEBA]) if (!existsSync(p)) { console.error(`missing ${p}; see the header of coverage.mjs`); process.exit(2); }
 
 const T0 = performance.now();

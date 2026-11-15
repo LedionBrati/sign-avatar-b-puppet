@@ -14,7 +14,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SignApiError, composeSentence, createSignClient, knownPhrase, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
 import { ClockIcon, CloseIcon, GridIcon, HandIcon, PauseIcon, SpeakerIcon, UndoIcon } from "../components/Icons";
-import { type IslandTone } from "../components/Island";
 import { Segmented } from "../components/Segmented";
 import { createTracker, drawOverlay, type Tracker } from "../lib/holistic";
 import { createSegmenter, type SegState, type SegmentDone } from "../lib/segmenter";
@@ -344,7 +343,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
       client.speak(text, { signal: AbortSignal.timeout(VOICE_MS) }) // exactly one /api/speak per spoken phrase
         .then((blob) => {
           if (!alive.current) return;
-          return playVoice(blob, done).catch((err) => {
+          return playVoice(blob, done).catch(() => {
             // Browser blocked sound (no tap yet): keep the natural voice and play it on the first tap.
             // Never fall back to the robot voice: hold the natural voice and play it on the next tap.
             pendingVoice.current = { blob, done };
@@ -481,9 +480,6 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const cands = last?.options?.slice(0, 3) ?? [];
   const ready = cam === "ready" && track === "ready";
   const busy = pending > 0 || composing;
-  const camOff = !ready ? (cam === "starting" || track === "loading" ? "Starting camera" : "Camera off") : null;
-  const tone: IslandTone = speaking ? "sign" : camOff ? (cam === "starting" || track === "loading" ? "busy" : "warn") : paused ? "idle" : seg === "recording" ? "rec" : busy ? "busy" : "live";
-  const island = speaking ? "Speaking:" : camOff ?? (paused ? "Paused" : seg === "recording" ? "Signing…" : "Reading");
   const status = cam === "denied" || cam === "nocam" || cam === "error" ? "Camera unavailable" : cam === "starting" ? "Starting the camera…" : track === "loading" ? "Loading hand tracking…" : track === "error" ? "Hand tracking unavailable" : paused ? "Paused. Tap Resume to keep reading." : seg === "recording" ? "Signing… rest your hands to speak" : busy ? "Reading…" : hands ? "Hands found. Sign a word." : "Raise your hands and sign";
   const btn = paused ? "Resume" : "Pause";
   return (

@@ -9,6 +9,9 @@ Pipeline per clip: video -> MediaPipe Tasks HolisticLandmarker (Python, VIDEO mo
 
 Landmarks are biometric: they are cached as .npy OUTSIDE the repo (--cache, default %TEMP%/signlayer-eval-cache)
 only so reruns are fast, and are never printed. The videos stay in the library folder (WLASL, research use only).
+
+Library: --lib DIR (the folder holding index.json and videos/), default the folder of $SIGN_DICTIONARY; one is required.
+Holistic model: app/recognizer/models/ or motion/models/ (motion extraction), else downloaded into app/recognizer/models/.
 """
 
 from __future__ import annotations
@@ -29,8 +32,8 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-LIB = Path(r"C:\Users\DELL\Desktop\ai-summit\data\signs")
-HOLISTIC = [HERE / "models" / "holistic_landmarker.task", Path(r"C:\Users\DELL\Desktop\sbp-motion\motion\models\holistic_landmarker.task")]
+LIB = Path(os.environ["SIGN_DICTIONARY"]).parent if os.environ.get("SIGN_DICTIONARY") else None
+HOLISTIC = [HERE / "models" / "holistic_landmarker.task", HERE.parents[1] / "motion" / "models" / "holistic_landmarker.task"]
 HOLISTIC_URL = "https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task"
 # GISLR label -> library gloss, only where it is the same sign.
 ALIAS = {"thankyou": "thank you", "icecream": "ice cream", "frenchfries": "french fries", "grandpa": "grandfather",
@@ -144,7 +147,7 @@ def pct(v: list[float], q: float) -> float:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", default="http://127.0.0.1:8788")
-    ap.add_argument("--lib", type=Path, default=LIB)
+    ap.add_argument("--lib", type=Path, default=LIB, help="WLASL library folder with index.json (default: folder of SIGN_DICTIONARY)")
     ap.add_argument("--limit", type=int, default=0, help="0 = every clip in the GISLR vocabulary")
     ap.add_argument("--mirror", action="store_true", help="also evaluate horizontally flipped clips")
     ap.add_argument("--spell", action="store_true", help="fingerspelling sanity check on single-letter clips")
@@ -152,6 +155,8 @@ def main():
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 4) // 2))
     ap.add_argument("--json", type=Path, help="write per-clip results (labels and scores only) here")
     a = ap.parse_args()
+    if not a.lib or not (a.lib / "index.json").exists():
+        ap.error(f"no WLASL library index.json in {a.lib} (pass --lib DIR or set SIGN_DICTIONARY=<path-to>/index.json)")
 
     index = json.loads((a.lib / "index.json").read_text(encoding="utf8"))
     labels = json.loads((HERE / "models" / "gislr_labels.json").read_text())

@@ -5,7 +5,8 @@
 //   -> out/artifact-app/clips/*.mp4  every clip of the clip dirs (first dir wins on duplicates), fetched by relative URL
 //   -> out/artifact-app/files.json   {published path: local path} for publishing
 // The API runs in the page (src/artifact/shim.ts: rules translator + playlist + safety gate of app/server, relaxed).
-// Clip dirs: ARTIFACT_CLIPS_DIRS ("a;b"), default the realtime clips + clips-mass of the main checkout.
+// Clip dirs: ARTIFACT_CLIPS_DIRS ("a;b"), default out/realtime/{clips,clips-mass} of this checkout, or of the main
+// checkout next to it (../sign-avatar-b-puppet) when this worktree has none.
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -16,8 +17,9 @@ import react from "@vitejs/plugin-react";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
 const outDir = path.join(repo, "out/artifact-app");
-const REALTIME = "C:\\Users\\DELL\\Desktop\\sign-avatar-b-puppet\\out\\realtime";
-const clipDirs = (process.env.ARTIFACT_CLIPS_DIRS ?? `${REALTIME}\\clips;${REALTIME}\\clips-mass`).split(/[;,]/).map((d) => d.trim()).filter(Boolean);
+const REALTIME = [path.join(repo, "out/realtime"), path.resolve(repo, "../sign-avatar-b-puppet/out/realtime")]
+  .find((d) => fs.existsSync(path.join(d, "clips/manifest.json"))) ?? path.join(repo, "out/realtime");
+const clipDirs = (process.env.ARTIFACT_CLIPS_DIRS ?? `${path.join(REALTIME, "clips")};${path.join(REALTIME, "clips-mass")}`).split(/[;,]/).map((d) => d.trim()).filter(Boolean);
 const FPS = 24;
 const BUDGET = 60 * 1024 * 1024; // the artifact allows 64 MB per version; keep headroom for the page
 const MAX_FILE = 16 * 1024 * 1024;

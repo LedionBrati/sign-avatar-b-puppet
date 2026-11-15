@@ -32,8 +32,3 @@ export function addTurn(who: Turn["who"], text: string) {
 export function recentHistory(n = 10): { who: Turn["who"]; text: string }[] {
   return readChat().slice(-n).map(({ who, text }) => ({ who, text }));
 }
-
-export function clearChat() {
-  mem = [];
-  try { sessionStorage.removeItem(KEY); } catch { /* blocked */ }
-}

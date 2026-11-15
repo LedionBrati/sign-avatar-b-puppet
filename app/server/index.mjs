@@ -59,7 +59,7 @@ class HttpError extends Error {
 
 /**
  * @param {object} [o]
- * @param {string[]} [o.clipsDirs]  default: CLIPS_DIR env (comma-separated) or the puppet repo's out/realtime/clips
+ * @param {string[]} [o.clipsDirs]  default: CLIPS_DIR env (comma-separated) or <repo>/out/realtime/clips (lib/clips.mjs)
  * @param {boolean} [o.semantic]    default: SEMANTIC env != "0"; warms the local model in the background
  * @param {object} [o.matcher]      SemanticMatcher override (tests)
  * @param {string} [o.recognizerUrl]  default: RECOGNIZER_URL env or http://127.0.0.1:8788

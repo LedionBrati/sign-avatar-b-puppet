@@ -144,10 +144,10 @@ Struck-through signs failed the hand check (see below). Zipf runs from 7.43 (TO)
 ## The paid command (for the lead, after the owner sets the budget)
 Run it from this worktree. `FAL_KEY` must already be in the operator's environment; never put it in a file or on the command line history.
 ```bash
-cd C:/Users/DELL/Desktop/sbp-mass
+cd <repo>   # the checkout that holds out/mass/state.json
 node pipeline/mass/mass.mjs repaint --top 300 --dry-run --budget-usd 40 --budget-basis listed   # free: shows what fits
 node pipeline/mass/mass.mjs repaint --top 300 --execute --budget-usd 40 --budget-basis listed --concurrency 2 \
-  --clips-dir C:/Users/DELL/Desktop/sign-avatar-b-puppet/out/realtime/clips-mass
+  --clips-dir <main-checkout>/out/realtime/clips-mass
 node pipeline/mass/mass.mjs status --top 300
 ```
 - **Budget levels:**

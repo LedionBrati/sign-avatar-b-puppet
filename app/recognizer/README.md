@@ -63,9 +63,11 @@ words, where motion exists; extra instances such as `all-a1/a3`, `have-a1..a3`, 
 - `TEMPLATES=off` disables it (GISLR only). `/health` shows `gislr (250 signs) + wlasl templates (332 signs)`.
 
 ```bash
-.venv/Scripts/python build_templates.py            # rebuild models/templates.npz (~1.4 MB, gitignored, ~10 s)
+.venv/Scripts/python build_templates.py --index <path-to>/index.json   # rebuild models/templates.npz (~1.4 MB, gitignored, ~10 s)
 .venv/Scripts/python build_templates.py --eval-only --gislr   # leave-one-out check, also merged with GISLR
 ```
+
+Motion comes from `--motion` / `MOTION_DIR` (default `out/motion/wlasl`, see `motion/batch_library.py`); glosses from the clip manifests in `CLIPS_DIR` (default `out/realtime/clips*`).
 
 Leave-one-out on the 13 glosses with 2+ extracted instances (44 queries, each matched against the bank without
 itself, from the raw json converted to the 543 x 3 layout the server receives; different signers): templates
@@ -81,7 +83,7 @@ uv sync --group eval                                                   # + media
 uv run --group eval python eval_wlasl.py --url http://127.0.0.1:8787 --spell   # through the Node proxy, all overlapping clips
 ```
 
-Takes WLASL clips from the library (`C:\Users\DELL\Desktop\ai-summit\data\signs\index.json`) whose gloss is in the GISLR vocabulary, extracts landmarks with the Python HolisticLandmarker (VIDEO mode, 478 -> 468 face packing, hands window like the web client), posts them over HTTP and reports top-1/top-5 and latency. Landmark caches go to `%TEMP%/signlayer-eval-cache`, never the repo. Results: `experiments/2026-11-15-sign-recognizer.md`.
+Takes WLASL clips from the library (`--lib <path-to>/signs` or `SIGN_DICTIONARY=<path-to>/index.json`) whose gloss is in the GISLR vocabulary, extracts landmarks with the Python HolisticLandmarker (VIDEO mode, 478 -> 468 face packing, hands window like the web client), posts them over HTTP and reports top-1/top-5 and latency. Landmark caches go to `%TEMP%/signlayer-eval-cache`, never the repo. Results: `experiments/2026-11-15-sign-recognizer.md`.
 
 ## Files
 
