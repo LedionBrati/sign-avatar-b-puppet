@@ -123,6 +123,20 @@ try {
   const box2 = await frameEl.boundingBox();
   check(corner === "tl", `dragged + snapped to corner "${corner}" at ${Math.round(box2.x)},${Math.round(box2.y)}`);
   await page.screenshot({ path: resolve(root, "docs/.drag-check.png") });
+
+  // 4. Extension menu + mic side panel render (opened as tabs; headless has no toolbar).
+  for (const [name, w, h] of [["popup", 350, 600], ["sidepanel", 360, 640]]) {
+    const p = await browser.newPage();
+    await p.setViewport({ width: w, height: h });
+    await p.goto(`chrome-extension://${extId}/${name}.html`, { waitUntil: "load" });
+    await sleep(1200);
+    await p.screenshot({ path: resolve(root, `docs/.${name}.png`) });
+    if (name === "popup") {
+      const api = await p.evaluate(() => document.getElementById("pliveText")?.textContent);
+      check(api === "Ready", `popup API status: ${api}`);
+    }
+    await p.close();
+  }
 } catch (e) {
   console.error(e);
   failed = true;
