@@ -1,11 +1,12 @@
 import "./style.css";
 import { browser } from "wxt/browser";
 import type { HealthResult, TabAudioStatus, ToBackground } from "@/lib/messages";
-import { getSettings, onSettings, setSettings, type Settings, type Size, type Source } from "@/lib/settings";
+import { getSettings, onSettings, setSettings, SOURCES, type Settings, type Size, type Source } from "@/lib/settings";
 import { $, esc, MARK, WORDMARK } from "@/lib/brand";
 import { ICON, SOURCE_ICON } from "@/lib/icons";
 
 document.querySelectorAll(".brand").forEach((el) => (el.innerHTML = MARK + WORDMARK));
+document.querySelectorAll(".brand-mark").forEach((el) => (el.innerHTML = MARK));
 document.querySelectorAll<HTMLElement>("[data-icon]").forEach((el) => (el.innerHTML = SOURCE_ICON[el.dataset.icon as Source] ?? ""));
 const send = <T>(m: ToBackground) => browser.runtime.sendMessage(m) as Promise<T>;
 
@@ -32,18 +33,19 @@ try {
 } catch { /* keep */ }
 $("site").textContent = site;
 
+/** One quiet line under the segmented control: what this source does, or what it needs right now. */
 const HINT: Record<Source, () => string> = {
-  captions: () => "Follows YouTube's transcript or <b>CC</b>, or any video with captions. Lines are signed in time with the video.",
+  captions: () => "Follows the video's transcript or captions, in time with it.",
   tab: () => {
-    if (health?.ok && health.transcribe === "off") return `<span class="bad">Speech-to-text is off on the server.</span> Start it with an OpenAI key (OPENAI_API_KEY_FILE).`;
-    if (tab.state === "listening" && tab.tabId === activeTab?.id) return `<span class="ok">Listening to this tab.</span> Speech appears in the signer after a few seconds.`;
+    if (health?.ok && health.transcribe === "off") return `<span class="bad">Speech-to-text is off on the server.</span>`;
+    if (tab.state === "listening" && tab.tabId === activeTab?.id) return `<span class="ok">Listening to this tab.</span> Speech shows up in a second or two.`;
     if (tab.state === "starting") return "Starting…";
     if (tab.state === "error") return `<span class="bad">${esc(tab.detail ?? "Tab audio stopped")}</span>`;
-    if (tab.state === "listening") return "Listening to another tab. Start here to switch.";
-    return "Whatever this tab plays (calls, podcasts, any video) becomes text on your SIGNLAYER server, then signs.";
+    if (tab.state === "listening") return "Listening to another tab.";
+    return "Whatever this tab plays: calls, podcasts, any video.";
   },
   mic: () => "Speech around you, recognised by Chrome in the side panel.",
-  selection: () => "Select text on any page, then right-click › <b>Sign with SIGNLAYER</b> or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>.",
+  selection: () => "Select text, then right-click › <b>Sign with SIGNLAYER</b>.",
 };
 
 function render() {
@@ -52,7 +54,11 @@ function render() {
   $("hero").classList.toggle("off", !s.enabled);
   $("ccsw").setAttribute("aria-checked", String(s.captions));
   document.querySelectorAll<HTMLButtonElement>("#srcseg button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.v === s.source)));
-  document.querySelectorAll<HTMLButtonElement>('[data-seg="size"] button').forEach((b) => b.classList.toggle("on", b.dataset.v === s.size));
+  $("srcseg").style.setProperty("--i", String(SOURCES.indexOf(s.source)));
+  document.querySelectorAll<HTMLButtonElement>('[data-seg="size"] button').forEach((b) => {
+    b.classList.toggle("on", b.dataset.v === s.size);
+    b.setAttribute("aria-checked", String(b.dataset.v === s.size));
+  });
   $("hint").innerHTML = HINT[s.source]();
   const act = $("act") as HTMLButtonElement;
   const here = tab.tabId === activeTab?.id && (tab.state === "listening" || tab.state === "starting");
@@ -61,7 +67,6 @@ function render() {
   act.innerHTML = s.source === "mic" ? `${ICON.mic}Open the mic panel` : here ? `${ICON.pause}Stop tab audio` : `${ICON.tab}Start tab audio`;
   const input = $("apiUrl") as HTMLInputElement;
   if (document.activeElement !== input) input.value = s.apiUrl;
-  $("urlShort").textContent = s.apiUrl.replace(/^https?:\/\//, "");
 }
 
 $("sw").addEventListener("click", async () => {
@@ -76,10 +81,19 @@ $("srcseg").addEventListener("click", async (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>("button");
   if (!b) return;
   const v = b.dataset.v as Source;
+  s.source = v;
+  render(); // the thumb moves on the click, not after the storage round trip
   await setSettings({ source: v, enabled: true });
   // This click is the user gesture tabCapture needs: start tab audio right away.
   if (v === "tab") startTab();
   else if (v !== "captions") send({ type: "mount-active" }).catch(() => {});
+});
+// Arrow keys move along the segmented control (radio group).
+$("srcseg").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  e.preventDefault();
+  const i = (SOURCES.indexOf(s.source) + (e.key === "ArrowRight" ? 1 : SOURCES.length - 1)) % SOURCES.length;
+  document.querySelector<HTMLButtonElement>(`#srcseg [data-v="${SOURCES[i]}"]`)?.focus();
 });
 
 async function startTab() {
@@ -112,13 +126,13 @@ $("apiForm").addEventListener("submit", (e) => {
 
 async function checkHealth() {
   const pill = $("status"), text = $("statusText"), st = $("apiStatus");
-  text.textContent = "Checking…";
   pill.className = "status";
   health = await send<HealthResult>({ type: "health" });
   pill.classList.add(health.ok ? "ok" : "bad");
-  text.innerHTML = health.ok ? `Ready · <b>${health.signs}</b> signs` : "Offline";
+  text.textContent = health.ok ? `${health.signs} signs` : "Offline";
+  pill.title = health.ok ? `Connected to ${health.url}` : `Can't reach ${health.url}`;
   st.innerHTML = health.ok
-    ? `<span class="ok">Connected</span> · ${health.signs} signs · speech-to-text ${esc(health.transcribe ?? "off")} · agent ${esc(health.agent ?? "off")}`
+    ? `<span class="ok">Connected</span> · speech-to-text ${esc(health.transcribe ?? "off")} · agent ${esc(health.agent ?? "off")}`
     : `<span class="bad">Can't reach ${esc(health.url)}</span>. Start it with <b>node app/server/index.mjs</b>`;
   if (!health.ok) ($("server") as HTMLDetailsElement).open = true;
   render();

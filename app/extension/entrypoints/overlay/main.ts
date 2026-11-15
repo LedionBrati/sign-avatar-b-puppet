@@ -293,7 +293,7 @@ function renderFocus(v: View) {
   cc.dataset.empty =
     v === "ad" ? "Ad playing · signing resumes after it"
     : v === "need-cc" ? "Turn on CC in the player"
-    : v === "paused" ? "Paused"
+    : v === "paused" ? ""
     : phrases ? ""
     : s.source === "tab" ? (tabState === "listening" || tabState === "starting" ? "Listening to this tab…" : "Choose Tab audio in the SIGNLAYER menu")
     : s.source === "mic" ? (tabDetail || "Open the mic panel from the SIGNLAYER menu")
