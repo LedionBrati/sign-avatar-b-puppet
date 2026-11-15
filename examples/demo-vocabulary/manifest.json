@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "purpose": "Local technical demo only; no production-verified ASL signs or redistributable assets",
+  "rights": "WLASL C-UDA limits use to academic/computational noncommercial contexts. Original SignSchool and derived-motion redistribution permissions require review.",
+  "asset_root": "out/demo",
+  "local_catalog_path": "out/demo/catalog-wiring-only.json",
+  "local_summary_path": "out/demo/run-summary.json",
+  "signs": [
+    {
+      "id": "HELLO", "gloss": "HELLO", "stem": "hello-27172", "wlasl_video_id": "27172", "signer": "46",
+      "source": "SignSchool", "source_url": "https://signstock.blob.core.windows.net/signschool/videos/db_uploads/SignSchool%20Hello-6kvCOzxP9_A.mp4",
+      "source_path": "out/demo/source/hello-27172.mp4", "raw_path": "out/demo/motion/hello-27172.raw.json", "clean_path": "out/demo/motion/hello-27172.clean.json", "report_dir": "out/demo/reports/hello-27172", "comparison_path": "out/demo/renders/hello-27172-comparison.mp4",
+      "qa_status": "technical_playback_only", "qa_limitations": "Hand near forehead; contact location and finger shape need fluent-signer review"
+    },
+    {
+      "id": "THANK_YOU", "gloss": "THANK_YOU", "stem": "thank-you-57655", "wlasl_video_id": "57655", "signer": "46",
+      "source": "SignSchool", "source_url": "https://signstock.blob.core.windows.net/signschool/videos/db_uploads/SignSchool%20ThankYou-OGQTouYS3zM.mp4",
+      "source_path": "out/demo/source/thank-you-57655.mp4", "raw_path": "out/demo/motion/thank-you-57655.raw.json", "clean_path": "out/demo/motion/thank-you-57655.clean.json", "report_dir": "out/demo/reports/thank-you-57655", "comparison_path": "out/demo/renders/thank-you-57655-comparison.mp4",
+      "qa_status": "technical_playback_only", "qa_limitations": "Hand-to-chin contact and two filled right-hand frames need review"
+    },
+    {
+      "id": "YES", "gloss": "YES", "stem": "yes-64284", "wlasl_video_id": "64284", "signer": "3",
+      "source": "SignSchool", "source_url": "https://signstock.blob.core.windows.net/signschool/videos/db_uploads/SignSchool%20Yes-Kg0VRsnehgQ.mp4",
+      "source_path": "out/demo/source/yes-64284.mp4", "raw_path": "out/demo/motion/yes-64284.raw.json", "clean_path": "out/demo/motion/yes-64284.clean.json", "report_dir": "out/demo/reports/yes-64284", "comparison_path": "out/demo/renders/yes-64284-comparison.mp4",
+      "qa_status": "technical_playback_only", "qa_limitations": "Fast fist movement creates visible blur; one filled right-hand frame"
+    },
+    {
+      "id": "NO", "gloss": "NO", "stem": "no-38527", "wlasl_video_id": "38527", "signer": "3",
+      "source": "SignSchool", "source_url": "https://signstock.blob.core.windows.net/signschool/videos/db_uploads/SignSchool%20No-hwa_U71nr74.mp4",
+      "source_path": "out/demo/source/no-38527.mp4", "raw_path": "out/demo/motion/no-38527.raw.json", "clean_path": "out/demo/motion/no-38527.clean.json", "report_dir": "out/demo/reports/no-38527", "comparison_path": "out/demo/renders/no-38527-comparison.mp4",
+      "qa_status": "technical_playback_only", "qa_limitations": "Index/middle/thumb closure needs close-up review; one filled right-hand frame"
+    }
+  ],
+  "sequences": [
+    { "id": "hello-thank-you", "plan_path": "examples/demo-vocabulary/plans/hello-thank-you.json", "motion_path": "out/demo/composed/hello-thank-you.json", "render_path": "out/demo/renders/hello-thank-you.mp4", "playback_status": "technical_playback_only" },
+    { "id": "yes-thank-you", "plan_path": "examples/demo-vocabulary/plans/yes-thank-you.json", "motion_path": "out/demo/composed/yes-thank-you.json", "render_path": "out/demo/renders/yes-thank-you.mp4", "playback_status": "technical_playback_only" },
+    { "id": "no-thank-you", "plan_path": "examples/demo-vocabulary/plans/no-thank-you.json", "motion_path": "out/demo/composed/no-thank-you.json", "render_path": "out/demo/renders/no-thank-you.mp4", "playback_status": "technical_playback_only" }
+  ]
+}
