@@ -206,8 +206,9 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   const canSpeak = speechSupported();
   const again = () => onRestart(canSpeak ? { kind: "mic" } : { kind: "typed", text: "" });
 
-  // Before the card is up, the captions carry what has been heard so far (typed text builds up at speaking pace).
-  const capWords = !revealed && start.kind === "typed" ? firstWords.slice(0, heardShown).map((text) => ({ text, state: "heard" as const })) : view.words;
+  // Before the card is up, the captions carry what has been heard so far (typed text builds up at speaking pace; the
+  // words not yet "heard" hold their place invisibly, so the line never reflows as they fade in).
+  const capWords = !revealed && start.kind === "typed" ? firstWords.map((text, i) => ({ text, state: i < heardShown ? ("heard" as const) : ("upcoming" as const) })) : view.words;
 
   return (
     <div ref={root} className={`screen live${revealed ? "" : " listening"}${done ? " done" : ""}`}>
@@ -227,7 +228,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
       ) : null}
 
       <section className="stagewrap">
-        <div className="aura" data-level aria-hidden="true" />
+        <div className="halo" data-level aria-hidden="true" />
         <SignerStage onReady={onPlayer} on={revealed} label={blocked || latestError ? "Signing paused; caption shown" : "Signer"}
           safety={safety} error={latestError ? { caption: phrases.at(-1)?.text ?? "", message: latestError } : undefined}>
           <div className="card-wave" aria-hidden="true">

@@ -20,7 +20,7 @@
   --spring-bouncy: linear(0, 0.045, 0.155, 0.3, 0.456, 0.606, 0.741, 0.853, 0.94, 1.004, 1.047, 1.072, 1.082, 1.083, 1.076, 1.065, 1.052, 1.039, 1.027, 1.017, 1.008, 1.002, 0.998, 0.995, 0.994, 0.993, 0.993, 0.994, 0.995, 0.996, 0.997, 0.998, 1);
   --t-press: 120ms; --t-ui: 280ms; --t-morph: 560ms; --t-scene: 640ms;
   /* The signer clips' studio backdrop, so the stage never shows a seam or a black edge */
-  --stage-top: #23282f; --stage-bot: #1a1e26;
+  --stage-top: #252a32; --stage-bot: #1b1f28;
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
 
@@ -48,6 +48,7 @@
   --shadow-card: 0 2px 6px rgb(10 14 40 / .08), 0 30px 70px -28px rgb(10 14 60 / .45);
   --grain-opacity: .035;
   --thumb: #fff;
+  --card-idle: rgb(16 18 28 / .94);
   --sheet-bg: #f2f2f7;
   --group-bg: #fff;
 }
@@ -77,6 +78,7 @@
     --shadow-card: 0 0 0 1px rgb(255 255 255 / .05), 0 40px 90px -30px rgb(0 0 0 / .9);
     --grain-opacity: .05;
     --thumb: #636366;
+    --card-idle: rgb(14 16 24 / .62);
     --sheet-bg: #1c1c1e;
     --group-bg: #2c2c2e;
   }
@@ -106,6 +108,7 @@
   --shadow-card: 0 0 0 1px rgb(255 255 255 / .05), 0 40px 90px -30px rgb(0 0 0 / .9);
   --grain-opacity: .05;
   --thumb: #636366;
+  --card-idle: rgb(14 16 24 / .62);
   --sheet-bg: #1c1c1e;
   --group-bg: #2c2c2e;
 }
@@ -300,9 +303,9 @@ svg { display: block; }
 
 /* ───────────────────────── Aura (audio-reactive glow) ───────────────────────── */
 .aura { position: absolute; left: 50%; top: 50%; z-index: 0; aspect-ratio: 1; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(closest-side, var(--glow) 0%, color-mix(in srgb, var(--glow) 40%, transparent) 45%, transparent 100%);
+  background: radial-gradient(closest-side, var(--glow) 0%, color-mix(in srgb, var(--glow) 55%, transparent) 30%, color-mix(in srgb, var(--glow) 18%, transparent) 62%, transparent 100%);
   translate: -50% -50%; transform: scale(calc(.8 + var(--level, .15) * .5)); opacity: calc(.5 + var(--level, .15) * .9);
-  filter: blur(32px); will-change: transform, opacity; transition: opacity .6s ease; }
+  will-change: transform, opacity; transition: opacity .6s ease; }
 
 /* ───────────────────────── Type field ───────────────────────── */
 .typebox { display: flex; align-items: center; gap: var(--s2); width: 100%; max-width: 560px; height: 52px; padding: 6px 6px 6px var(--s5); border-radius: 999px;
@@ -318,22 +321,26 @@ svg { display: block; }
 .typerow { display: flex; align-items: center; gap: var(--s3); width: 100%; max-width: 640px; animation: rise .45s var(--spring) both; }
 
 /* ───────────────────────── Live ───────────────────────── */
-.stagewrap { position: relative; flex: 1 1 auto; min-height: 0; container-type: size; display: grid; place-items: center; padding: var(--s1) var(--s4) 0; }
-.stagewrap > .aura { width: min(140cqw, 110cqh); }
-.live.done .stagewrap > .aura, .live:not(.listening) .stagewrap > .aura { opacity: calc(.3 + var(--level, .15) * .6); }
+.stagewrap { --w: min(100cqw, 75cqh); --h: min(100cqh, var(--w) * 1.5); position: relative; flex: 1 1 auto; min-height: 0; container-type: size; display: grid; place-items: center; padding: var(--s1) var(--s4) 0; }
+/* Halo: a soft glow that hugs the card and swells with the voice (box-shadow is rasterised once; only transform and
+   opacity change per frame, so it stays on the compositor). */
+.halo { position: absolute; left: 50%; top: 50%; z-index: 0; width: var(--w); height: var(--h); border-radius: var(--r-xl); pointer-events: none;
+  translate: -50% -50%; box-shadow: 0 0 50px 6px var(--glow), 0 0 140px 40px color-mix(in srgb, var(--glow) 45%, transparent);
+  transform: scale(calc(.97 + var(--level, .15) * .1)); opacity: calc(.25 + var(--level, .15) * 1.1); will-change: transform, opacity; transition: opacity .8s ease; }
+.live:not(.listening) .halo { opacity: calc(.12 + var(--level, .15) * .5); }
 /* The card is 3:4 when height-bound (desktop) and grows up to 2:3 when width-bound (phones); the 3:4 signer sits on
    its bottom edge and the extra height is headroom in the clips' own backdrop colour, so nothing is ever cropped. */
-.signer-card { --w: min(100cqw, 75cqh); position: relative; z-index: 1; width: var(--w); height: min(100cqh, var(--w) * 1.5); border-radius: var(--r-xl); overflow: hidden; isolation: isolate;
-  background: rgb(14 16 24 / .66); box-shadow: var(--shadow-card);
+.signer-card { position: relative; z-index: 1; width: var(--w); height: var(--h); border-radius: var(--r-xl); overflow: hidden; isolation: isolate;
+  background: var(--card-idle); box-shadow: var(--shadow-card);
   -webkit-backdrop-filter: blur(40px) saturate(170%); backdrop-filter: blur(40px) saturate(170%);
   transform: scale(.95); transition: transform var(--t-scene) var(--spring-bouncy), box-shadow var(--t-scene) ease; }
 .signer-card::before { content: ""; position: absolute; inset: 0; z-index: 0; background: linear-gradient(180deg, var(--stage-top), var(--stage-bot)); opacity: 0; transition: opacity .7s ease; }
-.signer-card.on { transform: none; }
+.signer-card.on { transform: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .signer-card.on::before { opacity: 1; }
 .signer-card::after { content: ""; position: absolute; inset: 0; z-index: 8; border-radius: inherit; pointer-events: none;
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / .07), inset 0 1px 0 rgb(255 255 255 / .12); }
 .sl-signer { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; aspect-ratio: 3 / 4; transition: opacity .5s ease;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 7%); mask-image: linear-gradient(180deg, transparent 0, #000 7%); }
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 9%); mask-image: linear-gradient(180deg, transparent 0, #000 9%); }
 .sl-signer.blocked { opacity: 0; }
 .sl-signer video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; }
 .card-wave { position: absolute; left: 0; right: 0; top: 50%; z-index: 2; height: 34%; translate: 0 -50%; opacity: .95; transition: opacity .5s ease, transform var(--t-scene) var(--spring); }
@@ -353,7 +360,7 @@ svg { display: block; }
 
 .capzone { position: relative; z-index: 2; flex: none; width: 100%; max-width: 820px; margin: 0 auto; padding: var(--s5) var(--s5) 0; }
 .capzone.hidden-cap .sl-cap { visibility: hidden; }
-.sl-cap { --lines: 2; --lh: 1.24; position: relative; font: 600 26px/var(--lh) var(--font-display); letter-spacing: -.024em; color: var(--label); }
+.sl-cap { --lines: 2; --lh: 1.24; position: relative; font: 600 26px/var(--lh) var(--font-display); letter-spacing: -.024em; color: var(--label); text-align: center; text-wrap: balance; }
 .sl-cap .view { height: calc(var(--lines) * var(--lh) * 1em); overflow: hidden; }
 .sl-cap .roll { position: relative; isolation: isolate; transition: transform var(--t-scene) var(--spring); }
 .sl-cap .w { display: inline-block; opacity: 0; filter: blur(8px); transform: translateY(.18em);

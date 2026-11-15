@@ -49,7 +49,7 @@ export function Settings({ onClose }: { onClose(): void }) {
             <input id="api" inputMode="url" autoComplete="off" spellCheck={false} placeholder={ENV_API} value={url} onChange={(e) => { setUrl(e.target.value); setStatus(""); }} />
           </div>
           <div className="row">
-            <span className="status" aria-live="polite">{status || "On a phone, use your computer's address, e.g. http://192.168.1.20:8787"}</span>
+            <span className="status" aria-live="polite">{status || "On a phone, use your computer's LAN address."}</span>
             <button className="btn" type="button" onClick={test}>Test</button>
           </div>
         </div>
