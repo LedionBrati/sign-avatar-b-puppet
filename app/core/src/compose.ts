@@ -35,6 +35,18 @@ export const labelText = (label: string) => LABEL_TEXT[label] ?? LABEL_TEXT[labe
 const WORD_FIX: Record<string, string> = { potty: "bathroom", toilet: "bathroom", yourself: "you", minemy: "my", "mine my": "my", weus: "we", "we us": "we", hesheit: "he", me: "I" };
 /** Whole-phrase fixes for common short signed phrases (ASL gloss order -> natural English). Checked on the joined words. */
 const PHRASES: [RegExp, string][] = [
+  [/^(thank you very much|thank you much|thank you very)$/, "Thank you very much."],
+  [/^thank you$/, "Thank you!"],
+  [/^(hello|hi)$/, "Hello!"],
+  [/^good (morning|afternoon|evening|night)$/, "Good $1!"],
+  [/^(hello|hi) (how you|you how|how are you)$/, "Hello, how are you?"],
+  [/^(hello|hi) ((how|you how) (your|you) day|(your|you) day how)$/, "Hello, how was your day?"],
+  [/^((how|you how) (your|you) day|(your|you) day how)$/, "How was your day?"],
+  [/^(can I have|I have can|can have) (some )?water( please)?$/, "Can I have some water, please?"],
+  [/^I want build company$|^I build company want$/, "I want to build a company."],
+  [/^(good|very good)$/, "Good!"],
+  [/^(yes|yes yes)$/, "Yes."],
+  [/^(no|no no)$/, "No."],
   [/^(nice meet you|meet you nice|nice meet)$/, "Nice to meet you."],
   [/^(where bathroom|bathroom where)$/, "Where is the bathroom?"],
   [/^(you how|how you|how are you)$/, "How are you?"],
@@ -52,16 +64,27 @@ const PHRASES: [RegExp, string][] = [
   [/^(can I have|I have can|can have) (.+?)( please)?$/, "Can I have $2, please?"],
 ];
 
+/** A known short phrase for these signs, always worded the same (null if none matches). */
+export function knownPhrase(labels: string[]): string | null {
+  const words = labels.filter(Boolean)
+    .map((l) => (l.startsWith("#") ? cap(l.slice(1).toLowerCase()) : labelText(l)))
+    .map((w) => WORD_FIX[w.toLowerCase()] ?? w);
+  if (words.length === 0) return null;
+  const joined = words.join(" ").replace(/\s+/g, " ").trim();
+  for (const [re] of PHRASES) {
+    const r = new RegExp(re.source, "i");
+    if (r.test(joined)) return cap(joined.replace(r, PHRASES.find(([x]) => x === re)![1]));
+  }
+  return null;
+}
+
 export function composeSentence(labels: string[]): string {
+  const known = knownPhrase(labels);
+  if (known) return known;
   const words = labels.filter(Boolean)
     .map((l) => (l.startsWith("#") ? cap(l.slice(1).toLowerCase()) : labelText(l)))
     .map((w) => WORD_FIX[w.toLowerCase()] ?? w);
   if (words.length === 0) return "";
-  const joined = words.join(" ").replace(/\s+/g, " ").trim();
-  for (const [re, out] of PHRASES) {
-    const m = joined.match(new RegExp(re.source, "i"));
-    if (m) return cap(joined.replace(new RegExp(re.source, "i"), out));
-  }
   let question = false;
   const last = words[words.length - 1]!.toLowerCase();
   if (WH.has(last) && words.length > 1) {
