@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { captionFrame, createSignClient, playlistSeconds, type SignResponse } from "@signlayer/core";
+import { captionFrame, createSignClient, generatingLabel, playlistSeconds, type SignResponse } from "@signlayer/core";
 import { Field } from "../components/Field";
 import { Mark } from "../components/Mark";
 import { Pill } from "../components/Glass";
@@ -115,6 +115,7 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
 
   const island = blocked ? safetyTitle : done ? "1 speaker · Done" : showCard ? "1 speaker" : listening ? "Listening" : canListen && !typed ? "Starting…" : "Type to sign";
   const heardLine = interim || (pending > 0 ? session.text || "…" : "");
+  const generating = generatingLabel(session);   // "Generating SICK… ~2 min": the server is making the missing clip
 
   return (
     <Field>
@@ -136,7 +137,10 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
               <SignerCard
                 speaking={!done && frame.current >= 0}
                 video={<PlaylistPlayer key={runKey} playlist={session.playlist} runKey={runKey} onIndex={setPlaying} />}
-                caption={<CaptionSheet words={session.words} states={frame.states} unsigned={unsigned} lines={2} />}
+                caption={<View>
+                  <CaptionSheet words={session.words} states={frame.states} unsigned={unsigned} lines={2} />
+                  {generating ? <Text style={s.gen} testID="generating" accessibilityRole="text">{generating}</Text> : null}
+                </View>}
                 notice={error ? <>
                   <Text style={s.safetyTitle}>Signing unavailable</Text>
                   <Text style={s.safetyCaption}>{errorCaption}</Text>
@@ -210,6 +214,8 @@ const s = StyleSheet.create({
   sumB: { fontWeight: "600" },
   acts: { flexDirection: "row", gap: 8 },
   err: { color: "#ffd9d9", fontSize: 13, fontFamily: font },
+  gen: { position: "absolute", right: 16, top: -11, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, overflow: "hidden",
+    backgroundColor: "#f4f6ff", color: "#1f34b5", fontSize: 11, fontWeight: "600", fontFamily: fontMedium },
   hint: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontFamily: font, textAlign: "center" },
   credit: { color: "rgba(255,255,255,0.45)", fontSize: 10, fontFamily: font },
   safetyTitle: { color: "#1f34b5", fontSize: 19, fontWeight: "600", fontFamily: fontMedium },

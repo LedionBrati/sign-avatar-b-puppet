@@ -1,7 +1,7 @@
 // SIGNLAYER service worker: caches the app shell so the app opens offline / instantly.
 // Never caches the sign API or clips (they live on the local server and change as signs are added).
 // Paths are relative to the worker, so the app works at / (Vite) and at /app/ (served by app/server for the phone WebView).
-const CACHE = "signlayer-shell-v2";
+const CACHE = "signlayer-shell-v3";
 const BASE = new URL("./", self.location.href).pathname;
 const SHELL = ["", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png"].map((p) => BASE + p);
 

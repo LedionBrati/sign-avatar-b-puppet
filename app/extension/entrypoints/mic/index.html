@@ -2,26 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="color-scheme" content="light" />
-  <title>Enable microphone · SIGNLAYER</title>
+  <meta name="color-scheme" content="dark" />
+  <title>Allow microphone · SIGNLAYER</title>
   <style>
-    body { min-height: 100vh; display: grid; place-items: center; padding: 24px; color: #fff; }
-    .box { width: min(440px, 100%); padding: 28px; color: var(--ink); }
-    .box .wm { font-size: 20px; }
-    h1 { margin: 22px 0 8px; font: 400 24px/1.1 var(--font); text-transform: uppercase; color: var(--ink-blue); }
-    p { margin: 0 0 18px; font-size: 14px; line-height: 1.5; color: rgb(21 25 58 / .75); }
-    button { height: 42px; padding: 0 20px; border-radius: 999px; border: 0; background: var(--cobalt); color: #fff; font-size: 14px; cursor: pointer; box-shadow: 0 8px 20px -10px rgb(31 63 214 / .9); }
-    #msg { margin-top: 14px; min-height: 1.4em; font-size: 13px; }
-    .ok { color: #138a63; } .bad { color: #c0353a; }
+    body { min-height: 100vh; display: grid; place-items: center; padding: 24px; color: #f5f5f7;
+      background: radial-gradient(80% 50% at 50% 0%, rgb(58 91 240 / .18), transparent 60%), #0b0c10; }
+    .box { width: min(400px, 100%); text-align: center; }
+    .brand { display: inline-flex; gap: 8px; align-items: center; }
+    .brand .wm { --wm-ink: #f5f5f7; --wm-dot: #5b78ff; font-size: 17px; }
+    h1 { margin: 22px 0 8px; font: 600 22px/1.2 var(--font-display); letter-spacing: -.02em; }
+    p { margin: 0 0 18px; font-size: 13.5px; line-height: 1.5; color: rgb(245 245 247 / .62); }
+    button { height: 44px; padding: 0 22px; border-radius: 999px; border: 0; background: linear-gradient(180deg, #5b78ff, #3a5bf0); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+    #msg { min-height: 1.4em; font-size: 13px; }
+    .ok { color: #7ee2b8; } .bad { color: #ff8a84; }
   </style>
 </head>
-<body class="g-paper grain">
-  <div class="box glass">
-    <span id="brand"></span>
-    <h1>Enable the microphone</h1>
-    <p>The SIGNLAYER side panel listens to speech near you and signs it on the page you're on. Chrome needs your permission once. Audio is recognised by your browser and never stored by SIGNLAYER.</p>
-    <button id="go">Enable microphone</button>
+<body>
+  <div class="box">
+    <span class="brand" id="brand"></span>
+    <h1>Allow the microphone</h1>
+    <p>Side panels can't ask for the microphone, so Chrome asks here, once. Speech is recognised by your browser and never stored by SIGNLAYER.</p>
     <p id="msg"></p>
+    <button id="go" hidden>Try again</button>
   </div>
   <script type="module" src="./main.ts"></script>
 </body>

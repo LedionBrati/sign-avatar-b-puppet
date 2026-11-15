@@ -1,13 +1,16 @@
-// Cuts one sign out of the landmark stream. Tap Sign -> "armed". When hands appear it keeps a short pre-roll;
-// once they move, recording starts. It stops when the hands are gone or still for ~0.5 s, after 4 s, or on stop().
+// Cuts signs out of the landmark stream. arm() -> "armed". When hands appear it keeps a short pre-roll; once they
+// move, recording starts. A segment ends when the hands are gone or still for ~0.4 s, after 4 s (to split long
+// signing), or on stop(). Continuous (the default): after each segment it goes straight back to "armed", forever,
+// until cancel(); one-shot: back to "idle".
 import { handsVisible, packFrame, packSegment, type HolisticFrame, type Point } from "@signlayer/core";
 
 export type SegState = "idle" | "armed" | "recording";
 
 export const SEG = {
-  goneMs: 500, // hands out of view this long -> stop
-  stillMs: 500, // hands still this long (after moving) -> stop
-  maxMs: 4000, // hard cap per sign
+  goneMs: 400, // hands out of view this long -> end the segment
+  stillMs: 400, // hands still this long (after moving) -> end the segment
+  minMs: 500, // a "still" cut never comes sooner than this after the start
+  maxMs: 4000, // cap per segment (continuous mode keeps reading right after)
   preRoll: 8, // frames kept from before the motion starts
   minFrames: 4, // shorter segments are dropped
   moveThresh: 0.006, // mean normalized displacement per frame counted as motion
@@ -28,7 +31,7 @@ function motion(a: HolisticFrame | null, b: HolisticFrame): number {
 
 export interface SegmentDone { frames: Float32Array; count: number; ms: number; reason: "gone" | "still" | "max" | "tap" }
 
-export function createSegmenter(onDone: (s: SegmentDone) => void, onState: (s: SegState) => void) {
+export function createSegmenter(onDone: (s: SegmentDone) => void, onState: (s: SegState) => void, { continuous = true } = {}) {
   let state: SegState = "idle";
   let buf: Float32Array[] = [];
   let lastHandIdx = -1;
@@ -41,7 +44,7 @@ export function createSegmenter(onDone: (s: SegmentDone) => void, onState: (s: S
   function finish(reason: SegmentDone["reason"], t: number) {
     const keep = buf.slice(0, Math.max(lastHandIdx + 3, 0)); // drop the trailing frames without hands, keep 2
     reset();
-    set("idle");
+    set(continuous ? "armed" : "idle");
     if (keep.length >= SEG.minFrames) onDone({ frames: packSegment(keep), count: Math.min(keep.length, 384), ms: t - t0, reason });
     else onDone({ frames: new Float32Array(0), count: 0, ms: t - t0, reason });
   }
@@ -50,7 +53,7 @@ export function createSegmenter(onDone: (s: SegmentDone) => void, onState: (s: S
     get state() { return state; },
     arm() { reset(); set("armed"); },
     cancel() { reset(); set("idle"); },
-    /** Tap while recording: cut now. Tap while armed: cancel. */
+    /** Recording: cut now (continuous: keeps reading). Armed: cancel. */
     stop(t = performance.now()) { if (state === "recording") finish("tap", t); else if (state === "armed") { reset(); set("idle"); } },
     push(f: HolisticFrame, t: number) {
       if (state === "idle") return;
@@ -70,7 +73,7 @@ export function createSegmenter(onDone: (s: SegmentDone) => void, onState: (s: S
       if (m > SEG.moveThresh) { lastMoveT = t; moved = true; still = 0; } else still++;
       // Time AND at least 2 frames, so a slow device (a few fps) doesn't cut on one dropped detection.
       if (noHand >= 2 && t - lastHandT > SEG.goneMs) return finish("gone", t);
-      if (moved && still >= 2 && t - lastMoveT > SEG.stillMs && t - t0 > 700) return finish("still", t);
+      if (moved && still >= 2 && t - lastMoveT > SEG.stillMs && t - t0 > SEG.minMs) return finish("still", t);
       if (t - t0 > SEG.maxMs || buf.length >= 384) return finish("max", t);
     },
   };

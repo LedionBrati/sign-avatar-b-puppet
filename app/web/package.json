@@ -8,6 +8,7 @@
     "dev:mock": "vite --mode mock",
     "build": "npm run typecheck && vite build",
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.node.json",
+    "build:artifact": "npm run typecheck && vite build --mode artifact --config vite.artifact.config.ts",
     "preview": "vite preview",
     "shots": "node scripts/shots.mjs",
     "sign-test": "node scripts/sign-test.mjs"

@@ -2,6 +2,10 @@
 // "same-origin" (used by `npm run dev:mock`) means the API is served by the page's own origin.
 import { DEFAULT_PORT } from "@signlayer/core";
 
+declare const __ARTIFACT__: boolean;
+/** The standalone claude.ai Artifact build (vite.artifact.config.ts): the API runs in the page, no mic, no camera. */
+export const ARTIFACT: boolean = __ARTIFACT__;
+
 const KEY = "sl-api";
 // A production build served by app/server itself (http://<host>:8787/app/, the phone WebView) talks to that same server.
 const servedByApi = import.meta.env.PROD && /^https?:$/.test(location.protocol) && location.pathname.startsWith("/app/");
@@ -14,6 +18,7 @@ export function setApiSetting(v: string) {
   try { if (v.trim()) localStorage.setItem(KEY, v.trim()); else localStorage.removeItem(KEY); } catch { /* private mode */ }
 }
 export function apiBase(): string {
+  if (ARTIFACT) return ""; // src/artifact/shim.ts answers /api/* inside the page
   const v = getApiSetting() || ENV_API;
   return v === "same-origin" ? "" : v.replace(/\/$/, "");
 }

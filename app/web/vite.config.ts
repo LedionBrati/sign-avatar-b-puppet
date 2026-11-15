@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [react(), ...(mode === "mock" ? [mockApi()] : [])],
   resolve: { alias: { "@signlayer/core": path.resolve(here, "../core/src/index.ts") } },
-  define: { __MP_VERSION__: JSON.stringify(mpVersion), ...(mode === "mock" ? { "import.meta.env.VITE_API_URL": JSON.stringify("same-origin") } : {}) },
+  define: { __MP_VERSION__: JSON.stringify(mpVersion), __ARTIFACT__: "false", ...(mode === "mock" ? { "import.meta.env.VITE_API_URL": JSON.stringify("same-origin") } : {}) },
   server: { port: 5173, host: true, fs: { allow: [path.resolve(here, "..")] } },
   build: { target: "es2022" },
 }));

@@ -53,7 +53,7 @@ await page.evaluate(() => {
 });
 
 const midWord = process.env.MID ?? "SEE";
-await page.waitForFunction((w) => document.querySelector(".nowline b")?.textContent === w, { timeout: 20000 }, midWord);
+await page.waitForFunction((w) => document.querySelector(".island-detail")?.textContent === w, { timeout: 20000 }, midWord);
 await new Promise((r) => setTimeout(r, 500));
 await shot("live.png");
 

@@ -1,9 +1,12 @@
-// The signer inside a lane: halo + two stacked videos driven by GaplessPlayer, framed by the radial mask (.sl-signer).
-import { useEffect, useRef } from "react";
+// The signer card: two stacked videos driven by GaplessPlayer, shown whole (the clips are 3:4 and the card is 3:4,
+// so head and both hands are always in frame), on the clips' own studio backdrop so nothing ever flashes black.
+import { useEffect, useRef, type ReactNode } from "react";
 import type { SigningSafety } from "@signlayer/core";
 import { GaplessPlayer } from "../lib/player";
 
-export function SignerStage({ onReady, on, label, safety, error }: { onReady(p: GaplessPlayer | null): void; on: boolean; label: string; safety?: SigningSafety; error?: { caption: string; message: string } }) {
+export function SignerStage({ onReady, on, label, safety, error, children }: {
+  onReady(p: GaplessPlayer | null): void; on: boolean; label: string; safety?: SigningSafety; error?: { caption: string; message: string }; children?: ReactNode;
+}) {
   const a = useRef<HTMLVideoElement>(null);
   const b = useRef<HTMLVideoElement>(null);
   useEffect(() => {
@@ -14,12 +17,12 @@ export function SignerStage({ onReady, on, label, safety, error }: { onReady(p: 
   }, []);
   const blocked = error || (safety && safety.status !== "fully_supported");
   return (
-    <>
-      <div className="sl-halo" />
-      <div className={`sl-signer${on ? " on" : ""}${blocked ? " blocked" : ""}`} role="img" aria-label={label}>
+    <div className={`signer-card${on ? " on" : ""}`}>
+      <div className={`sl-signer${blocked ? " blocked" : ""}`} role="img" aria-label={label}>
         <video ref={a} muted playsInline preload="auto" />
         <video ref={b} muted playsInline preload="auto" />
       </div>
+      {children}
       {error ? (
         <div className="safety-card" role="status" aria-live="polite">
           <strong>Signing unavailable</strong>
@@ -37,6 +40,6 @@ export function SignerStage({ onReady, on, label, safety, error }: { onReady(p: 
           ))}
         </div>
       ) : null}
-    </>
+    </div>
   );
 }

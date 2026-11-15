@@ -41,6 +41,7 @@ top-5 sign chips / spelled word ◄── RecognizeResponse ◄─────�
 ```bash
 (cd translate && npm i)                           # once: translator deps (local embeddings model)
 node app/server/index.mjs                         # http://localhost:8787 + LAN URL; CLIPS_DIR=dirA,dirB (default out/realtime/clips)
+CLIPS_DIR=out/realtime/clips,out/realtime/clips-mass node app/server/index.mjs   # + the mass clip set (pipeline/mass/)
 (cd app/recognizer && uv sync && uv run python fetch_models.py && uv run python server.py)   # sign -> voice on :8788 (RECOGNIZER_URL for the API)
 node app/start.mjs                                # or both of the above in one terminal (recognizer + API)
 (cd app/web && npm run build)                     # then the API serves it at /app/
