@@ -5,7 +5,7 @@ body { color: #fff; padding: 18px 16px 24px; min-height: 100vh; }
 header { display: flex; align-items: center; gap: 10px; }
 header #brand { display: inline-flex; align-items: center; gap: 8px; }
 header .wm { --wm-ink: #fff; --wm-dot: #7d97ff; font-size: 18px; }
-header .mark svg rect:first-child { fill: #fff; } header .mark svg g { fill: #1f3fd6; }
+header .mark svg > path { fill: #fff; } header .mark svg g { fill: #1f3fd6; }
 header .live { margin-left: auto; }
 h1 { margin: 38px 0 10px; font: 400 26px/1.08 var(--font); text-transform: uppercase; letter-spacing: -.005em; }
 .sub { margin: 0 0 26px; font-size: 12.5px; line-height: 1.5; color: rgb(255 255 255 / .8); }
