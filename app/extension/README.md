@@ -1,85 +1,62 @@
 # SIGNLAYER Chrome extension
 
-A signer that rides along with anything you play: a frosted signer card in the corner of any page, with captions under it that light up word by word as they are signed. It follows YouTube's transcript or captions, any video with caption tracks, the tab's own audio, your microphone, or text you select. Built with WXT (Manifest V3, TypeScript, no framework). It uses `@signlayer/core` (`../core`) for the API client, caption word states and design tokens.
+One side panel. Click the SIGNLAYER icon, pick **Mic** or **Tab audio**, press Start: the signer in the panel signs what it hears, with live captions under it. Built with WXT (Manifest V3, TypeScript, no framework) on `@signlayer/core` (`../core`: API client, caption word states).
 
-Design notes: [docs/DESIGN.md](docs/DESIGN.md). Screenshots come from real Chrome on a real YouTube video (`scripts/verify-youtube.mjs`, `scripts/capture-2030.mjs`) and a local podcast page (`scripts/verify-tab-page.mjs`), with the API on port 8787.
-
-| Signing (hover controls) | Can't sign yet | Dark page |
-|---|---|---|
-| ![Signing the transcript, controls on hover](docs/2030-hover-controls.png) | ![Caption-only: blurred still, caption large](docs/2030-caption-only-card.png) | ![Dark YouTube](docs/2030-dark-hover.png) |
-
-| Fullscreen | Tab audio | Popup | First run |
+| Ready | Listening (tab audio) | Can't sign yet | Can't sign yet (numbers) |
 |---|---|---|---|
-| ![Fullscreen](docs/2030-fullscreen.png) | ![Tab audio on a podcast page](docs/2030-tab-audio.png) | ![Popup](docs/2030-popup.png) | ![Onboarding](docs/2030-onboarding.png) |
+| ![Ready](docs/panel-idle.png) | ![Listening to a tab](docs/panel-listening.png) | ![Caption only: names](docs/panel-caption-only.png) | ![Caption only: numbers](docs/panel-caption-only-numbers.png) |
 
-## Build and load
+Screenshots come from `scripts/verify.mjs`: real Chrome, a local page playing JFK's Rice University speech (public domain, Wikimedia Commons), captured as Tab audio.
 
-```bash
-node app/server/index.mjs                 # the sign API on http://localhost:8787 (see app/README.md)
-                                          # tab audio also needs OPENAI_API_KEY_FILE=... (speech-to-text)
-cd app/extension
-npm i
-npm run build                             # -> .output/chrome-mv3
-```
+## Use it (3 steps)
 
-Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `app/extension/.output/chrome-mv3`. The manifest pins a `key` (`manifest-key.json`), so the unpacked extension always gets the ID **`alllgcabpfhomkddlfgmclmfobegigkg`**.
+1. **Load.** Start the API (`node app/server/index.mjs`, see `app/README.md`; Tab audio also needs `OPENAI_API_KEY_FILE=...` for speech-to-text). Then `cd app/extension && npm i && npm run build`, open `chrome://extensions`, turn on **Developer mode**, **Load unpacked** → `app/extension/.output/chrome-mv3`. (The pinned `key` keeps the ID at `alllgcabpfhomkddlfgmclmfobegigkg`.)
+2. **Click the SIGNLAYER icon** in the toolbar, on the tab you want to hear. The side panel opens.
+3. **Pick Mic or Tab audio, press Start.**
+   - *Mic*: Chrome's speech recognition runs in the panel. The first time, a small tab opens and asks for the microphone (side panels can't show that prompt); it closes itself and listening starts.
+   - *Tab audio*: the tab's sound is captured (you see Chrome's sharing indicator; the tab stays audible) and transcribed by the server.
 
-The first time you open the menu (toolbar icon) it shows one screen on the four sources and the permission each one asks for.
+The server URL (default `http://localhost:8787`) is behind the gear, top right.
 
-## Use
+## What you see
 
-- **Captions** (default). Open a YouTube video: the signer appears in the corner by itself and follows the video. It reads the video's transcript (the watch page's own *Show transcript* panel, opened off-screen for a moment and closed again), then sends each sentence in time with the video, fetching the next one ahead so signing starts on time. Pause, seek, ads and moving to another video are handled. Without a transcript (live streams) it reads the on-screen captions (turn on **CC**). On other sites it follows `<video>` caption tracks.
-- **Tab audio.** Pick *Tab audio* in the menu. That click lets Chrome capture the tab (you see Chrome's sharing indicator). Audio is recorded in 2-5 s chunks, cut at short pauses, sent to the server's `POST /api/transcribe` (OpenAI `gpt-4o-mini-transcribe`), and the text is signed. The tab stays audible. Silent chunks are never sent. Text shows up about a second after each chunk ends (median round trip 0.5-0.8 s in our runs).
-- **Microphone.** Pick *Mic* and click **Open the mic panel**. The side panel runs Chrome's speech recognition. The first time it opens a one-time **Enable microphone** tab, because side panels can't show the permission prompt.
-- **Selected text.** Select text, then right-click › **Sign with SIGNLAYER**, or press **Alt+Shift+S**. Works with any source.
-- **Alt+Shift+K** shows or hides the signer (and starts tab audio when that is the source).
+- **Status capsule**: Ready · Listening · Signing *GLOSS* · Can't sign yet · Offline · Mic off / Tab audio off.
+- **Signer**: full 3:4 clip, head and both hands. Two stacked `<video>`s: the next clip preloads in the hidden one and crossfades in on its first painted frame, so there is never a black frame. Idle, it holds the neutral pose.
+- **Captions**: words blur in, the word being signed is highlighted, words without a sign are muted.
+- **Can't sign yet** (the server's safety gate, `docs/semantic-safety.md`): the player stops and clears, the exact caption comes forward on the blurred stage with the reason under it (*No sign yet for "college"*, *Numbers and times stay as captions for now*, ...). Never a stale clip. If it arrives while a phrase is still being signed, it waits for that phrase to finish. `needs_confirmation` shows the signs it would use and plays them only after **Show signs**.
 
-**On the signer.** Move the pointer over it and the status capsule expands into the controls: size (cycles S/M/L), captions on/off, the source menu and close. Drag it anywhere: it snaps to the nearest corner and remembers it. In fullscreen YouTube it moves into the player and stays clear of the control bar. The status capsule says what is happening: *Listening · Transcript / Captions / Tab audio*, *Signing · GLOSS*, *Can't sign yet*, *Confirm signs?*, *Paused*, *Ad playing*, *Offline*.
+## How tab audio works
 
-**When a phrase can't be signed** (the server's safety gate, `docs/semantic-safety.md`), the signer never just goes quiet and never shows a stale clip: the player stops and clears, the caption sheet shows the exact caption (even with captions turned off), words without a sign are underlined, and the stage says why in plain words (*No sign yet for "college", "government"*, *Numbers and times stay as captions*, ...). For `needs_confirmation` (a paraphrase or an ambiguous word) it shows the signs it would use and waits: **Show signs** plays exactly that plan, **Skip** moves on. Nothing plays without that click.
+All in the side panel page (`lib/tab-audio.ts`), no offscreen document:
 
-## How it fits together
+1. The toolbar click fires `action.onClicked`; the background opens the side panel (`sidePanel.open`). That click is an action invocation, so Chrome grants `activeTab` on that tab. (We use `onClicked` + `sidePanel.open` rather than `setPanelBehavior({ openPanelOnActionClick })` so the grant is certain, and so clicking the icon on another tab re-grants there without closing the panel.)
+2. **Start** → `tabCapture.getMediaStreamId({ targetTabId })` for the active tab → `getUserMedia({ audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId } } })` in the panel.
+3. The stream goes to an `AudioContext` destination (capturing mutes the tab otherwise) and to an analyser + `MediaRecorder` (webm/opus). Chunks of 2-4 s, cut at a short silence when possible (a hard cut overlaps the next by 0.4 s); silent chunks are skipped.
+4. `POST /api/transcribe` → text, in order, overlapping words dropped → `POST /api/sign` (requests run in parallel, results apply in order, overtaken ones are skipped, backlog over ~8 s is dropped, clips speed up to 1.15x/1.3x to catch up).
 
-```
-content script ──┐ (captions: transcript / CC / <track>)               ┌─► overlay.html (iframe in the page; extension origin)
-side panel (mic) ┼─ runtime.sendMessage ─► background ──port──────────┤     POST /api/sign → playlist → 2 stacked <video>s
-offscreen (tab) ─┘   (routes per tab,      │  tabCapture stream id     │     captionFrame() word states → caption sheet
-context menu, shortcuts                    └─► offscreen.html ─► POST /api/transcribe
-overlay ── postMessage(height, drag, close) ──► content script (positions the iframe, snaps, fullscreen)
-```
+Errors are said plainly on the stage: Chrome pages can't be captured, "Click the SIGNLAYER icon while on the tab you want to hear" (no grant for that tab), tab already captured, capture refused, speech-to-text off on the server, and a soft hint when the tab is silent for 6 s.
 
-- `entrypoints/overlay/`: the signer. Requests start as soon as a phrase arrives; results are applied in order and live sources skip results that were overtaken, so the signer stays near real time (backlog over ~8 s is dropped, clips speed up to 1.15x/1.3x to catch up).
-- `lib/captions.ts`: the caption sources (YouTube transcript, CC MutationObserver, text tracks, SPA navigation, ads, seek). `lib/phrases.ts`: rolling-caption phrase assembly and transcript cues (unit tests in `test/`).
-- `entrypoints/content.ts`: mounts the iframe in a closed shadow root, position, drag, fullscreen (`moveBefore`, so the iframe keeps playing).
-- `entrypoints/background.ts`: message routing (queues messages for tabs whose content script is still loading and flushes them when it says hello), context menu, shortcuts, health, tab audio (`tabCapture.getMediaStreamId` + offscreen document).
-- `entrypoints/offscreen/`: records the captured tab, keeps it audible, chunks, uploads, de-duplicates overlap.
-- `entrypoints/popup/`, `sidepanel/`, `mic/`, `options/`.
-- Settings in `chrome.storage.local`: `enabled`, `source`, `size`, `captions`, `corner`, `apiUrl`, `onboarded` (`lib/settings.ts`).
+## Files
 
-## What was wrong in v1 on real YouTube
-
-Found by loading the extension into Chrome on a real video (`scripts/verify-youtube.mjs`):
-
-1. The content script ran at `document_idle`, seconds after YouTube's page; the background's fallback injection failed on `https` pages (host permissions only covered `http`). Messages sent before it loaded, and the mount itself, were silently dropped.
-2. The signer only appeared after the first successful caption, so with nothing coming through it looked like it did nothing.
-3. Only the on-screen CC was read, by polling, so nothing happened with CC off. In automated Chrome, YouTube also returns empty caption files, so CC never shows; the transcript panel works everywhere.
-4. Sign requests were chained one after the other (each can take 1-2 s with the agent layer), so the signer drifted further and further behind the video.
-5. The S/M/L buttons never worked: a click listener on `<body data-size>` set the size straight back.
+- `entrypoints/background.ts`: opens the side panel on the toolbar click. Nothing else.
+- `entrypoints/sidepanel/`: the product (UI, player, captions, sign requests).
+- `entrypoints/mic/`: the one-time microphone permission tab.
+- `lib/tab-audio.ts`, `lib/speech.ts` (Web Speech with restart + duplicate-final guard, as in `app/web/src/lib/speech.ts`), `lib/settings.ts` (`source`, `apiUrl` in `chrome.storage.local`), `lib/brand.ts`.
+- Permissions: `storage`, `sidePanel`, `activeTab`, `tabCapture`. No host permissions, no content scripts.
 
 ## Verify
 
 ```bash
 npm run build
-npm test                                   # phrase assembler + transcript cues (node --test)
-node scripts/verify-youtube.mjs            # real YouTube: captions, controls, fullscreen, blocked/confirm states,
-                                           # tab audio, popup + onboarding screenshots -> docs/v2-*.png
-node scripts/verify.mjs                    # quick local check on test/page.html (no YouTube)
+SIGNLAYER_API=http://localhost:8787 AUDIO=path/to/speech.ogg SEEK=500 node scripts/verify.mjs
 ```
 
-Both scripts install the built extension into Chrome over CDP with puppeteer-core (branded Chrome ignores `--load-extension` since v137). `SIGNLAYER_API` sets the API (default `http://localhost:8787`); tab audio needs a server with `transcribe: "ready"` in `/api/health`. The YouTube script opens the popup with `Extension.triggerAction` and clicks *Tab audio*, exactly the user gesture Chrome needs for tab capture; it un-mutes headless Chrome so there is audio to capture, and grants fullscreen (automated Chrome refuses it otherwise). `KEEP_AUDIO=dir` saves the recorded chunks; `node app/server/scripts/transcribe-bench.mjs dir` compares speech-to-text models on them.
+Installs the built extension over CDP (puppeteer-core), plays the audio on a local page, clicks the toolbar action (`Extension.triggerAction`: opens the real side panel and grants `activeTab`), then drives the panel page in a 380×800 tab (`sidepanel.html?tab=<id>` names the tab to capture; the real side panel can't be resized or screenshotted reliably), selects Tab audio, starts, and checks that chunks come back as text and get signed.
+
+Last run (headless Chrome, JFK at 8:20): side panel opened; 4 chunks transcribed (0.7-3.2 s round trip), e.g. *"And they may well ask, why climb the highest mountain?"*, *"Why the Atlantic? Why does Rice play Texas?"*, *"We choose to go to the moon."*; the first was signed (AND THEY CAN), two came back caption-only (*"Five thirty-five years ago."*: numbers; the Atlantic/Rice/Texas line: names).
 
 ## Not covered yet
 
-- On-screen CC on real YouTube (the fallback for live streams) is covered only by the phrase-assembler unit tests: automated Chrome gets empty caption files from YouTube, so the CC path never fires there.
-- The Alt+Shift+K / Alt+Shift+S shortcuts and the mic side panel were not driven by the automated runs (Chrome shortcuts can't be pressed from puppeteer; no microphone).
-- Tab audio was run in headless Chrome on one video; not yet on calls (Meet/Zoom web) or long sessions.
+- The microphone path was not driven by automation (no microphone in the test Chrome, and the permission prompt can't be clicked).
+- No signing screenshot yet: in the one run, a caption-only phrase arrived while the first phrase was signing and (then) cut it off; that is now fixed (blocked phrases wait their turn) but not re-run.
+- Not yet tried on calls (Meet/Zoom web) or long sessions.

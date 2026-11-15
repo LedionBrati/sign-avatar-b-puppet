@@ -28,7 +28,7 @@ body { display: flex; flex-direction: column; min-height: 100vh; overflow: hidde
 .island em { font-style: normal; font-weight: 500; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
 .island em.gl { color: var(--now); font-weight: 650; letter-spacing: .05em; font-size: 11px; }
 .dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--text-3); transition: background-color .4s ease, box-shadow .4s ease, scale .12s linear; }
-.island[data-tone="live"] .dot { background: #7ee2b8; box-shadow: 0 0 8px rgb(126 226 184 / .8); }
+.island[data-tone="live"] .dot { background: #7ee2b8; box-shadow: 0 0 8px rgb(126 226 184 / .8); scale: calc(1 + var(--lvl, 0) * .8); }
 .island[data-tone="sign"] .dot { background: #8ea2ff; box-shadow: 0 0 10px rgb(142 162 255 / .95); animation: breathe 1.2s ease-in-out infinite; }
 .island[data-tone="warn"] .dot { background: #ffc15e; box-shadow: 0 0 8px rgb(255 193 94 / .7); }
 .island[data-tone="off"] .dot { background: #ff6961; box-shadow: 0 0 8px rgb(255 105 97 / .7); }
@@ -46,7 +46,9 @@ body { display: flex; flex-direction: column; min-height: 100vh; overflow: hidde
 .server button { height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
 
 /* ── Stage: the signer, as large as fits (3:4 clips: head and both hands always in view) ── */
-.stage-wrap { flex: 1 1 auto; min-height: 0; display: grid; place-items: center; container-type: size; }
+/* Grows up to the stage's natural height (full width at 3:4), so captions sit right under the signer; spare room
+   goes above the controls. On a short panel it shrinks and the stage scales down with it. */
+.stage-wrap { flex: 1 1 auto; min-height: 0; max-height: calc((100vw - 28px) * 4 / 3); display: grid; place-items: center; container-type: size; }
 .stage { position: relative; width: min(100cqw, 75cqh); aspect-ratio: 3 / 4; border-radius: 26px; corner-shape: squircle; overflow: hidden; background: var(--stage); contain: layout paint;
   box-shadow: 0 0 0 .5px rgb(255 255 255 / .08), 0 24px 60px -24px rgb(0 0 0 / .8); }
 .stage video, .still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -106,7 +108,7 @@ body { display: flex; flex-direction: column; min-height: 100vh; overflow: hidde
 body[data-state="caption_only"] .cc, body[data-state="confirm"] .cc, body[data-state="offline"] .cc, body[data-state="error"] .cc { display: none; }
 
 /* ── Controls ── */
-.controls { display: flex; flex-direction: column; gap: 10px; flex: none; }
+.controls { display: flex; flex-direction: column; gap: 10px; flex: none; margin-top: auto; }
 .seg { position: relative; display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px; background: var(--fill); box-shadow: inset 0 0 0 .5px var(--line); }
 .seg .thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: var(--fill-2);
   box-shadow: inset 0 .5px 0 rgb(255 255 255 / .14), 0 2px 8px -2px rgb(0 0 0 / .5); transition: transform .5s var(--spring-bounce); }

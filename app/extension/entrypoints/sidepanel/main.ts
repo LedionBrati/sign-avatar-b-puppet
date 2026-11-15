@@ -200,7 +200,7 @@ function setLevel(x: number) {
   if (!lvlRaf) lvlRaf = requestAnimationFrame(() => {
     lvlRaf = 0;
     go.style.setProperty("--lvl", lvl.toFixed(3));
-    dot.style.scale = String(1 + lvl * 0.9);
+    dot.style.setProperty("--lvl", lvl.toFixed(3));
   });
 }
 
@@ -332,6 +332,8 @@ actions.addEventListener("click", (e) => {
     shown = j;
     jobs.length = 0;
     jobs.push(j);
+    clearTimeout(holdTimer);
+    holdTimer = 0;
     advance();
   }
 });
@@ -360,7 +362,10 @@ const rate = () => { const b = backlog(); return b > 6 ? 1.3 : b > 3 ? 1.15 : 1;
 
 let swapToken = 0;
 let swapping = false; // the back video is starting: don't load anything else into it until it is on screen
+let holdTimer = 0; // a caption-only phrase stays readable this long before the next phrase plays
 function advance() {
+  clearTimeout(holdTimer);
+  holdTimer = 0;
   if (job && idx + 1 < job.res.playlist.length) idx++;
   else {
     job = null;
@@ -369,6 +374,15 @@ function advance() {
       const j = jobs.shift()!;
       shown = j;
       heardText = "";
+      if (blocked(j)) {
+        // Its turn came (after the phrase before it finished signing): the player stops and clears, the exact
+        // caption and the reason come forward.
+        stopVideo();
+        renderCaptions();
+        render();
+        holdTimer = window.setTimeout(() => { holdTimer = 0; if (!job && jobs.length) advance(); }, Math.min(4000, 1600 + j.res.words.length * 180));
+        return;
+      }
       if (j.res.playlist.length) { job = j; idx = 0; break; }
     }
   }
@@ -420,7 +434,7 @@ function enqueue(j: Job) {
   // Live speech: never fall far behind. Drop whole not-yet-started phrases beyond ~8 s of backlog.
   while (jobs.length && backlog() > 8) jobs.shift();
   jobs.push(j);
-  if (!job) advance();
+  if (!job && !holdTimer) advance();
   else if (!swapping) {
     const next = peek();
     if (next) load(vids[1 - front]!, next.url);
@@ -431,20 +445,16 @@ function clearVideo() {
   jobs.length = 0;
   job = null;
   idx = -1;
+  stopVideo();
+}
+/** Never a stale clip under a caption: both videos stop and drop their source. */
+function stopVideo() {
   front = 0;
   swapToken++;
   swapping = false;
   vids.forEach((v) => { v.pause(); v.removeAttribute("src"); delete v.dataset.url; v.load(); v.classList.remove("on", "top"); });
 }
 
-/** caption_only / needs_confirmation: the player stops and clears at once; never a stale clip under the caption. */
-function showBlocked(j: Job) {
-  clearVideo();
-  shown = j;
-  heardText = "";
-  render();
-  renderCaptions();
-}
 
 /** needs_confirmation: the plan's signs as a playlist, only if every item is a sign we have a clip for. */
 let vocab = new Map<string, number>();
@@ -524,7 +534,7 @@ const clean = (t: string) => t.replace(/\s+/g, " ").trim().slice(0, 500);
 let seq = 0;
 let chain: Promise<void> = Promise.resolve();
 /** Diagnostics for scripts/verify.mjs. */
-const dbg = { phrases: [] as { text: string; status: string; glosses: string }[] };
+const dbg = { phrases: [] as { text: string; status: string; glosses: string }[], sign: (t: string) => sign(t) };
 (globalThis as { __sl?: typeof dbg }).__sl = dbg;
 
 function sign(text: string) {
@@ -533,7 +543,7 @@ function sign(text: string) {
   const id = ++seq;
   const p = client.sign({ text: t });
   p.catch(() => {});
-  if (!job) {
+  if (!job && !holdTimer) {
     heardText = t;
     pending = true;
     if (blocked(shown)) shown = null; // the old blocked caption gives way to the new phrase
@@ -552,9 +562,8 @@ function sign(text: string) {
     if (isOffline) { isOffline = false; render(); }
     dbg.phrases.push({ text: t, status: res.safety?.status ?? "?", glosses: res.playlist.map((x) => x.gloss).join(" ") });
     if (id < seq - 2) return; // overtaken while waiting: keep up with the speech
-    const j: Job = { res };
-    if (blocked(j)) showBlocked(j);
-    else enqueue(j);
+    // Blocked phrases queue in order like the rest: one arriving mid-signing waits for that phrase to finish.
+    enqueue({ res });
   });
 }
 
