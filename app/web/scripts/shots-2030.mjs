@@ -67,10 +67,11 @@ try {
         requestAnimationFrame(tick);
       });
       const mid = process.env.MID ?? "SICK";
-      await page.waitForFunction((w) => document.querySelector(".island-detail")?.textContent === w, { timeout: 30000 }, mid);
+      const T = +(process.env.WAIT_MS ?? 120000);
+      await page.waitForFunction((w) => document.querySelector(".island-detail")?.textContent === w, { timeout: T }, mid).catch(() => console.log("  (mid word not reached)"));
       await sleep(650);
       if (want("live")) await shot("live");
-      await page.waitForSelector(".sumline", { timeout: 40000 });
+      await page.waitForSelector(".sumline", { timeout: T }).catch(() => console.log("  (not done in time)"));
       await sleep(1000);
       if (want("done")) await shot("done");
       const trace = await page.evaluate(() => window.__trace);
@@ -126,7 +127,7 @@ try {
     await page.type(".typebox input", TEXT);
     await cdp.send("Page.startScreencast", { format: "jpeg", quality: 70, everyNthFrame: 1 });
     await page.keyboard.press("Enter");
-    await page.waitForSelector(".sumline", { timeout: 40000 });
+    await page.waitForSelector(".sumline", { timeout: 120000 });
     await sleep(600);
     await cdp.send("Page.stopScreencast");
     fs.writeFileSync(path.join(dir, "frames.json"), JSON.stringify(meta));

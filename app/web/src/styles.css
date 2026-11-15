@@ -325,9 +325,9 @@ svg { display: block; }
 /* Halo: a soft glow that hugs the card and swells with the voice (box-shadow is rasterised once; only transform and
    opacity change per frame, so it stays on the compositor). */
 .halo { position: absolute; left: 50%; top: 50%; z-index: 0; width: var(--w); height: var(--h); border-radius: var(--r-xl); pointer-events: none;
-  translate: -50% -50%; box-shadow: 0 0 50px 6px var(--glow), 0 0 140px 40px color-mix(in srgb, var(--glow) 45%, transparent);
-  transform: scale(calc(.97 + var(--level, .15) * .1)); opacity: calc(.25 + var(--level, .15) * 1.1); will-change: transform, opacity; transition: opacity .8s ease; }
-.live:not(.listening) .halo { opacity: calc(.12 + var(--level, .15) * .5); }
+  translate: -50% -50%; background: var(--glow); box-shadow: 0 0 50px 6px var(--glow), 0 0 140px 40px color-mix(in srgb, var(--glow) 45%, transparent);
+  transform: scale(calc(.93 + var(--level, .15) * .1)); opacity: calc(.25 + var(--level, .15) * 1.1); will-change: transform, opacity; transition: opacity .8s ease; }
+.live:not(.listening) .halo { opacity: calc(.12 + var(--level, .15) * .5); transform: scale(calc(.97 + var(--level, .15) * .08)); }
 /* The card is 3:4 when height-bound (desktop) and grows up to 2:3 when width-bound (phones); the 3:4 signer sits on
    its bottom edge and the extra height is headroom in the clips' own backdrop colour, so nothing is ever cropped. */
 .signer-card { position: relative; z-index: 1; width: var(--w); height: var(--h); border-radius: var(--r-xl); overflow: hidden; isolation: isolate;
@@ -340,7 +340,12 @@ svg { display: block; }
 .signer-card::after { content: ""; position: absolute; inset: 0; z-index: 8; border-radius: inherit; pointer-events: none;
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / .07), inset 0 1px 0 rgb(255 255 255 / .12); }
 .sl-signer { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; aspect-ratio: 3 / 4; transition: opacity .5s ease;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 9%); mask-image: linear-gradient(180deg, transparent 0, #000 9%); }
+ }
+/* Fade the clip's top edge into the headroom with an overlay rather than a mask, so video frames never go through a
+   mask layer (cheaper on every device, and it keeps 120 Hz panels fed). */
+.sl-signer::after { content: ""; position: absolute; left: 0; right: 0; top: -1px; z-index: 3; height: 10%; pointer-events: none; background: linear-gradient(180deg, var(--stage-top), rgb(37 42 50 / 0));
+  opacity: 0; transition: opacity .7s ease; }
+.signer-card.on .sl-signer::after { opacity: 1; }
 .sl-signer.blocked { opacity: 0; }
 .sl-signer video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; }
 .card-wave { position: absolute; left: 0; right: 0; top: 50%; z-index: 2; height: 34%; translate: 0 -50%; opacity: .95; transition: opacity .5s ease, transform var(--t-scene) var(--spring); }
@@ -434,7 +439,7 @@ svg { display: block; }
 
 /* ───────────────────────── Large screens ───────────────────────── */
 @media (min-width: 720px) {
-  .topbar { height: 80px; padding: var(--s4) var(--s5); }
+  .topbar { padding: var(--s3) var(--s5); }
   .title { font-size: 64px; }
   .orbzone { width: 240px; height: 240px; margin-top: var(--s7); }
   .orbzone .aura { width: 380px; }
@@ -446,6 +451,9 @@ svg { display: block; }
   .capzone { padding-top: var(--s6); }
   .sheet-back { align-items: center; }
   .sheet { width: min(480px, calc(100% - 48px)); border-radius: var(--r-xl); padding: var(--s3) var(--s5) var(--s5); animation: sheetPop .5s var(--spring) both; }
+  .grabber { display: none; }
+  .topbar { height: 72px; }
+  .controls { min-height: 104px; padding-bottom: var(--s5); }
   .camcard { --ar: 1.333; }
 }
 @media (max-height: 700px) {
