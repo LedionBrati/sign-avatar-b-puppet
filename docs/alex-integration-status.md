@@ -1,27 +1,24 @@
 # Shared integration status — 15 Nov 2026
 
-## Implemented and tested
+## What works now
 
-- Ordered `sign` / `fingerspell` plan validation with inclusive nonmanual item spans.
-- Canonical uppercase sign IDs and one catalog with gloss, optional sense and recognizer label, QA status, provenance, and a project-relative motion reference.
-- All-or-nothing plan resolution: a missing sign, unverified motion, mismatched gloss, unavailable letter, or unsupported English token yields an explicit blocked result with no playable prefix.
-- Expanded sequence spans for facial markers when fingerspelled words become letter motions.
-- `preparePlayback()` for Ledi's application and `loadPlayback()` for an engine-supplied motion loader. Motion data remains opaque; no duplicate extractor or VRM viewer was made.
-- `lookupRecognizerLabel()` returns matched, ambiguous, or unknown instead of guessing a sense.
-- 16 Node tests pass. The checked-in sample plan validates but the empty real catalog blocks all four items, as intended. The synthetic integration example runs and is explicitly not ASL motion.
+- PRs #9, #10, #11, and #12 are merged into `main`. The E0 repaint harness and shared motion loader remain separate modules.
+- `assertPlan()` validates ordered signs, fingerspelling, and nonmanual spans. `preparePlayback()` resolves only catalog entries marked `verified` and returns all items or an explicit unsupported result.
+- `assertMotionV1()` validates Nikos's published `motion/FORMAT.md` structure. `createMotionLoader()` reads a project-relative `.clean.json` asset, checks its ID and gloss, and plugs into the existing `loadPlayback()` callback. Missing landmarks remain `null`.
+- `node --test shared/*.test.mjs`: 23 passing tests. `node examples/synthetic-integration.mjs` runs. All motion fixtures in these tests are synthetic and **not ASL**.
+- The E0 harness's 4 tests pass in its existing worktree with its installed dependencies. No paid model was called during this check.
 
-## Waiting on Nikos
+## Current end-to-end blocker
 
-`nikos/motion`, `nikos/puppet`, and `motion/FORMAT.md` were not on GitHub when checked. Once pushed, inspect the actual frame format and the player entry point, then implement `loadMotion(path, item)` and a small end-to-end test using a real, rights-checked asset. Do not convert or reinterpret coordinate systems in the shared contract.
+No `nikos/motion`, `nikos/puppet`, or Ledi frontend branch is published on GitHub as of this check. `main` contains `motion/FORMAT.md` but no `.clean.json`/`.raw.json` files or VRM player entry point. `catalog/signs.json` has no sign entries. `node shared/check-plan.mjs examples/sample-plan.json` exits 1 as designed: HELLO, MY, and NAME are unknown, and MARIA lacks M, A, R, and I fingerspelling motions. No real text-to-VRM playback has been observed.
 
-## Waiting on Ledi
+## Exact inputs needed for the first real test
 
-Ledi's application branch was not on GitHub when checked. The app can call `preparePlayback(plan, catalog)` to show ready/unsupported status now, then `loadPlayback(plan, catalog, NikosLoader)` when the engine arrives. The UI should display blockers and caption and must not play a partial sentence.
+1. **Nikos motion:** one authentic, rights-checked isolated sign exported as a `.clean.json` file, plus its `.raw.json` partner and source/provenance details. The clean file needs `version: 1`, a canonical `motion_id`, a matching gloss, and the frame fields from `motion/FORMAT.md`. A full-sentence reference with `motion_id: null` cannot be registered as a verified isolated sign.
+2. **Nikos player:** a published module or command that accepts the validated v1 motion object and renders it on the VRM avatar. We need its entry point and any coordinate/retargeting assumptions. The shared loader returns the JSON without changing coordinates or filling gaps.
+3. **Catalog review:** a matching `catalog/signs.json` entry with `status: "verified"`, `motion_path` pointing to the clean file, source, and license, after provenance and motion QA. Technical validation alone does not establish ASL correctness.
+4. **Ledi frontend:** the application's plan input and playback call site. It can call `loadPlayback(plan, catalog, createMotionLoader({ root }))` on the Node side, or fetch an approved asset and call browser-safe `assertMotionV1()` before passing `ready.items[n].motion` to the player. It must show `blocked` and play nothing when status is `unsupported`.
 
-## Real signing assets
+## First shared connection test
 
-`catalog/signs.json` remains empty. WLASL research or clips do not equal verified playable VRM motions. Register only entries whose rights, sense, provenance, motion file, and quality have been checked. No real ASL sentence is claimed playable by this PR.
-
-## Next integration step
-
-At the first shared connection checkpoint, take one real Nikos motion file and player load call, add its reviewed catalog entry, and run the same hard-coded plan through Ledi's app. Keep signer review separate from technical playback success.
+Use a one-item plan for the same genuine isolated sign, register its reviewed clean file, then run `assertMotionV1()` and `loadPlayback()` against that file. Feed the resulting `ready.items[0].motion` into Nikos's player inside Ledi's application. Observe the rendered movement against the source clip and record tracking, retargeting, and ASL review separately. Only after that works should we attempt a multi-item sentence or E0 repaint comparison.
