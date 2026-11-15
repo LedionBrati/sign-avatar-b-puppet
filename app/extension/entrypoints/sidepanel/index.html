@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="color-scheme" content="light" />
+  <title>SIGNLAYER microphone</title>
+</head>
+<body class="g-live grain">
+  <header><span id="brand"></span><span class="live off" id="live"><i></i><span id="liveText">Ready</span></span></header>
+  <main>
+    <h1>Hear anything.<br />See it signed.</h1>
+    <p class="sub">Speak, or hold your laptop near the speaker. Phrases are recognised on this device and signed in the corner of the page you're on.</p>
+    <button class="listen" id="listen" aria-pressed="false"><span class="dot"></span><span id="listenText">Tap to listen</span></button>
+    <p class="status" id="status"></p>
+    <button class="enable" id="enable" hidden>Enable microphone</button>
+    <section class="glass log" aria-label="Heard">
+      <span class="cap-label">Heard</span>
+      <p class="interim" id="interim"></p>
+      <ol id="finals"></ol>
+    </section>
+  </main>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

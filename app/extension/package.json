@@ -1,0 +1,23 @@
+{
+  "name": "@signlayer/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SIGNLAYER Chrome extension: a draggable signer in the corner of any page.",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "tsc --noEmit",
+    "mock": "node scripts/mock-server.mjs",
+    "verify": "node scripts/verify.mjs",
+    "postinstall": "wxt prepare"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^26.6.6",
+    "puppeteer-core": "^25.17.0",
+    "typescript": "^7.0.2",
+    "wxt": "^0.21.5"
+  }
+}
