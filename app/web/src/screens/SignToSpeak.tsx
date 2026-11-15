@@ -25,6 +25,8 @@ interface Entry { label: string; options?: Option[]; sel?: number; fixed?: boole
 type Cam = "starting" | "ready" | "denied" | "nocam" | "error";
 
 const LOW = 0.35; // below this the top-3 chips get a "not sure" hint
+/** false = no sentence model call: every recognized sign is spoken as its word right away. Flip to true to re-enable /api/compose. */
+const SENTENCES = false;
 const REST_MS = 800; // hands rested this long (nothing still being read) -> speak
 const WAIT_MS = 1500; // at rest, wait this long for the model's sentence, then speak the local one
 const CAP = 8; // spoken at this many signs even without a rest
@@ -302,8 +304,16 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   // With the model: every new sign -> ask for the sentence in the background (aborting the stale call). It is only
   // spoken at rest (below); if the hands are already resting and waiting for exactly this answer, it is spoken now.
   const [aiFailed, setAiFailed] = useState(false);
+  // Word mode (SENTENCES off): say each recognized sign as its word the moment it lands, then start fresh.
   useEffect(() => {
-    if (!aiOn.current || aiFailed || paused || editing || edit || !items.length) return;
+    if (SENTENCES || paused || editing || edit || !items.length) return;
+    const word = wordOf(items[items.length - 1]!.label);
+    restKey.current = null;
+    speakText(word);
+    order.current.epoch++; setItems([]); setHint(null);
+  }, [items, paused, editing, edit, speakText]);
+  useEffect(() => {
+    if (!SENTENCES || !aiOn.current || aiFailed || paused || editing || edit || !items.length) return;
     const key = keyOf(order.current.epoch, items);
     const ctrl = new AbortController();
     setComposing(true);
@@ -345,7 +355,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   // these signs; if it isn't back yet, wait up to WAIT_MS for it, then the local composeSentence. After an edit, the
   // edited sentence (plus any signs since) is spoken at rest once something new was signed.
   useEffect(() => {
-    if (paused || editing || !items.length) return;
+    if (!SENTENCES || paused || editing || !items.length) return;
     if (edit && items.length <= edit.at) return; // only the typed edit: the signer presses Speak
     const full = items.length >= CAP;
     if (!full && (seg === "recording" || pending > 0)) return;
