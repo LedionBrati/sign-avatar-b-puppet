@@ -16,7 +16,7 @@ export const STREAM_CFG = {
   stepMs: 350, // a window every this often while signing
   winMs: 1000, // window length (~24-32 frames at 24-30 fps)
   winMax: 32, // frames per window, at most
-  winMin: 8, // fewer frames -> wait
+  winMin: 12, // fewer frames -> wait
   firstMs: 400, // first window this long after the motion started
   preRollMs: 250, // a window never reaches further back than this before the motion started
   need: 2, // consecutive strong windows with the same top label to accept it
@@ -26,11 +26,11 @@ export const STREAM_CFG = {
   flushConf: 0.3, // at rest: a label leading >= 2 of the last windows needs this peak confidence
   flushSingleConf: 0.5, // at rest: a label seen in only 1 window needs this (and minMargin)
   flushLook: 3, // at rest: how many of the last windows are looked at
-  moveThresh: 0.006, // per-frame displacement counted as motion (same as the segmenter)
-  minWinMotion: 0.0035, // junk filter: mean per-frame wrist+fingertip displacement over the window
-  stillMs: 400, // hands still this long -> rest (flush)
+  moveThresh: 0.003, // per-frame displacement counted as motion (same as the segmenter)
+  minWinMotion: 0.0012, // junk filter: mean per-frame wrist+fingertip displacement over the window
+  stillMs: 700, // hands still this long -> rest (flush)
   goneMs: 400, // hands gone this long -> rest (flush)
-  minMs: 300, // a "still" rest never comes sooner than this after the motion started
+  minMs: 500, // a "still" rest never comes sooner than this after the motion started
   ringMax: 48, // frames kept
   junkKeepConf: 0.7, // a DOWNWEIGHT label survives only at this confidence...
   plausible: 0.1, // ...and no other (non-junk) guess at or above this

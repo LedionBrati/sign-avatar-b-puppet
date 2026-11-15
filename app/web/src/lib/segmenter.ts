@@ -8,12 +8,12 @@ export type SegState = "idle" | "armed" | "recording";
 
 export const SEG = {
   goneMs: 400, // hands out of view this long -> end the segment
-  stillMs: 400, // hands still this long (after moving) -> end the segment
+  stillMs: 600, // hands still this long (after moving) -> end the segment (short holds inside a sign don't cut it)
   minMs: 500, // a "still" cut never comes sooner than this after the start
   maxMs: 4000, // cap per segment (continuous mode keeps reading right after)
   preRoll: 8, // frames kept from before the motion starts
   minFrames: 4, // shorter segments are dropped
-  moveThresh: 0.006, // mean normalized displacement per frame counted as motion
+  moveThresh: 0.004, // mean normalized displacement per frame counted as motion
 };
 
 const KEY = [0, 4, 8, 12, 20]; // wrist + finger tips
