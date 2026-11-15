@@ -1,5 +1,5 @@
 // Fake-camera end-to-end test of #/sign: Chrome plays a .y4m clip as the webcam, the page tracks it with MediaPipe,
-// we press Sign, and check the recognizer's top-5. Saves docs/sign-tracking.png and docs/sign-result.png.
+// it reads continuously (no clicks), and we check the recognizer's top-5. Saves docs/sign-tracking.png and docs/sign-result.png.
 //   npm run dev:mock   (or npm run dev with the real recognizer behind app/server)   then
 //   CLIPS="hello=C:/tmp/hello.y4m,water=C:/tmp/water.y4m" npm run sign-test
 // Make clips: ffmpeg -i in.mp4 -vf "scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p" out.y4m
@@ -56,7 +56,7 @@ for (const [ci, clip] of clips.entries()) {
     // Two tries per clip (the fake camera loops; a press can land mid-sign).
     for (let attempt = 1; attempt <= 2 && !r.top5; attempt++) {
       const before = await page.evaluate(() => window.__sl?.last ?? null);
-      await page.click("#signbtn");
+      // The screen reads continuously (no tap): just wait for the next recognition.
       const got = await page.waitForFunction((b) => (window.__sl?.last && window.__sl.last !== b) || document.querySelector(".banner"), { timeout: 25_000 }, before).catch(() => null);
       const sl = await page.evaluate(() => ({ last: window.__sl?.last, frames: window.__sl?.frames, segMs: window.__sl?.segMs, reason: window.__sl?.reason, rtMs: window.__sl?.rtMs, banner: document.querySelector(".banner")?.textContent ?? null, hint: document.querySelector(".signhint")?.textContent ?? "" }));
       if (sl.banner) { r.error = sl.banner; break; }
@@ -77,8 +77,7 @@ for (const [ci, clip] of clips.entries()) {
       await sleep(700);
       r.sentence = await page.$eval(".sentence textarea", (t) => t.value);
       await shot("sign-result.png");
-      // Tracking shot: arm again, and freeze the video mid-sign (hands up) so the frame and overlay match in the screenshot.
-      await page.click("#signbtn");
+      // Tracking shot: wait for the next segment, and freeze the video mid-sign (hands up) so the frame and overlay match.
       const rec = await page.waitForFunction(() => document.querySelector(".island.rec"), { timeout: 15_000, polling: 30 }).catch(() => null);
       if (rec) {
         await page.evaluate(() => document.querySelector("video.cam").pause());
