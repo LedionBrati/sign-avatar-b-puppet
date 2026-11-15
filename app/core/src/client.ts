@@ -1,4 +1,4 @@
-import { FRAMES_HEADER, ROUTES, type ApiError, type ComposeRequest, type ComposeResponse, type HealthResponse, type RecognizeMode, type RecognizeResponse, type SignRequest, type SignResponse, type TranscribeResponse, type VocabResponse } from "./api";
+import { FRAMES_HEADER, ROUTES, type ApiError, type ComposeRequest, type ComposeResponse, type HealthResponse, type RecognizeMode, type RecognizeResponse, type SignRequest, type SignResponse, type SpeakRequest, type TranscribeResponse, type VocabResponse } from "./api";
 import { LEGACY_POINTS } from "./landmarks";
 
 export class SignApiError extends Error {
@@ -62,6 +62,22 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
     },
     /** Sign -> voice: does this run of signs make sense yet, and as what English sentence. 503 compose_off without a key. */
     compose: (req: ComposeRequest, signal?: AbortSignal) => request<ComposeResponse>(ROUTES.compose, { method: "POST", body: JSON.stringify(req), signal }),
+    /** Sign -> voice: the sentence as natural speech (audio/mpeg Blob). 503 speak_off without a key: use the device voice. */
+    async speak(text: string, { voice, signal }: { voice?: string; signal?: AbortSignal } = {}): Promise<Blob> {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const body: SpeakRequest = { text, ...(voice ? { voice } : {}) };
+      try {
+        const res = await fetch(base + ROUTES.speak, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: signal ?? ctrl.signal });
+        if (!res.ok) {
+          const err = ((await res.json().catch(() => null)) as ApiError | null)?.error;
+          throw new SignApiError(res.status, err?.code ?? "http_error", err?.message ?? `HTTP ${res.status}`);
+        }
+        return await res.blob();
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     /** Speech -> text for one short audio chunk (MediaRecorder webm/opus or mp4/aac). text is "" for silence. */
     transcribe(audio: Blob, { lang = "en", ms, signal }: { lang?: string; ms?: number; signal?: AbortSignal } = {}): Promise<TranscribeResponse> {
       const type = (audio.type || "audio/webm").split(";")[0]!.trim();

@@ -13,8 +13,9 @@
 //   GET  /clips/<file>        clips from the manifests, with HTTP Range (206) for Safari / iOS / expo-video
 //   POST /api/transcribe      raw audio chunk (audio/webm, ...) -> {text, model, timings}; same OpenAI key (lib/transcribe.mjs)
 //   POST /api/recognize?mode=sign|spell   float32 landmarks + X-Frames, proxied to app/recognizer (RECOGNIZER_URL, default :8788)
-//   POST /api/compose         {signs: [{text, options?}]} -> {makes_sense, sentence, picked}: recognized signs -> spoken English
-//                             (same OpenAI key; lib/compose.mjs; COMPOSE=off disables)
+//   POST /api/compose         {signs: [{text, options?}], context?} -> {makes_sense, sentence, picked}: recognized signs ->
+//                             spoken English (same OpenAI key; lib/compose.mjs; COMPOSE=off disables)
+//   POST /api/speak           {text, voice?} -> audio/mpeg, natural text-to-speech (same OpenAI key; lib/speak.mjs; SPEAK=off)
 //   GET  /app/*               the built web app (app/web/dist, WEB_DIST), SPA fallback to index.html
 
 import { createServer } from "node:http";
@@ -34,7 +35,8 @@ import { loadApiKey, loadFalKey, redactor } from "./lib/secrets.mjs";
 import { createOnDemand, onDemandConfig, prepareClipsDir } from "./lib/ondemand.mjs";
 import { virtualClips } from "./lib/eval-vocab.mjs";
 import { TRANSCRIBE_ROUTE, createTranscribeHandler, transcriberFromEnv } from "./lib/transcribe.mjs";
-import { COMPOSE_ROUTE, createComposer, parseSigns } from "./lib/compose.mjs";
+import { COMPOSE_ROUTE, createComposer, parseContext, parseSigns } from "./lib/compose.mjs";
+import { SPEAK_ROUTE, parseSpeak, speakerFromEnv } from "./lib/speak.mjs";
 
 export const MAX_TEXT = 500;
 const MAX_BODY = 16 * 1024;
@@ -70,7 +72,8 @@ class HttpError extends Error {
  *                                    null = off. Default: from the environment (ONDEMAND=on, FAL_KEY_FILE / FAL_KEY, MOTION_DIRS),
  *                                    never under node --test
  * @param {object|null} [o.transcriber]  speech-to-text override ({transcribe(audio, opts)}, see lib/transcribe.mjs); null = off
- * @param {object|null} [o.composer]  sign -> sentence override ({compose(signs)}, see lib/compose.mjs); null = off
+ * @param {object|null} [o.composer]  sign -> sentence override ({compose(signs, context)}, see lib/compose.mjs); null = off
+ * @param {object|null} [o.speaker]   text -> speech override ({speak(text, {voice})}, see lib/speak.mjs); null = off
  * @param {(line: string) => void} [o.log]
  */
 export function createApp(o = {}) {
@@ -108,6 +111,7 @@ export function createApp(o = {}) {
   const transcriber = o.transcriber !== undefined ? o.transcriber : transcriberFromEnv(keyInfo, log);
   const transcribe = createTranscribeHandler(transcriber, { log });
   const composer = o.composer !== undefined ? o.composer : composerFromEnv(keyInfo, log);
+  const speaker = o.speaker !== undefined ? o.speaker : speakerFromEnv(keyInfo, log);
 
   function reloadClips(ids = []) {
     const before = clips.signs.size;
@@ -241,7 +245,7 @@ export function createApp(o = {}) {
 
     if (path === "/api/health") {
       only(req, "GET", "HEAD");
-      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, transcribe: transcriber ? "ready" : "off", compose: composer ? "ready" : "off", recognizer: await recognizerStatus(),
+      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, transcribe: transcriber ? "ready" : "off", compose: composer ? "ready" : "off", speak: speaker ? "ready" : "off", recognizer: await recognizerStatus(),
         ...(odConfig.wanted || ondemand.enabled ? { ondemand: ondemand.health() } : {}) });
     }
     if (path === "/api/ondemand") {
@@ -274,12 +278,25 @@ export function createApp(o = {}) {
     if (path === COMPOSE_ROUTE) {
       only(req, "POST");
       if (!composer) throw new HttpError(503, "compose_off", "no OpenAI key on the server; compose the sentence on the client");
-      let signs;
-      try { signs = parseSigns(await readJson(req)); } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(400, "bad_request", e.message); }
-      try { return json(res, 200, { ok: true, ...(await composer.compose(signs)) }); } catch (e) {
+      let signs, context;
+      try { const body = await readJson(req); signs = parseSigns(body); context = parseContext(body); } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(400, "bad_request", e.message); }
+      try { return json(res, 200, { ok: true, ...(await composer.compose(signs, context)) }); } catch (e) {
         log(`compose failed: ${redact(e?.message ?? String(e))}`);
         throw new HttpError(502, "compose_failed", "the sentence model did not answer");
       }
+    }
+    if (path === SPEAK_ROUTE) {
+      only(req, "POST");
+      if (!speaker) throw new HttpError(503, "speak_off", "no OpenAI key on the server; use the device's own voice");
+      let input;
+      try { input = parseSpeak(await readJson(req)); } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(e.status ?? 400, e.code ?? "bad_request", e.message); }
+      let out;
+      try { out = await speaker.speak(input.text, { voice: input.voice }); } catch (e) {
+        log(`speak failed (${e?.code ?? "upstream"}): ${redact(e?.message ?? String(e))}`);   // never the text
+        throw new HttpError(e?.code === "timeout" ? 504 : e?.code === "rate_limited" ? 429 : 502, "speak_failed", "the voice service did not answer");
+      }
+      res.writeHead(200, { "content-type": "audio/mpeg", "content-length": out.audio.length, "cache-control": "no-store", "x-speak-cached": out.cached ? "1" : "0" });
+      return res.end(out.audio);
     }
     if (path === "/api/recognize") {
       only(req, "POST");
@@ -298,7 +315,7 @@ export function createApp(o = {}) {
       if (!file) throw new HttpError(404, "no_clip", `no clip ${rel ?? path}`);
       return sendFile(req, res, file);
     }
-    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "POST /api/compose", "/app/"] });
+    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "POST /api/compose", "POST /api/speak", "/app/"] });
     throw new HttpError(404, "not_found", `no route ${req.method} ${path}`);
   }
 
@@ -379,7 +396,7 @@ export function createApp(o = {}) {
     });
   });
   server.on("close", () => ondemand.stop());
-  return { server, get clips() { return clips; }, get vocab() { return vocab; }, state, ready, sign, agent, transcriber, composer, ondemand, reloadClips, recognizerUrl, webDist };
+  return { server, get clips() { return clips; }, get vocab() { return vocab; }, state, ready, sign, agent, transcriber, composer, speaker, ondemand, reloadClips, recognizerUrl, webDist };
 }
 
 /** On-demand settings: explicit options (tests), null = off, or the environment (never under node --test). */
@@ -552,6 +569,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log(`agent: ${app.state.agent}${app.agent?.model ? ` (${app.agent.model})` : ""}`);
     console.log(`ondemand: ${app.ondemand.enabled ? `on (${app.ondemand.clipsDir})` : "off"}`);
     console.log(`transcribe: ${app.transcriber?.model ?? "off"}`);
+    console.log(`speak: ${app.speaker ? `${app.speaker.model} (${app.speaker.voice})` : "off"}`);
     console.log(`recognizer: ${app.recognizerUrl}`);
     console.log(`web app: ${existsSync(join(app.webDist, "index.html")) ? `${lanUrls(port).at(-1)}/app/` : `not built (${app.webDist})`}`);
   });

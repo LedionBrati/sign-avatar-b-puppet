@@ -126,6 +126,8 @@ export interface HealthResponse {
   recognizer?: "ready" | "down";
   /** POST /api/compose (signs -> spoken sentence by meaning): "ready" when an OpenAI key is configured. Older servers omit it. */
   compose?: "ready" | "off";
+  /** POST /api/speak (text -> natural voice, audio/mpeg): "ready" when an OpenAI key is configured. Older servers omit it. */
+  speak?: "ready" | "off";
   /** Generate-on-use (server ONDEMAND=on). Omitted when the server has it off. */
   ondemand?: OnDemandHealth;
 }
@@ -169,13 +171,15 @@ export interface RecognizeResponse {
   timings: { inference_ms: number; total_ms: number };
 }
 
-/** POST /api/compose. The signs read so far, each with the recognizer's guesses (best first, up to 3). */
+/** POST /api/compose. The signs read so far (1-8), each with the recognizer's guesses (best first, up to 5). */
 export interface ComposeRequest {
   signs: { text: string; options?: { text: string; confidence: number }[] }[];
+  /** Optional conversation context: the last <= 2 sentences this screen spoke, the last thing the hearing person said. */
+  context?: { said?: string[]; heard?: string };
 }
 
 /** makes_sense: the signs already form a complete message. sentence: natural English (best effort even if not).
- *  picked: which guess was used per sign. */
+ *  picked: which guess was used per sign; -1 = the sign was dropped (every guess low-confidence and none fit). */
 export interface ComposeResponse {
   makes_sense: boolean;
   sentence: string;
@@ -183,6 +187,12 @@ export interface ComposeResponse {
   model: string;
   cached: boolean;
   latency_ms: number;
+}
+
+/** POST /api/speak. text <= 400 chars; voice: an OpenAI TTS voice (server default "coral"). Answer: audio/mpeg bytes. */
+export interface SpeakRequest {
+  text: string;
+  voice?: string;
 }
 
 export const FRAMES_HEADER = "X-Frames";
@@ -195,6 +205,7 @@ export const ROUTES = {
   clips: "/clips/", // GET /clips/<file>.mp4 (static)
   transcribe: "/api/transcribe", // POST audio/webm chunk -> TranscribeResponse
   compose: "/api/compose", // POST ComposeRequest -> ComposeResponse (signs -> sentence, OpenAI)
+  speak: "/api/speak", // POST SpeakRequest -> audio/mpeg (natural text-to-speech, OpenAI)
   recognize: "/api/recognize", // POST ?mode=sign|spell, octet-stream float32 frames -> RecognizeResponse (proxied to app/recognizer)
   webApp: "/app/", // GET the built web app (phone WebView loads /app/#/sign?embed=1)
 } as const;

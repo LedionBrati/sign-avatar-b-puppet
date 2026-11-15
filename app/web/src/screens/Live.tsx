@@ -13,6 +13,7 @@ import { SignerStage } from "../components/SignerStage";
 import { TypeBox } from "../components/TypeBox";
 import { Wave } from "../components/Wave";
 import { prefetchClip, type GaplessPlayer } from "../lib/player";
+import { saveHeard } from "../lib/heard";
 import { setPrefs, usePrefs } from "../lib/prefs";
 import { sessionView, splitWords, type Phrase } from "../lib/session";
 import { createListener, speechSupported } from "../lib/speech";
@@ -78,6 +79,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
 
   const submit = useCallback((text: string) => {
     const id = ++ids.current;
+    saveHeard(text); // context for the sign -> voice screen's sentence model
     setStopped(false);
     setPhrases((ps) => [...ps, { id, text, res: null, offset: -1 }]);
     const req = client.sign({ text });
