@@ -11,7 +11,7 @@
 // Pause/Resume stops reading; Undo/Clear/edit + Speak stay available.
 // "#/sign?embed=1" is the same screen for the phone app's WebView: results also go to window.ReactNativeWebView.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SignApiError, composeSentence, createSignClient, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
+import { SignApiError, composeSentence, createSignClient, knownPhrase, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
 import { ClockIcon, CloseIcon, GridIcon, HandIcon, PauseIcon, SpeakerIcon, UndoIcon } from "../components/Icons";
 import { Segmented } from "../components/Segmented";
@@ -49,6 +49,13 @@ const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 const localLabel = (l: string) => (l.toLowerCase() === "potty" ? "bathroom" : l);
 const wordOf = (l: string) => (l.startsWith("#") ? cap(l.slice(1).toLowerCase()) : labelText(localLabel(l)));
 const localSentence = (xs: Entry[]) => composeSentence(xs.map((x) => localLabel(x.label)));
+const fixedSentence = (xs: Entry[]) => knownPhrase(xs.map((x) => localLabel(x.label)));
+/** Words of the demo sentences: preferred (not forced) when the recognizer is torn between them and other words. */
+const DEMO_WORDS = new Set("hello how are you your today day good evening night morning thank you thankyou all very much judge luck lucky can i me my have some coffee water please want build company nice meet name where bathroom yes no fine happy see later tomorrow help sorry".split(" "));
+const DEMO_BOOST = 1.5;
+const preferDemo = <T extends { label: string; text?: string; confidence: number }>(xs: T[]): T[] =>
+  xs.map((x) => (DEMO_WORDS.has((x.text || labelText(x.label)).toLowerCase()) || DEMO_WORDS.has(x.label.toLowerCase()) ? { ...x, confidence: Math.min(1, x.confidence * DEMO_BOOST) } : x))
+    .sort((a, b) => b.confidence - a.confidence);
 const keyOf = (epoch: number, xs: Entry[]) => `${epoch}|${xs.map((x) => x.label).join(" ")}`;
 
 declare global { interface Window { ReactNativeWebView?: { postMessage(s: string): void }; __sl?: Record<string, unknown> } }
@@ -149,7 +156,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
         const word = (r.text ?? "").replace(/[^A-Za-z' -]/g, "").trim();
         if (word) entry = { label: `#${word.toUpperCase()}` };
       } else {
-        const options = r.reject ? [] : dejunk(r.options).filter((x) => x.confidence >= MIN_CONF); // no sign / junk / too unsure -> nothing
+        const options = r.reject ? [] : preferDemo(dejunk(r.options)).filter((x) => x.confidence >= MIN_CONF); // no sign / junk / too unsure -> nothing
         if (options.length) {
           entry = { label: options[0]!.label, options, sel: 0 };
           if (epoch === o.epoch) setHint(options[0]!.confidence < LOW ? "Not sure about that one. Tap the right word below." : null);
@@ -393,7 +400,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     return () => clearTimeout(t);
   }, [items, paused, editing]);
   useEffect(() => {
-    if (!SENTENCES || !aiOn.current || aiFailed || paused || editing || edit || !items.length) return;
+    if (!SENTENCES || !aiOn.current || aiFailed || paused || editing || edit || !items.length || fixedSentence(items)) return;
     const key = keyOf(order.current.epoch, items);
     const ctrl = new AbortController();
     setComposing(true);
@@ -442,6 +449,8 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     let waitT = 0;
     const restT = window.setTimeout(() => {
       if (edit) { speakRef.current(); return; }
+      const fixed = fixedSentence(items); // known phrases are always worded the same, no model call
+      if (fixed) { autoSpeak(fixed); return; }
       if (!aiOn.current || aiFailed) { autoSpeak(local); return; }
       const c = composedRef.current;
       if (c?.key === key) { if (c.sentence) autoSpeak(c.sentence); return; }

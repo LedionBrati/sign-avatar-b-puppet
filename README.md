@@ -1,608 +1,198 @@
-# Sign Avatar · Method B: 3D puppet + AI repaint
+# Flux
 
-**Type or speak a sentence. Get a realistic video of a person signing it in ASL. And back: sign to the camera, the app speaks it.**
+**A live sign language interpreter that works both ways.** Speak, and a real-looking signer signs it in ASL. Sign to the camera, and Flux says it out loud.
 
-This repo explores **Method B**: store every sign as **motion data** (hand, body and face points), join the motion smoothly for any sentence, drive a simple **3D figure** with it, then let an **AI video model repaint** the figure into our realistic avatar.
+<p align="center">
+  <img src="app/web/docs/2030-live-phone-light.png" alt="Flux on a phone, signing SICK while the caption highlights the word" width="300">
+</p>
 
-**We are building Method B only.** The twin repo, **[sign-avatar-a-stitching](https://github.com/LedionBrati/sign-avatar-a-stitching)** (Method A, join pre-made avatar video clips), stays as a reference. Its Recast-on-real-signer approach is also our **fallback** (see section 4).
+## Why it matters
 
-> **Status (14 Nov 2026):** the realistic avatar works on real sentences (see the demo below). Method B itself is **untested**: nobody has yet driven a 3D figure from sign data and repainted it. We get there through **4 checkpoints, free ones first** (section 4). Nothing here is assigned to anyone: read, pick what interests you, write down what you learn.
+There are about 70 million deaf people in the world, and together they use more than 300 sign languages ([World Federation of the Deaf](https://wfdeaf.org/)). For many of them, a sign language is the first language and written English is the second. Fast captions in a second language are tiring to follow, and most calls, lectures and videos offer nothing else.
 
-> **Hackathon deadline: 15 Nov 2026, 18:00 Athens time.** First full connection by **12:00**, feature freeze at **15:00**, then rehearse and record a backup video. See "Hackathon plan" in section 12.
+Flux puts a signer next to any voice: a person in the room, a YouTube video, a Google Meet call. It also gives signers a voice back, from a phone or laptop camera, with no extra hardware.
 
----
+## What it does
 
-## Contents
+**Speech to sign**
+- Listens to the mic, typed text, or any Chrome tab's audio (YouTube, Google Meet, Zoom web).
+- Turns the words into an ASL sign plan in milliseconds, on your own machine.
+- Plays a photoreal signer, one sign after another, with no gaps. The first sign starts about 0.2 s after a phrase arrives.
+- Shows live captions with the current word highlighted. A word Flux can't sign stays in the captions. It never fakes a sign.
 
-1. [The vision](#1-the-vision)
-2. [What already works](#2-what-already-works)
-3. [The one idea everything rests on](#3-the-one-idea-everything-rests-on)
-4. [The path: 4 checkpoints](#4-the-path-4-checkpoints)
-5. [Method B, explained](#5-method-b-explained)
-6. [The hard parts (open problems)](#6-the-hard-parts-open-problems)
-7. [Existing pieces we can reuse](#7-existing-pieces-we-can-reuse)
-8. [What's in this repo](#8-whats-in-this-repo)
-9. [Setup](#9-setup)
-10. [The pipeline scripts](#10-the-pipeline-scripts)
-11. [fal models cheat sheet](#11-fal-models-cheat-sheet)
-12. [How we work together](#12-how-we-work-together)
-13. [Rules we don't break](#13-rules-we-dont-break)
-14. [Glossary](#14-glossary)
-15. [Credits](#15-credits)
+**Sign to voice**
+- Tracks hands, body and face with MediaPipe in the browser. Only landmark points leave the device, never video.
+- Recognizes 250 signs with a pretrained Kaggle model and 332 more with WLASL motion templates.
+- Shows words as you sign them, and filters out transitions and resting hands.
+- When your hands rest, writes one natural sentence (using the conversation from both sides) and speaks it in a natural voice.
 
----
+**Where it runs**
+- **Web app:** installable PWA, light frosted-glass design, phone first.
+- **Chrome extension:** a floating, draggable glass card over any page, listening to the tab or the mic.
+- **Phone app:** built with Expo.
+- **Standalone build:** the web app and its clips in one bundle, no server needed (`npm run build:artifact` in `app/web`).
 
-## 1. The vision
+## How it works
 
-A Deaf person and a hearing person are trying to talk. The hearing person speaks or types. The Deaf person sees a **realistic person signing** what was said, in their language, right away.
-
-Why not just captions? For many Deaf people **ASL is their first language** and English their second. Reading fast captions in a second language is tiring. A signer is easier to follow. Captions stay on screen too, but the signer comes first.
-
-### The product: a two-way ASL app
-
-| Direction | Who uses it | What happens |
-|---|---|---|
-| **Speech → sign** | the hearing person speaks or types | our realistic avatar signs it in ASL, with captions and the gloss |
-| **Sign → speech** | the Deaf person signs to the camera | the app recognizes the signs, writes the sentence, the user confirms, the app speaks it |
-
-**Where it runs:**
-- a **web app you can install on a phone** (a PWA): Type/Speak → Sign, and Sign → Speak
-- a **Chrome extension** (speech → sign only at first): a side panel, and "Sign this" on any selected text
-
-**Built in this order:**
-1. **Localhost app:** type `Hello, my name is Maria`, get a video like [`judy-phone.mp4`](assets/demo/judy-phone.mp4) that signs exactly that. The puppet shows **instantly**; the realistic avatar replaces it when the repaint is done.
-2. **Speech in:** speak instead of typing.
-3. **Sign → speech:** the other direction, with ready-made recognition models (section 6.10).
-4. **Phone app + Chrome extension.**
-
-**Later (ideas, not a plan):** live during a call (6.8), more avatars, facial grammar under our control.
-
-The detailed product plan (stack, costs, experiments, measured numbers) is in **[`docs/product-plan.md`](docs/product-plan.md)** (Nikos). Where the plan and this README disagree, this README wins; propose changes to either by PR.
-
----
-
-## 2. What already works
-
-On 14 Nov 2026 we turned a real ASL signer into our AI avatar, frame for frame.
-
-| File | What you'll see |
-|---|---|
-| [`assets/demo/judy-side-by-side.mp4`](assets/demo/judy-side-by-side.mp4) | Real signer left, our avatar right, same signs, caption below |
-| [`assets/demo/judy-phone.mp4`](assets/demo/judy-phone.mp4) | Phone version: avatar full screen, small real-signer window |
-| [`assets/demo/judy-avatar-clean.mp4`](assets/demo/judy-avatar-clean.mp4) | Just the avatar on the wall |
-| [`assets/demo/judy-real-vs-recast-vs-reference.mp4`](assets/demo/judy-real-vs-recast-vs-reference.mp4) | Real vs the two fal methods we tested |
-
-The full story, numbers, and what failed: **[`docs/findings-2026-11-14.md`](docs/findings-2026-11-14.md)**. Read it before you start.
-
-What matters most for Method B:
-- **`minimax/h3-max/recast` copies motion frame for frame** from a video of a **real person**. Whether it does the same from a **3D render** is unknown (checkpoint 3).
-- `minimax/h3-max/reference-to-video` **interprets** motion and drifts into wrong signs after a few seconds. A loose motion guide is not enough for sign language.
-- Fast fingers were the weak spot even with a real source video. With tracked points, fingers will be harder.
-
----
-
-## 3. The one idea everything rests on
-
-**AI video models do not know sign language.** They make hands that look like signing but mean nothing.
-
-So:
-
-```
-the SIGNS come from real signers          (recorded, then stored as motion data)
-the LOOK comes from the AI avatar         (consistent, realistic, nobody's real face)
-```
-
-In Method B the motion data is the source of truth. The 3D figure and the AI repaint are only there to make it look human. If the repaint changes a handshape, the sign is wrong, however good it looks.
-
----
-
-## 4. The path: 4 checkpoints
-
-We prove the hard parts **in order, free ones first**, before building a big vocabulary or spending on AI repaint. Each checkpoint ends with a short demo and an honest **go / no-go** written in `experiments/`.
-
-| # | Checkpoint | Done when | Cost | Details |
-|---|---|---|---|---|
-| **1** | **Motion proof.** One real signer clip → MediaPipe points (raw + cleaned) → 3D puppet playing in the browser | One clip plays, with 3 views side by side: **real signer \| skeleton \| puppet**. Source, signer, license and timecodes written down. | free | 6.4, 6.7, section 7 |
-| **2** | **Finger test.** Check every frame for lost or wrong fingers | A frame-by-frame report: thumb, finger curl and spread, palm direction, wrist. For each failure: was it the **tracking**, the **cleanup**, or the **puppet**? | free | 6.2 |
-| **3** | **Repaint.** Turn the puppet video into our realistic avatar | The repaint keeps the signs **clearly better** than the plain puppet, and the extra time and cost is worth it. Agree a small fal budget first. Log request ids, cost, seconds. | paid | 6.1 |
-| **4** | **English to signs, end to end.** A tiny shared "plan" (section 6.5) with 2 or 3 checked signs | One hard-coded sentence goes text → plan → motion → puppet (→ repaint) → video. Words we can't sign show up as "can't sign this yet". | free (paid if repainted) | 6.3, 6.5, 6.9 |
-
-**A cheap baseline to run alongside: B0.** Before any puppet exists, join the real WLASL clips for a short sentence (same framing, left-handed signers mirrored, idle frames trimmed) and Recast that video directly. No motion data needed. It shows how much the puppet actually adds, and it's close to our fallback.
-
-### After the checkpoints: the roadmap
-
-From [`docs/product-plan.md`](docs/product-plan.md) section 5. Each step gets a log in `experiments/` and has a pass mark.
-
-| Step | What | Pass mark |
-|---|---|---|
-| Motion dictionary | Extract and clean all 1,945 WLASL signs; auto-check them with the recognizer (6.10) | share of signs that pass |
-| Blend + puppet | The 3 test sentences (below) as puppet videos | a signer can read the puppet |
-| Gloss | 20 test sentences checked by a signer, incl. fingerspelling, questions, words with two meanings | wrong-sense and fallback rates |
-| Localhost app | text → gloss → puppet preview → repaint on a button → finished video | scored with the table below |
-| Speech in | server-side speech-to-text | works in iOS Safari and as an installed phone app |
-| Sign → speech | recognizer in the app | 3 to 5 real people, 30 signs: right sign in the top 5 at least 70% of the time, 15+ fps on a mid-range Android |
-| Phone app + extension | packaging | private demo |
-
-### Cost per sentence
-
-The repaint is the expensive part. Recast is about **$0.085 per second** of video (5 s minimum), Kling v3 Standard about $0.126/s. A 6-sign sentence is 9 to 13 s, so **roughly $1 to $2 per new sentence**, and sentences rarely repeat. So: the **puppet is free and instant**, the **repaint is a button**, not automatic, until a fast or live model works (6.8). The shared app gets a daily fal budget cap.
-
-### What we still need
-
-- **A fluent (ideally Deaf) signer** to check every "is it correct" and to record what's missing.
-- **Fingerspelling A to Z.** WLASL has no clean alphabet, and test sentence 1 (`M-A-R-I-A`) needs it. Record it at 60 fps in good light; the GSL repo's `recorder/` could do it in about an hour.
-- **Keys:** `FAL_KEY` (repaint) and `ANTHROPIC_API_KEY` (gloss).
-
-**Rules for the checkpoints**
-- **Look, don't trust.** A puppet that moves nicely is not proof of correct ASL. Compare handshape, palm and wrist with the real signer, side by side.
-- **Keep raw data.** Never let smoothing silently delete fast fingerspelling. Keep raw and cleaned tracks.
-- **The quality target** stays [`assets/demo/judy-avatar-clean.mp4`](assets/demo/judy-avatar-clean.mp4): Recast on a real signer.
-
-### If checkpoint 3 fails: the fallback
-
-If no model repaints the puppet without damaging the hands, we **don't** show an AI video with wrong signs. We fall back to **Recast on real signer clips** (what made the Judy demo, `examples/judy.sh`):
-- keeps the **realistic avatar** and frame-accurate signs
-- only works for sentences or signs we have real clips for
-- the puppet still runs underneath (checkpoints 1, 2 and 4 are never wasted: the plan, the motion data and the puppet view stay useful for debugging and for live later)
-
-### B vs the clip-stitching approach
-
-| | **A: Clip stitching** ([twin repo](https://github.com/LedionBrati/sign-avatar-a-stitching), reference only) | **B: 3D puppet + repaint** (this repo) |
-|---|---|---|
-| A sign is stored as | a short **video** of the avatar | **points** (hands, body, face) per frame |
-| A sentence is made by | joining video clips | joining points smoothly, rendering a 3D figure, AI repaint |
-| Strong at | correct signs, realism, speed at runtime | smooth moves between signs, timing, control, any sentence |
-| Weak at | jumps between signs | fingers (tracked points are noisy), unproven repaint, slower per sentence |
-| Time per new sentence | seconds | minutes today (the repaint runs every time), unless a fast or live repaint works |
-
-Both share: the avatar (`assets/avatar/`), the reference clips (`references/`), the finishing scripts (`pipeline/`).
-
-### How we score a result
-
-Once B can make a sentence, we compare it with the Judy Recast video (and with the fallback) on the **same 3 sentences**.
-
-Suggested test sentences (change them if you have better ones):
-1. `Hello, my name is Maria.` (greeting + fingerspelling: **the finger test**)
-2. `Thank you, see you later.` (common signs, two-handed)
-3. `Where does it hurt?` (a question: in ASL the eyebrows carry it)
-
-Score each 1 to 5:
-
-| Score | Question |
-|---|---|
-| **Correct signs** | Would a signer read the right words? (Best judged by a Deaf or fluent signer.) |
-| **Smooth** | Natural flow between signs, or jumps and freezes? |
-| **Looks real** | Would a friend think it's a real video call? |
-| **Speed** | Seconds from pressing enter to the video playing |
-| **Cost** | fal spend per new sentence |
-
-Log every comparison in `experiments/`.
-
----
-
-## 5. Method B, explained
-
-Three layers: **motion** (the truth), **puppet** (a render anyone can check), **repaint** (the realistic look).
+### Speech to sign
 
 ```mermaid
 flowchart LR
-  subgraph Once["Once per sign (offline)"]
-    R[Real signer clip<br/>for one sign] --> X[Extract points<br/>MediaPipe: body, hands, face]
-    X --> F[Clean up<br/>smooth, fix fingers,<br/>trim to rest pose]
-    F --> M[(Motion dictionary<br/>HELLO.json, NAME.json,<br/>A.json ... Z.json)]
-  end
-  subgraph Per["Per sentence"]
-    T[English text] --> G[LLM: English to ASL gloss<br/>HELLO MY NAME M-A-R-I-A]
-    G --> L[Look up motion]
-    M --> L
-    L --> B[Blend signs together<br/>smooth transitions, timing]
-    B --> P[Render the puppet<br/>3D figure or pose video]
-    P --> RP[AI repaint into our avatar<br/>Recast, pose-to-video, ...]
-    RP --> C[Background + caption<br/>pipeline scripts]
-    C --> V[Video]
-  end
+  A[Mic, typed text<br/>or tab audio] --> B[Transcribe<br/>gpt-4o-mini-transcribe]
+  B --> C[Translate<br/>rules + MiniLM embeddings<br/>optional OpenAI layer]
+  C --> D{Safety gate}
+  D -- signable --> E[Playlist of<br/>pre-made sign clips]
+  D -- not signable --> F[Captions only]
+  E --> G[Gapless player<br/>+ live captions]
 ```
 
-### Step by step
+The translator runs locally. Rules go first (about 0.2 ms), then MiniLM embeddings match leftover words by meaning (about 15 ms warm). If a sentence still can't be signed in full, an optional OpenAI layer paraphrases it into signs that exist. Every plan, local or not, passes the same safety gate, and any sign ID that isn't in the library is rejected.
 
-1. **Collect** real signer clips, one sign each: **WLASL, 1,945 signs**, already downloaded and converted by Nikos (non-commercial license C-UDA, fine for private demos). Mirror left-handed signers. How2Sign sentences stay as the quality reference. See [`references/README.md`](references/README.md).
-2. **Extract points** from each frame: about 33 body points, 21 per hand, face mesh. Tool: MediaPipe (Holistic, or the newer Pose / Hand / Face Landmarkers).
-3. **Clean up**: smooth jitter, fix lost hands, trim each sign to where hands leave and return to rest.
-4. **Store** one motion file per sign, named by gloss (`HELLO.json`).
-5. **At runtime:** gloss from the LLM, look up each motion, **blend** them (the end of one sign flows into the start of the next), set timing.
-6. **Render the puppet**: a 3D figure (for example a VRM model in three.js) or a simple pose video, at the avatar's framing (3:4, waist up).
-7. **Repaint** the puppet video into our avatar with an AI model.
-8. **Finish** with the same scripts as Method A: background, wall, caption, layouts.
+### Sign to voice
 
-### Why this could beat Method A
-
-- **Smooth transitions for free.** Blending points is easy; blending videos is not.
-- **Timing control.** Speed up, slow down, hold a sign, pause between sentences.
-- **Facial grammar control.** Raise eyebrows for a question by changing numbers, not by finding a new clip.
-- **Tiny storage.** A sign is a few KB of points instead of a video.
-- **The puppet is checkable.** Before paying for a repaint, anyone can look at the 3D render and see if the signs are right.
-
-### Why it might fail
-
-- **Fingers.** Tracked finger points are noisy and lose fingers when hands overlap or move fast. Handshape is meaning in ASL.
-- **The repaint may not copy precisely.** Day one showed a "motion reference" model drifting. We need a model that copies motion as strictly as Recast did.
-- **A cartoon puppet may confuse the repaint model** (does Recast see a 3D character as "a person"?).
-- **Slower per sentence**: the repaint runs for every new sentence, unless a fast or live model works.
-
----
-
-## 6. The hard parts (open problems)
-
-These are **not tasks**. They are the questions this repo needs answered. Pick any, explore it your way, write down what you find in `experiments/`. Each has what we already know and a few ideas to start from. Better ideas are welcome.
-
-### 6.1 The repaint: can an AI copy a puppet's motion exactly? (checkpoint 3)
-
-The realistic look depends on this. If no model repaints a puppet precisely, we use the fallback in section 4. Do it **after** checkpoint 1 gives us a puppet video to repaint.
-
-**Candidates on fal:**
-- **`minimax/h3-max/recast`**: copied a real person perfectly on day one. Feed it a **3D render** instead. Does it accept it? Does it keep handshapes?
-- **`fal-ai/kling-video/v3/standard/motion-control`**: newest Kling motion transfer. Takes the background from the avatar image, so no background removal needed.
-- **`fal-ai/bytedance/dreamactor/v2`**: motion transfer, cheap.
-- **`fal-ai/one-to-all-animation/14b`** (and `/1.3b`): a **pose-driven** model that animates a character from **one reference image**. Made for exactly this. **Its fal page returned 404 on 14 Nov 2026: check it still exists first.**
-- **`minimax/h3-max/reference-to-video`**: drifted on day one; maybe better with a very clean puppet video as the reference.
-- Search fal for more: `pose to video`, `motion transfer`, `character animation`.
-
-**The test:**
-1. Take the motion from checkpoint 1 (for example from `references/how2sign/judy.mp4`).
-2. Render it two ways, same framing: a **skeleton video** and a **human-shaped puppet** (VRM or mannequin).
-3. Repaint both with each candidate, within the agreed budget. Log request id, cost, seconds, and check the frame count matches.
-4. Compare fingers, palm and face with the **real signer** and with the Recast result from day one (`assets/demo/judy-avatar-clean.mp4`). Flag any sign part that was added, removed or changed.
-5. Go / no-go: is the repaint clearly better than the plain puppet, and worth the extra time and cost?
-
-**E0 preparation:** [`pipeline/e0.mjs`](pipeline/e0.mjs) checks a future puppet MP4 with ffprobe, prepares model adapters in a free dry run, and writes comparison reports. See [`experiments/e0/README.md`](experiments/e0/README.md). It does not call fal unless an operator explicitly enables a guarded paid run.
-
-### 6.2 Getting good finger data (checkpoint 2)
-
-**Known:** MediaPipe gives 21 points per hand. It struggles with fast motion, hands crossing, and hands in front of the face. Even on day one, Recast blurred 1 or 2 frames of fast fingerspelling. Fingers carry meaning in ASL; they are not a cosmetic detail.
-
-**What to check, frame by frame:** thumb position, finger curl, finger spread, palm direction, wrist angle, and fingers bending in impossible ways. Save each frame's confidence/visibility so lost frames are easy to find.
-
-**Where it can break:** the **tracking** (MediaPipe loses a finger), the **cleanup** (smoothing wipes out a quick handshape), the **puppet** (the 3D hand can't make that shape, or body and hand points use different origins). Note which one it was.
-
-**Ideas:**
-- Smoothing filters (for example One Euro filter) without killing fast handshape changes.
-- Record our own signs at 60 fps with good light; less blur means better tracking.
-- Check each sign automatically: the sign → speech recognizer (6.10) knows 250 signs, 201 of them also in WLASL. If it can't recognize our cleaned motion anymore, the extraction probably broke.
-- Mirror left-handed signers (WLASL has 30 signers, some left-dominant) so the avatar always uses the same hand.
-- Compare later: SignAvatars' 3D (SMPL-X) fits for WLASL may have better fingers (needs their request form).
-- How2Sign also offers pre-computed keypoints (check its download page). Compare them with MediaPipe.
-- Store **joint angles** (finger curl, spread) rather than raw points; easier to blend and fix.
-
-### 6.3 Blending signs together
-
-**Ideas:**
-- Blend the last ~0.2 s of one sign into the first ~0.2 s of the next (rotations with slerp, positions with easing).
-- Skip the rest pose between signs, like real signers do (co-articulation).
-- Keep fingerspelling tight: letters flow with tiny transitions.
-- Make timing adjustable per sign (some signs are held, some are quick).
-
-### 6.4 The puppet: what should it look like?
-
-The puppet only has to be readable by the repaint model, not pretty.
-
-**Options to compare:**
-- **Skeleton video** (colored lines and dots): what pose models usually expect.
-- **VRM 3D character** in three.js: human-shaped, with real fingers. The GSL team repo already does this (see section 7).
-- **Neutral mannequin** in the avatar's colors (black top, skin-tone hands, dark wall): may make Recast think "person".
-- **Render settings:** match the avatar framing (3:4, waist up, camera at chest height), 24 fps.
-
-### 6.5 English to ASL: the gloss step
-
-ASL is its own language: `Are you going to the store?` is roughly `STORE YOU GO?` with raised eyebrows.
-
-**One ordered plan between English and the puppet.** Whatever produces the gloss (hard-coded first, LLM later) outputs a structured plan; the UI and both rendering routes consume that plan. Signs and fingerspelling are in **the same ordered `items` array**, so a fingerspelled word can appear anywhere:
-
-```json
-{
-  "input_text": "Hello, my name is Maria.",
-  "items": [
-    { "type": "sign", "gloss": "HELLO", "motion_id": "HELLO" },
-    { "type": "sign", "gloss": "MY", "motion_id": "MY" },
-    { "type": "sign", "gloss": "NAME", "motion_id": "NAME" },
-    { "type": "fingerspell", "word": "MARIA" }
-  ],
-  "nonmanual_markers": [],
-  "unsupported_tokens": [],
-  "caption": "Hello, my name is Maria."
-}
+```mermaid
+flowchart LR
+  A[Camera] --> B[MediaPipe Holistic<br/>in the browser]
+  B -- 543 points per frame --> C[Recognizer<br/>GISLR TFLite + WLASL templates]
+  C --> D[Junk filter<br/>motion + confidence]
+  D --> E[Words appear live]
+  E -- hands rest --> F[One sentence<br/>OpenAI + conversation history]
+  F --> G[Natural voice<br/>gpt-4o-mini-tts]
 ```
 
-- **Facial/nonmanual markers** refer to zero-based *inclusive* item spans: e.g. `{ "type": "question_yn", "from": 0, "to": 3 }` covers items 0 through 3. This describes where the expression belongs, not whether we can already animate it accurately.
-- **Canonical sign catalog:** `catalog/signs.json`. Each sign has a stable ID, a gloss, optional sense and recognizer label, and a QA status. The catalog currently starts **empty**, on purpose: do not treat the example sentence as runnable until verified assets are registered.
-- **Runtime contract:** `shared/contracts.mjs`; validate plans and resolve them against catalog entries before attempting playback. `preparePlayback()` returns all ordered motion references or an explicit unsupported result; `loadPlayback()` accepts an engine-owned loader without assuming a frame format. Missing signs, missing A–Z movements and unsupported tokens block the whole sequence. See [`shared/INTEGRATION.md`](shared/INTEGRATION.md) and run `node --test shared/contracts.test.mjs`.
-- **Motion format:** Nikos's merged [`motion/FORMAT.md`](motion/FORMAT.md) defines landmark frames. `shared/motion-format.mjs` validates v1 JSON; `shared/motion-loader.node.mjs` loads verified `.clean.json` assets into `loadPlayback()`. See [`shared/INTEGRATION.md`](shared/INTEGRATION.md). Real extractor output and player integration are still pending.
-- This one plan should also drive the real-signer-video fallback, so the app does not need a separate translation mechanism for each render mode.
+The recognizer merges two models. The Kaggle GISLR first-place model knows 250 everyday signs. A template matcher adds 332 signs from WLASL motion we had already extracted, using banded DTW against every template at once. A segment with too little motion or too little confidence is dropped as a transition.
 
-**Ideas:**
-- Start **hard-coded**: 2 or 3 checked signs, one sentence; add the LLM when the whole route works end to end.
-- Then an LLM (Claude) turns English into a plan **only using IDs in the catalog**, marking names for fingerspelling and questions for facial grammar.
-- Looking up English words one by one and reordering them is **not** real ASL grammar. Have a fluent signer review examples before making correctness claims.
-- Build a small test set of signer-checked sentences, including homographs, unsupported words and fingerspelled names.
+### The clip factory: the core idea
 
----
+Generating video per sentence takes minutes. Flux generates every sign **once**, as a clip that starts and ends in the same neutral pose. Any sentence is then just clips played back to back.
 
-### 6.6 Facial grammar
-
-In ASL, eyebrows, mouth and head movement are grammar. Method B can **control** them.
-
-**Ideas:**
-- Map face points to VRM blendshapes (brows up, brows down, mouth shapes).
-- Add question and negation face patterns on top of any sentence.
-- Check whether the repaint keeps them (Recast softened expressions a bit on day one).
-
-### 6.7 The motion dictionary format
-
-**Ideas:**
-- One JSON per sign: fps, frames, each frame with body, hands, face points (the GSL repo has a clip format to start from).
-- Metadata: gloss name, source clip, signer, license, start and end of the actual sign (timecodes in the source), dominant hand, who checked it.
-- Keep raw and cleaned versions, so cleanup can be redone.
-- **Where the signs come from:** our 4 How2Sign clips are **full sentences**, not single signs. Good for checkpoints 1 and 2, not a dictionary. For single signs, use word-level sources (ASL Signbank, ASL Citizen, WLASL) or record our own. See [`references/README.md`](references/README.md).
-
-### 6.8 Speed, and maybe live
-
-- Points + puppet render can be real time (a browser can do it).
-- The repaint is the slow part. fal lists **live video-to-video models** (for example `decart/lucy-2-6/realtime`, over WebRTC). They're not callable through the MCP, only in a real app. If one could repaint a live puppet with good fingers, that's a live signing avatar. Very experimental.
-
-### 6.9 The localhost app
-
-The first thing a user touches. Keep it simple:
-- a text box, a "Sign it" button, the video, the gloss under it
-- **the puppet plays instantly in the browser**; the realistic avatar replaces it when the repaint lands (a button at first, because of cost)
-- **show the puppet next to the final video**: perfect for debugging which layer broke
-- write the blending **once in TypeScript**, so the browser preview and the server render use the same code
-
-**Proposed stack** (from the product plan, open to change): Python FastAPI API in one container with ffmpeg and Node; server-side speech-to-text with fal Whisper (iOS home-screen apps get nothing from the browser's speech recognition); Vite + React + TypeScript web app, installable as a PWA; WXT for the Chrome extension; an invite code + daily fal budget cap.
-
-### 6.10 Sign → speech (the other direction)
-
-**Pretrained models only, no training.**
-- **Points:** MediaPipe in the browser. **Only points leave the device, never video**, and points are never logged (face points count as biometric data).
-- **Signs:** the GISLR Kaggle 1st-place model (250 signs, MIT license).
-- **Fingerspelling:** the Kaggle ASL Fingerspelling 1st-place model (Apache-2.0).
-- **Flow:** tap once, it stops when the hands rest or leave the frame (4 s max) → top 3 guesses as chips → Claude writes the sentence → the user confirms → the app speaks it.
-- **Measured so far:** 82% right first guess, 97% in the top 5, on 60 clean WLASL clips. **Real webcam users: untested.**
-- **Bonus:** same point format as our motion dictionary, so it doubles as an automatic checker (6.2).
-
----
-
-## 7. Existing pieces we can reuse
-
-Our hackathon team built a Greek Sign Language app with much of Method B's first half: **`fourlhs/gsl-pharmacy-bridge`** (private, ask Nikos for access). **Check it before building checkpoint 1 from scratch** (see issue #4).
-
-| Its folder | What it does | Useful here for |
-|---|---|---|
-| `recorder/` | Records signs with a webcam as MediaPipe Holistic points, exports JSON | Building the motion dictionary |
-| `avatar/` | Plays recorded points on a **VRM 3D avatar** (three.js + `@pixiv/three-vrm` + kalidokit), with 250 ms blends between signs and a 2D skeleton fallback | The puppet, and blending |
-| `recognition/` | Recognizes signs from points (DTW + kNN) | Checking our motion data automatically; the reverse direction later |
-| `shared/types.ts` | The clip format: frames with pose, poseWorld, face, leftHand, rightHand | A starting point for our motion format |
-
-Notes from its own docs: finger handshapes come from finger **curl** only (no spread), so some handshapes look approximate; the arm solve is tuned for vtubing. Both matter for ASL.
-
-It's built for **GSL**, not ASL, and a pharmacy vocabulary. The code is language-neutral; only the vocabulary and recordings change.
-
----
-
-## 8. What's in this repo
-
-```
-.
-├── README.md                     you are here
-├── docs/
-│   ├── findings-2026-11-14.md    day one: what worked, what failed, numbers
-│   ├── product-plan.md           the full product plan: two-way app, stack, costs, experiments
-│   └── one-product-collaboration-proposal.md   how the team builds one product: leads, shared pieces, timeline
-├── assets/
-│   ├── avatar/                   the AI woman (3 poses) + empty wall, and how she was made
-│   └── demo/                     the Judy demo videos (the quality target)
-├── references/
-│   ├── README.md                 the clips, their licenses, where to find more
-│   └── how2sign/                 4 real ASL sentence clips (judy, travis, dave, floyd)
-├── pipeline/                     shared finishing scripts (fal + ffmpeg + headless Chrome)
-├── examples/
-│   └── judy.sh                   the whole Judy demo (Recast path) in one script
-└── experiments/                  everyone's experiment logs (template inside)
+```mermaid
+flowchart LR
+  A[WLASL sign videos] --> B[MediaPipe<br/>motion extraction]
+  B --> C[VRM 3D puppet<br/>NEUTRAL S1 NEUTRAL S2 ...]
+  C --> D[fal H3 Max Recast<br/>one call per batch]
+  D --> E[Cut at neutral<br/>midpoints]
+  E --> F[Even out wall<br/>colour and zoom]
+  F --> G[Per-sign clips<br/>+ manifest]
 ```
 
-Method B code does not exist yet. Suggested folders as you go:
+1. **Extract.** MediaPipe pulls hand, body and face points from a real signer's video.
+2. **Puppet.** A three.js VRM puppet re-performs the motion. Signs are batched as `NEUTRAL S1 NEUTRAL S2 ... NEUTRAL`.
+3. **Repaint.** One fal H3 Max Recast call turns the whole puppet batch into a photoreal signer. It is frame exact (216 frames in, 216 out), so we know where every sign sits.
+4. **Cut.** The video is cut at the middle of each neutral pause. Every clip starts and ends in the same pose, so clips join without a jump.
+5. **Even out.** Each Recast job picks its own wall tone and zoom. `pipeline/even-clips.mjs` matches them across jobs, so clips from different batches join cleanly too.
 
-| Folder | What goes there |
+<p align="center">
+  <img src="assets/demo/even/joins-before-after.jpg" alt="Clip joins before (top row) and after (bottom row) evening out wall colour and head size" width="720">
+  <br><sub>Joins between clips from different Recast jobs. Top: before. Bottom: after <code>even-clips.mjs</code>.</sub>
+</p>
+
+Because the clips are made ahead of time, playback is instant and the video costs nothing per use. Optionally (`ONDEMAND=on`), a missing sign that already has extracted motion is generated in the background on first use and hot-loaded into the library.
+
+## Numbers
+
+Measured during the build on a laptop CPU with no GPU. Details are in [`experiments/`](experiments/).
+
+| | |
 |---|---|
-| `motion/` | Python: point extraction, cleanup, checks |
-| `puppet/` | TypeScript: blending, the player, the headless render |
-| `repaint/` | fal model wrappers (reuse `pipeline/lib/fal.mjs`) |
-| `recognize/` | the pretrained sign → speech models |
-| `app/api/`, `app/web/`, `app/extension/` | the API, the phone web app, the Chrome extension |
+| Signs the avatar can sign | **339** |
+| Signs the recognizer knows | **250** (GISLR) **+ 332** (WLASL templates) |
+| Time to first sign | **about 0.2 s** (a 3 to 4 sign sentence is built in 159 to 186 ms) |
+| Text to sign plan | **0.2 ms** with rules, **about 15 ms** with embeddings |
+| Recognizer accuracy on unseen WLASL signers | **86% top-1, 96% top-5** (100 clips, GISLR vocabulary) |
+| Recognizer round trip | **49 ms** median through the API (30 ms in the model) |
+| Template match against the whole bank | **20 to 40 ms** (363 templates) |
+| Video cost per use | **$0** (clips are pre-made) |
+| fal time to make one sign, once | **about 11 s** |
+| New sign on demand, first use to playable | **127 s** (2 signs in one batch) |
+| Wall-colour jump at a join between jobs | **18.9 down to 3.6** after evening out |
+| Optional OpenAI planning layer | **1.35 s** median, about **$0.001** per sentence |
 
-`out/` is for your outputs and is ignored by git.
+## Try it
 
----
-
-## 9. Setup
-
-You need (macOS commands shown):
-
-| Tool | Why | Install |
-|---|---|---|
-| Node 20+ | fal scripts, caption renderer, likely the puppet (three.js) | `brew install node` |
-| ffmpeg + ffprobe | crop, join, composite, encode | `brew install ffmpeg` |
-| Google Chrome | renders captions as images; can also render the puppet headless | set `CHROME=/path/to/chrome` if not in `/Applications` |
-| A fal API key | repaint models, background removal | fal.ai dashboard, then `export FAL_KEY=...` |
-| Python 3.10+ (optional) | MediaPipe is easiest in Python for batch point extraction | `pip install mediapipe` |
+You need Node 20+, Python 3.13 with [uv](https://docs.astral.sh/uv/), ffmpeg and Chrome. The sign clips live in `out/`, which is not in git because the source videos are licensed for non-commercial research only. Build them with the clip factory in `pipeline/` (see [`experiments/2026-11-15-mass-signs.md`](experiments/2026-11-15-mass-signs.md)).
 
 ```bash
 git clone https://github.com/LedionBrati/sign-avatar-b-puppet.git
-cd sign-avatar-b-puppet/pipeline && npm install && cd ..
-export FAL_KEY=your_key_here     # never commit it
+cd sign-avatar-b-puppet
+
+(cd translate && npm i)                                          # local translator + embeddings model
+(cd app/server && npm i)                                         # OpenAI SDK for the optional layers
+(cd app/recognizer && uv sync && uv run python fetch_models.py)  # about 52 MB of pretrained models
+(cd app/web && npm i && npm run build)                           # the API serves it at /app/
+
+OPENAI_API_KEY_FILE=path/to/openai.key \
+CLIPS_DIR=out/realtime/clips,out/realtime/clips-mass \
+node app/start.mjs                                               # recognizer on :8788 + API on :8787
 ```
 
-Check the shared scripts without spending anything:
+Open `http://localhost:8787/app/`. For live reload, run `npm run dev` in `app/web` (port 5173). With no server and no clips, `npm run dev:mock` serves a mock API.
+
+**Chrome extension**
 
 ```bash
-./pipeline/prepare-clip.sh references/how2sign/travis.mp4 out/test.mp4
-node pipeline/render-layers.mjs --out-dir out/layers --text "Hello, my name is Maria."
+cd app/extension && npm i && npm run build
 ```
 
----
+Open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and pick `app/extension/.output/chrome-mv3`. Click the Flux icon on any tab, choose **Tab** or **Mic**, and press Start.
 
-## 10. The pipeline scripts
+**Phone app:** `cd app/mobile && npm i && npx expo start`, then set the server URL to your computer's LAN address.
 
-Shared with Method A. The existing finishing scripts were tested on 14 Nov 2026; the E0 harness has its own tests.
-
-| Script | What it does | Paid? |
-|---|---|---|
-| `prepare-clip.sh <in> <out> [x]` | Crop to 3:4 (540x720), 24 fps, no audio. `x` = left edge of the crop. | no |
-| `recast.mjs --video --avatar --out [--resolution] [--seed] [--prompt]` | Swap the person in a video for the avatar, same motion. **Try it on a puppet render.** | yes |
-| `e0.mjs --puppet --source [--generated] [--model]` | Validate metadata, prepare endpoint inputs, and make signer/puppet/repaint comparison reports. Dry run by default. | no by default; guarded paid option |
-| `sign-clips.mjs cut --video --segments --out-dir [--every 2]` | Cut a repainted batch into one clip per sign. `--every 2` for a half-speed render: keeps every 2nd frame, so fast hands are sharper ([log](experiments/2026-11-15-even-clips-and-sharper-hands.md)) | no |
-| `even-clips.mjs --clips <dir> --out <dir> [--color 0]` | Makes clips from different Recast jobs match: same head size and place (and wall colour), so sentences don't jump between signs. Point `CLIPS_DIR` at the output. `--color 0` after `normalize-backgrounds.py`. | no |
-| `remove-bg.mjs --video --out-dir` | Cut the person out: `color.mp4` + `alpha.mp4` | yes |
-| `composite.sh <color> <alpha> <wall> <out>` | Person on the wall (`REMOVE_RED=0` if there's no red chair) | no |
-| `render-layers.mjs --text --out-dir [--credit --left --right]` | Caption, labels, credit as PNG layers | no |
-| `build-videos.sh <avatar> <real> <layers> <prefix> [loops]` | Makes `-side-by-side.mp4` and `-phone.mp4`. Tip: pass the **puppet** video as `<real>` to show puppet vs avatar. | no |
-
-Each fal script prints one JSON line (model, request id, seconds, URL). Paste it into your experiment log.
-
----
-
-## 11. fal models cheat sheet
-
-| Job | Endpoint | Notes |
-|---|---|---|
-| Swap the person, keep the motion | `minimax/h3-max/recast` | Perfect on a real person (day one). Untested on a puppet. 5 to 30 s input, no prompt. |
-| Motion transfer onto the avatar | `fal-ai/kling-video/v3/standard/motion-control` | Keeps the avatar image's background. About $0.126/s. Untested on a puppet. |
-| Motion transfer, cheap | `fal-ai/bytedance/dreamactor/v2` | Untested on a puppet. |
-| Animate the avatar from poses | `fal-ai/one-to-all-animation/14b`, `/1.3b` | Pose-driven, one reference image. Page returned 404 on 14 Nov: check first. |
-| Speech to text | fal Whisper | Server-side, works on iOS. |
-| New video from references | `minimax/h3-max/reference-to-video` | Realistic, fast, but drifts. Use `reference_conditions` with the video first. Has start + end image inputs. |
-| Live restyle of a video stream | `decart/lucy-2-6/realtime` | WebRTC, real app only (not via MCP). For the live dream. |
-| Remove video background | `veed/video-background-removal` | Best hands on day one. `output_codec: h264`. |
-| Make or edit avatar images | `google/nano-banana-2.1`, `google/nano-banana-2.1/edit` | Made the avatar and the wall plate |
-
-Tip: fal's MCP tools (in Claude Code) have `recommend_model` and `search_models`, handy for finding new models.
-
----
-
-## 12. How we work together
-
-We're a small team (5 people as of 14 Nov). **Nobody is assigned anything.** Each time, each of us picks what to build.
-
-- **Read first:** this README and `docs/findings-2026-11-14.md`.
-- **Pick something:** a checkpoint in section 4, an open problem in section 6, a GitHub issue, or your own idea. Checkpoint 1 (the motion proof) unlocks everything else, so it's a good first pick.
-- **Already started something locally (or with Codex / ChatGPT)?** Push the branch and link it on the issue, so nobody builds it twice.
-- **Say it:** comment on the issue (or open one) so the others know. Two people on the same thing is fine if they try different approaches.
-- **Log it:** one file in `experiments/` per experiment (copy `_template.md`). Failures are as useful as wins.
-- **Share results:** commit small results to `assets/` or link the fal URL. Big videos stay in `out/`.
-- **Branches:** `yourname/what-you-try`, open a PR when it works or when you want eyes on it.
-- **Decisions:** when we agree on something, write it in "Decisions" below with the date.
-- **Repo A is reference only.** We don't develop there; anything useful from it gets copied here.
-
-### Hackathon plan (15 Nov)
-
-From Alex's [`docs/one-product-collaboration-proposal.md`](docs/one-product-collaboration-proposal.md) (PR #8). **One product, built in this repo.** Repo A, `ai-summit` and the GSL repo are sources, not separate products.
-
-**Leads, not assignments.** A lead keeps their area moving and answers questions about it. Anyone can help anywhere.
-
-| Lead | Area | Ends up as |
-|---|---|---|
-| **Nikos** | Motion, 3D signer, sign data and recognition | `nikos/motion` extraction and finger QA, `nikos/puppet` VRM player, WLASL research and sign recognition |
-| **Alex** | Shared integration | Plan and catalog contract, translation-to-motion handoff, adapter to Nikos's outputs and Ledi's app; later help with repaint |
-| **Ledi** | App, avatar pipeline and demo | One app with two tabs, existing realistic avatar and Recast videos, the fallback, the pitch |
-
-**Shared pieces everyone uses:**
-- **Sign catalog:** `catalog/signs.json`. One entry per canonical ID, with gloss, optional sense/recognizer label, provenance, motion path and a status: `verified`, `experimental` or `unsupported`.
-- **Plan:** the JSON in 6.5. The app only reads the plan; it never makes its own gloss rules.
-- **Motion:** the frame format in 6.7, raw and cleaned kept side by side.
-
-**Timeline:**
-
-| When | What |
+| Variable | What it does |
 |---|---|
-| Tonight | Everyone pushes what they have. Pick the 1 or 2 demo sentences. |
-| 15 Nov 12:00 | **First full connection**: plan → app → puppet (fake or stub data is fine), plus the Recast fallback video. |
-| 15 Nov 15:00 | **Feature freeze.** Only fixes after this. |
-| 15:00 to 18:00 | Rehearse, record a backup video of the demo, label every part honestly. |
+| `OPENAI_API_KEY_FILE` | Path to a file holding the OpenAI key. Turns on transcription, sentences, voice and the planning layer. |
+| `FAL_KEY_FILE` | Path to a file holding the fal key. Only needed to make new clips. |
+| `CLIPS_DIR` | Comma-separated clip folders, each with a `manifest.json`. The first folder wins on overlap. |
+| `SIGNING_MODE` | `strict` (default) signs a phrase only when every word is signable. `relaxed` signs what it can and leaves the rest in the captions. |
+| `ONDEMAND`, `MOTION_DIRS` | `ONDEMAND=on` makes missing signs in the background from extracted motion, capped by `FAL_DAILY_BUDGET_USD` (default 20). |
+| `RECOGNIZER_URL`, `PORT` | Recognizer address (default `http://127.0.0.1:8788`) and API port (default 8787). |
 
-**Demo sentences:** 1 or 2 short sentences whose signs are **all in WLASL**, with no fingerspelling (A to Z is not recorded yet). `Hello, my name is Maria` waits until we have the alphabet. Someone fluent in ASL should check them before the pitch.
+Keys are read from files at startup and are never logged, echoed or returned.
 
-**Pitch labels:** every part is shown as **works live**, **works on prepared clips**, or **experimental**. Clean-clip recognition scores are not live webcam scores. A smooth puppet is not proof of correct ASL.
+## Repo map
 
-**Money:** fal cap of about **$30** for the hackathon. Repaint is always a button, never automatic.
-
-**Sharing work:** Nikos pushes his WLASL builder **code** here (not the videos: license). Nikos gives Alex access to the GSL repo for the recorder and VRM player.
-
-**How to work:** small branches and PRs, connect early with stubs and swap in the real parts. When you report, say: works / tested / blocked / next.
-
-### Decisions so far
-
-| Date | Decision |
+| Folder | What's in it |
 |---|---|
-| 2026-11-14 | Language: **ASL**. Avatar: the AI woman in `assets/avatar/`. |
-| 2026-11-14 | Recast is the quality target: whatever B makes is compared with `judy-avatar-clean.mp4`. |
-| 2026-11-14 | ~~Try both Method A and Method B, race them, keep the winner.~~ Replaced below. |
-| 2026-11-14 | **We build Method B only.** Repo A stays as a reference. |
-| 2026-11-14 | Work goes through **4 checkpoints, free ones first**: motion proof, finger test, repaint, end-to-end plan (section 4). From Alex's review in issues #1, #2, #4, #5. |
-| 2026-11-14 | If the repaint fails, the fallback is **Recast on real signer clips**, so we keep the realistic avatar. |
-| 2026-11-14 | One shared **plan** format between English and the renderer (section 6.5). |
-| 2026-11-14 | The product is a **two-way app** (speech → sign, sign → speech) on a phone web app and a Chrome extension. Nikos's [`docs/product-plan.md`](docs/product-plan.md) merged (PR #7). |
-| 2026-11-14 | **WLASL (1,945 signs)** is the source of single signs; How2Sign stays the quality reference. |
-| 2026-11-14 | Repaint candidates to test: Recast, Kling v3 motion-control, DreamActor v2, one-to-all (if it exists). Plus the **B0** baseline. |
-| Open | The app stack in 6.9 is a proposal. Agree on it before building the app. |
-| 2026-11-14 | **One product, one repo (this one).** Alex's collaboration proposal merged (PR #8). |
-| 2026-11-15 | **Updated ownership:** Nikos = motion, puppet, data, recognition. Alex = shared integration. Ledi = app, avatar pipeline, demo. Leads, not assignments. |
-| 2026-11-15 | Plan format = 6.5. Sign catalog lives at `catalog/signs.json`. |
-| 2026-11-14 | Demo uses 1 or 2 WLASL-only sentences, no fingerspelling, checked by a fluent signer if we can find one. |
-| 2026-11-14 | fal cap ~$30. First full connection 15 Nov 12:00, feature freeze 15:00, deadline 18:00 Athens. |
-| 2026-11-14 | Nikos shares his WLASL builder code (not videos) here, and GSL repo access with Alex. |
+| [`app/server`](app/server) | Node API: sign plans, playlists, clips, transcription, voice, recognizer proxy, on-demand clips |
+| [`app/recognizer`](app/recognizer) | Python recognizer: GISLR and fingerspelling TFLite models plus the WLASL template matcher |
+| [`app/web`](app/web) | React + Vite web app (PWA) for both directions |
+| [`app/extension`](app/extension) | Chrome extension (WXT, Manifest V3): the floating glass card |
+| [`app/mobile`](app/mobile) | Expo phone app |
+| [`app/core`](app/core) | Shared TypeScript: API contract, client, captions, landmark layout, design tokens |
+| [`translate`](translate) | English to ASL sign plan: rules + local MiniLM embeddings, works offline |
+| [`motion`](motion) | MediaPipe motion extraction, cleanup and QA ([`FORMAT.md`](motion/FORMAT.md) is the format) |
+| [`puppet`](puppet) | three.js VRM puppet: join signs, play them live, render to mp4 |
+| [`pipeline`](pipeline) | The clip factory: batches, Recast, cutting, evening out, mass runs |
+| [`shared`](shared), [`catalog`](catalog) | Plan, catalog and motion contracts with their checkers |
+| [`docs`](docs) | Findings, product plan and the [playback safety gate](docs/semantic-safety.md) |
+| [`experiments`](experiments) | Every experiment we ran, with numbers, including the ones that failed |
+| [`assets`](assets), [`references`](references), [`examples`](examples) | Avatar images, demo videos, reference clips with their licences, demo scripts |
 
----
+## What's next
 
-## 13. Rules we don't break
+- **ASL grammar.** Today the translator produces signed English with ASL-like word order. Next is real ASL grammar, reviewed by Deaf signers.
+- **More signs.** 1,831 WLASL signs are already ranked by how often the word is used. Rendering all of them takes about 6.4 h of fal time.
+- **Sharper hands.** Rendering at 1080P and half speed turned smeared fast handshapes into readable ones in tests. It at least doubles the fal time per sign.
+- **Fingerspelling in live signing.** The recognizer already reads fingerspelled letters (20 of 21 single letters right in a sanity check), but it is not yet part of the live flow.
+- **Phones and groups.** Hand tracking that runs natively on phones, and more than one speaker per conversation.
 
-- **The AI never invents signs.** Signs come from real signers, through the motion data.
-- **No real faces as avatars** without written consent. Never a famous person.
-- **Licenses:** How2Sign, WLASL, Signbank, ASL Citizen are non-commercial. Fine for this private repo and private demos. Not for a paid product. Credit the source when you show anything.
-- **No keys in git.** `FAL_KEY` lives in your shell or a local `.env` (ignored).
-- **Deaf people decide what's good.** Before we call anything "correct", a Deaf or fluent signer checks it. Matching motion is not the same as correct ASL.
-- **Never fake a sign.** If we can't sign a word, we say so ("can't sign this yet"). We never quietly swap in another sign, and never show a nice-looking AI video with wrong hands.
-- **Write down where every clip came from:** source, signer, license, timecodes.
-- **No video leaves the user's device** in sign → speech. Only points, and those are never logged.
-- **No personal photos** in this repo (the `photos/` folder is git-ignored on purpose).
+## Team
 
----
+Built at a hackathon by:
 
-## 14. Glossary
+- **Nikos Fourlis** ([@fourlhs](https://github.com/fourlhs))
+- **Alex Nomikos** ([@nomikosalex](https://github.com/nomikosalex))
+- **Ledi Brati** ([@LedionBrati](https://github.com/LedionBrati))
 
-| Word | Meaning |
-|---|---|
-| **ASL** | American Sign Language. Its own language, with its own grammar. |
-| **Gloss** | Writing signs as English words in CAPS, in ASL order: `STORE YOU GO?` |
-| **Fingerspelling** | Spelling a word letter by letter with handshapes (A to Z). Used for names. |
-| **Handshape** | The shape of the hand in a sign. Change it and the meaning changes. |
-| **Rest pose** | Hands down and relaxed, between signs. |
-| **Co-articulation** | How one sign flows into the next in real signing. |
-| **Non-manual markers** | Face, eyebrows, mouth, head: grammar in ASL. |
-| **Keypoints / landmarks** | The tracked points (joints, fingertips, face) per video frame. |
-| **MediaPipe** | Google's free library that finds body, hand and face points in video. |
-| **VRM** | A standard 3D character format (used with three.js). |
-| **Blendshape** | A named face movement on a 3D character (brows up, mouth open). |
-| **Slerp** | Smooth blending between two rotations. |
-| **Puppet** | The simple 3D figure or skeleton driven by our motion data. |
-| **Repaint** | An AI model turning the puppet video into our realistic avatar. |
-| **Recast** | fal's H3 Max model that swaps the person in a video and keeps the motion. |
+## Licences and data
 
----
+**Flux is a research demo for non-commercial use only.** The signer clips are made from datasets with non-commercial licences, so they can't be used in a paid product.
 
-## 15. Credits
+| Source | Used for | Licence |
+|---|---|---|
+| [WLASL](https://dxli94.github.io/WLASL/) | The sign videos behind every avatar clip and recognizer template | C-UDA, non-commercial research |
+| [How2Sign](https://how2sign.github.io/) | Reference sentence clips | CC BY-NC 4.0 |
+| [Kaggle GISLR, 1st place](https://huggingface.co/sign/kaggle-asl-signs-1st-place) | The 250-sign recognizer | MIT (trained on PopSign, CC BY 4.0) |
+| [Kaggle ASL Fingerspelling, 1st place](https://github.com/ChristofHenkel/kaggle-asl-fingerspelling-1st-place-solution) | The fingerspelling recognizer | Apache-2.0 |
 
-- Reference clips: **How2Sign**, Duarte et al., CVPR 2021, https://how2sign.github.io/, CC BY-NC 4.0. Cropped, recast and re-backgrounded by us.
-- Avatar: AI-generated with Google Nano Banana 2.1 on fal. Not a real person.
-- Video: MiniMax H3 Max Recast and Reference to Video on fal. Background removal by VEED on fal.
-- Method B builds on ideas and code from our team's GSL Pharmacy Bridge.
-- The 4-checkpoint path, the plan format and the finger test come from Alexandros Nomikos's review (issues #1, #2, #4, #5).
-- The two-way product plan, WLASL library, repaint candidates and sign → speech approach come from Nikos Fourlis (`docs/product-plan.md`, PR #7).
-- Single signs: **WLASL**, Li et al., WACV 2020, C-UDA license (non-commercial). Sign recognition: GISLR Kaggle 1st place (MIT), ASL Fingerspelling Kaggle 1st place (Apache-2.0).
+The sign plans have not been reviewed by ASL linguists, and the safety gate's statuses are engineering checks, not a linguistic review. Face landmarks count as biometric data: neither service logs or stores them, and audio is never stored.
