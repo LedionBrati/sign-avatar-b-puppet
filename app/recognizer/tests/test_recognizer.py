@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from conftest import needs_models
+import templates as T
 from recognizer import COUNTS, OFFSETS, RecognizeError, label_text, parse_frames, spell_columns
 
 
@@ -80,8 +81,9 @@ def test_sign_top5_sorted_normalized(rec):
     assert out["mode"] == "sign" and out["frames"] == 30 and len(opts) == 5
     conf = [o["confidence"] for o in opts]
     assert conf == sorted(conf, reverse=True)
-    assert all(0 <= c <= 1 for c in conf) and sum(conf) <= 1.0001
-    assert all(o["label"] in rec.labels and isinstance(o["text"], str) for o in opts)
+    assert all(0 <= c <= 1 for c in conf)
+    known = set(rec.labels) | ({T.gloss_label(g) for g in rec.templates.glosses} if rec.templates else set())
+    assert all(o["label"] in known and isinstance(o["text"], str) for o in opts)
     assert set(out["timings"]) == {"inference_ms", "total_ms"}
 
 

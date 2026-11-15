@@ -93,7 +93,7 @@ def softmax(logits: np.ndarray) -> np.ndarray:
 class Recognizer:
     """Loads both models once; each interpreter has its own lock (TFLite interpreters are not thread-safe)."""
 
-    def __init__(self, models_dir: Path = MODELS_DIR, spell: bool = True):
+    def __init__(self, models_dir: Path = MODELS_DIR, spell: bool = True, templates: bool | None = None):
         from ai_edge_litert.interpreter import Interpreter
 
         md = Path(models_dir)
@@ -102,6 +102,16 @@ class Recognizer:
         self._sign = Interpreter(str(md / "gislr.tflite")).get_signature_runner()
         self._sign_lock = threading.Lock()
         self.models = {"sign": f"gislr ({len(self.labels)} signs)"}
+        # Template matching on WLASL motion (templates.py) for the words GISLR lacks; TEMPLATES=off disables it.
+        self.templates = None
+        if templates is None:
+            templates = os.environ.get("TEMPLATES", "on").lower() not in ("off", "0", "false", "no")
+        bank = md / "templates.npz"
+        if templates and bank.exists():
+            from templates import TemplateBank
+
+            self.templates = TemplateBank(bank)
+            self.models["sign"] += f" + wlasl templates ({len(self.templates)} signs)"
         self._spell = None
         if spell:
             args = json.loads((md / "fs_args.json").read_text())
@@ -133,6 +143,11 @@ class Recognizer:
             order = np.argsort(-p)[:top]
             options = [{"label": self.index_to_label[int(i)], "text": label_text(self.index_to_label[int(i)]),
                         "confidence": round(float(p[i]), 4)} for i in order]
+            if self.templates is not None:
+                from templates import merge
+
+                options = merge(options, self.templates.match(x, top), top)
+                inference_ms = (time.perf_counter() - t0) * 1000
             result = {"mode": "sign", "options": options}
         elif mode == "spell":
             if self._spell is None:
