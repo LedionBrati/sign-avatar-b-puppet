@@ -458,6 +458,8 @@ Shared with Method A. The existing finishing scripts were tested on 14 Nov 2026;
 | `prepare-clip.sh <in> <out> [x]` | Crop to 3:4 (540x720), 24 fps, no audio. `x` = left edge of the crop. | no |
 | `recast.mjs --video --avatar --out [--resolution] [--seed] [--prompt]` | Swap the person in a video for the avatar, same motion. **Try it on a puppet render.** | yes |
 | `e0.mjs --puppet --source [--generated] [--model]` | Validate metadata, prepare endpoint inputs, and make signer/puppet/repaint comparison reports. Dry run by default. | no by default; guarded paid option |
+| `sign-clips.mjs cut --video --segments --out-dir [--every 2]` | Cut a repainted batch into one clip per sign. `--every 2` for a half-speed render: keeps every 2nd frame, so fast hands are sharper ([log](experiments/2026-11-15-even-clips-and-sharper-hands.md)) | no |
+| `even-clips.mjs --clips <dir> --out <dir> [--color 0]` | Makes clips from different Recast jobs match: same head size and place (and wall colour), so sentences don't jump between signs. Point `CLIPS_DIR` at the output. `--color 0` after `normalize-backgrounds.py`. | no |
 | `remove-bg.mjs --video --out-dir` | Cut the person out: `color.mp4` + `alpha.mp4` | yes |
 | `composite.sh <color> <alpha> <wall> <out>` | Person on the wall (`REMOVE_RED=0` if there's no red chair) | no |
 | `render-layers.mjs --text --out-dir [--credit --left --right]` | Caption, labels, credit as PNG layers | no |

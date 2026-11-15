@@ -23,10 +23,13 @@ export function loadManifest(clipsDir) {
  * Cut points for a  NEUTRAL S1 NEUTRAL S2 ... NEUTRAL  batch: the middle of every neutral pause (segment gloss null),
  * so each sign clip starts and ends in the same still pose. Throws unless every sign is bracketed by neutrals.
  * @param {{gloss: string|null, start: number, end: number}[]} segments  compose.mjs / make-batches.mjs segments
- * @returns {{gloss: string, a: number, b: number}[]}  per sign: frames [a, b) of the batch video
+ * @param {number} [every]  1 = normal. 2 = the batch was rendered at half speed and every 2nd frame is kept
+ *                          (segments stay in the composed motion's frames; the cut points are divided by `every`)
+ * @returns {{gloss: string, a: number, b: number}[]}  per sign: frames [a, b) of the batch video (after thinning)
  */
-export function cutPoints(segments) {
-  const mids = segments.filter((s) => !s.gloss).map((s) => Math.floor((s.start + s.end) / 2));
+export function cutPoints(segments, every = 1) {
+  if (!Number.isInteger(every) || every < 1) throw new Error(`every must be a whole number >= 1, got ${every}`);
+  const mids = segments.filter((s) => !s.gloss).map((s) => Math.floor((s.start + s.end) / 2 / every));
   const signs = segments.filter((s) => s.gloss);
   if (mids.length !== signs.length + 1) throw new Error("expected NEUTRAL around every sign");
   return signs.map((s, k) => ({ gloss: s.gloss, a: mids[k], b: mids[k + 1] }));
@@ -41,27 +44,32 @@ export function cutPoints(segments) {
  * @param {string} o.outDir
  * @param {{id: string, gloss: string}[]} [o.signs]  motion_id + manifest gloss per sign segment (default: toId(segment gloss))
  * @param {object} [o.extra]   extra fields for every new manifest entry
+ * @param {number} [o.every]   2 for a half-speed render: keep every 2nd frame, so fast hands blur half as much
+ *                             (compose / make-batches at --fps 48, render at --fps 24, repaint, cut with every: 2)
  * @param {(line: string) => void} [o.log]
  * @returns {Promise<{id, gloss, file, frames, seconds, source_frames}[]>}
  */
-export async function cutClips({ video, segments, outDir, signs, extra = {}, log = () => {} }) {
-  const cuts = cutPoints(segments);
+export async function cutClips({ video, segments, outDir, signs, extra = {}, every = 1, log = () => {} }) {
+  const cuts = cutPoints(segments, every);
+  // Keep every Nth frame of the slowed-down video first, then cut in normal-speed frames.
+  const thin = every > 1 ? `select='not(mod(n\\,${every}))',setpts=N/24/TB,` : "";
   if (signs && signs.length !== cuts.length) throw new Error(`segments have ${cuts.length} signs, expected ${signs.length}`);
   mkdirSync(outDir, { recursive: true });
   const out = [];
   for (const [k, c] of cuts.entries()) {
     const id = signs?.[k].id ?? toId(c.gloss), gloss = signs?.[k].gloss ?? c.gloss;
     const file = `${id}.mp4`, tmp = join(outDir, `${id}.part.mp4`);
-    await execFileAsync("ffmpeg", ["-v", "error", "-y", "-i", video, "-vf", `trim=start_frame=${c.a}:end_frame=${c.b},setpts=PTS-STARTPTS`, ...CLIP_ENCODE, tmp],
+    await execFileAsync("ffmpeg", ["-v", "error", "-y", "-i", video, "-vf", `${thin}trim=start_frame=${c.a}:end_frame=${c.b},setpts=PTS-STARTPTS`, ...CLIP_ENCODE, tmp],
       { maxBuffer: 4_000_000, windowsHide: true });
     renameSync(tmp, join(outDir, file));
-    out.push({ id, gloss, file, frames: c.b - c.a, seconds: Number(((c.b - c.a) / 24).toFixed(3)), source_frames: [c.a, c.b] });
-    log(`${id}: frames ${c.a}-${c.b} (${c.b - c.a})`);
+    out.push({ id, gloss, file, frames: c.b - c.a, seconds: Number(((c.b - c.a) / 24).toFixed(3)), source_frames: [c.a * every, c.b * every] });
+    log(`${id}: frames ${c.a}-${c.b} (${c.b - c.a})${every > 1 ? `, 1 of every ${every} source frames` : ""}`);
   }
   const manifestPath = join(outDir, "manifest.json");
   const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : {};
   for (const c of out) {
-    manifest[c.id] = { gloss: c.gloss, file: c.file, frames: c.frames, seconds: c.seconds, source_video: resolve(video), source_frames: c.source_frames, ...extra };
+    manifest[c.id] = { gloss: c.gloss, file: c.file, frames: c.frames, seconds: c.seconds, source_video: resolve(video), source_frames: c.source_frames,
+      ...(every > 1 ? { every } : {}), ...extra };
   }
   writeFileSync(`${manifestPath}.tmp`, JSON.stringify(manifest, null, 1));
   renameSync(`${manifestPath}.tmp`, manifestPath);

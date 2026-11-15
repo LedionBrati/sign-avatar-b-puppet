@@ -22,12 +22,18 @@ for (let i = 0; i < rest.length; i++) {
   else positional.push(rest[i]);
 }
 
+// Sharper hands in fast moves (--every 2): make the batch at --fps 48 (make-batches.mjs or compose.mjs),
+// render it at --fps 24 (half speed, real in-between poses), repaint, then cut with --every 2: every 2nd
+// frame is kept, so the clip plays at normal speed with half the motion blur per frame.
+// Clips from different Recast jobs differ in wall colour and zoom: run pipeline/even-clips.mjs on the
+// clip folder before serving it, so a sentence doesn't jump between signs.
+
 if (cmd === "cut") {
   const { video, segments: segPath, "out-dir": outDir } = opt;
-  if (!video || !segPath || !outDir) throw new Error("cut needs --video --segments --out-dir");
+  if (!video || !segPath || !outDir) throw new Error("cut needs --video --segments --out-dir [--every 2]");
   const { segments } = JSON.parse(readFileSync(segPath, "utf8"));
   // Neutral segments have gloss null; lib/clips.mjs cuts at the middle of each one (same encoding for every clip).
-  await cutClips({ video, segments, outDir, log: (line) => console.log(line) });
+  await cutClips({ video, segments, outDir, every: Number(opt.every ?? 1), log: (line) => console.log(line) });
 } else if (cmd === "say") {
   const { clips, out } = opt;
   if (!clips || !out || positional.length === 0) throw new Error("say needs --clips --out and glosses");
