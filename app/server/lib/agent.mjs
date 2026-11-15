@@ -179,7 +179,8 @@ export function createAgent(o) {
 
     const deadline = t0 + timeoutMs;
     let attempts = 0, lastError = null;
-    while (attempts <= retries && deadline - performance.now() > (attempts ? 750 : 0)) {
+    const minRetryBudget = Math.min(750, timeoutMs * 0.25);     // a retry only if it has a real chance to finish
+    while (attempts <= retries && deadline - performance.now() > (attempts ? minRetryBudget : 0)) {
       attempts++;
       stats.requests++;
       try {
