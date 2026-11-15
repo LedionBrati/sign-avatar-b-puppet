@@ -71,7 +71,7 @@ function artifact(): Plugin {
       const html = [
         "<title>SIGNLAYER</title>",
         `<meta name="description" content="Hear anything. See it signed. Live sign language with captions.">`,
-        `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&display=swap">`,
+        `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400..700&family=Inter:opsz,wght@14..32,400..700&family=Newsreader:opsz,wght@6..72,400..700&display=swap">`,
         `<style>${css}</style>`,
         `<div id="root"></div>`,
         `<script type="module">${js}</script>`,

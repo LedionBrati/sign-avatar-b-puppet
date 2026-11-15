@@ -348,7 +348,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
               {o.text || labelText(o.label)}<em>{Math.round(o.confidence * 100)}%</em>
             </button>
           ))}
-          {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name, letter by letter." : `Just sign: as soon as the words make sense they're spoken · ${SIGN_VOCAB.length} signs`}</p> : null}
+          {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name, letter by letter." : `Just sign · ${SIGN_VOCAB.length} signs`}</p> : null}
         </div>
         <div className="sentence">
           <textarea aria-label="Sentence to speak" rows={2} spellCheck={false} placeholder="Your sentence" value={sentence}
