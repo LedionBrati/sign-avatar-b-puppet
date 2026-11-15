@@ -31,3 +31,6 @@ translate/cache/
 # app/recognizer/
 app/recognizer/models/
 app/recognizer/.venv/
+
+# experiments/lucy-realtime/
+experiments/lucy-realtime/dist/
