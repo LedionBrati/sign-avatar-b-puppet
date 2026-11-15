@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- Stand-in for <server>/app/#/sign?embed=1 (the real page runs MediaPipe). Posts the same messages the
+     real page does, to window.parent (iframe / WebView top level) and ReactNativeWebView when present:
+     {type:"sentence"} as words are "recognised", then {type:"speak"}. Used by scripts/sign-smoke.mjs. -->
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;background:#10208a;color:#fff;font:15px -apple-system,Segoe UI,Arial,sans-serif}
+  .cam{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 40%,#3a5cff 0,#1a2fb0 55%,#0d1a78 100%)}
+  .hand{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:150px;height:150px;border:2px dashed rgba(255,255,255,.55);border-radius:40px}
+  .dots i{position:absolute;width:8px;height:8px;border-radius:8px;background:#9fffc9}
+  .tag{position:absolute;left:14px;bottom:14px;padding:6px 12px;border-radius:999px;background:rgba(6,12,52,.6);font-size:12.5px}
+</style></head><body>
+<div class="cam"></div><div class="hand"></div>
+<div class="dots" id="dots"></div>
+<div class="tag" id="tag">stub camera · embed=1</div>
+<script>
+  const d = document.getElementById("dots");
+  for (let i = 0; i < 21; i++) { const e = document.createElement("i"); const a = i / 21 * 6.28; e.style.left = `calc(50% + ${Math.cos(a) * (40 + i * 1.6)}px)`; e.style.top = `calc(42% + ${Math.sin(a) * (40 + i * 1.6)}px)`; d.appendChild(e); }
+  const post = (m) => {
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(m));
+    else window.parent.postMessage(m, "*");
+  };
+  const words = ["Hello,", "thank", "you", "for", "coming."];
+  let i = 0;
+  const step = () => {
+    i++;
+    const text = words.slice(0, i).join(" ");
+    document.getElementById("tag").textContent = "recognised: " + text;
+    post({ type: "sentence", text });
+    if (i < words.length) setTimeout(step, 250);
+    else setTimeout(() => post({ type: "speak", text }), 400);
+  };
+  setTimeout(step, 600);
+</script>
+</body></html>
