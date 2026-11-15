@@ -7,6 +7,9 @@ import { transition } from "./lib/motion";
 import { Settings } from "./components/Settings";
 import { speechSupported } from "./lib/speech";
 import { captureSupported } from "./lib/capture";
+import { CameraSheet } from "./artifact/CameraSheet";
+
+declare const __ARTIFACT__: boolean;
 
 export function App() {
   const [live, setLive] = useState<{ start: LiveStart; key: number } | null>(null);
@@ -19,7 +22,9 @@ export function App() {
   const home = useCallback(() => transition(() => setLive(null)), []);
   const route = useRoute();
   const embed = route.params.get("embed") === "1";
-  if (route.path === "/sign") {
+  const [camera, setCamera] = useState(false); // artifact build: "Sign to speak" explains why it needs the full app
+  // __ARTIFACT__ (not ARTIFACT) so the bundler drops SignToSpeak + MediaPipe from the artifact build entirely.
+  if (!__ARTIFACT__ && route.path === "/sign") {
     return (
       <div className={`app${embed ? " embed" : ""}`}>
         <main className="device">
@@ -35,9 +40,10 @@ export function App() {
         {live ? (
           <Live key={live.key} start={live.start} onHome={home} onRestart={go} />
         ) : (
-          <Home canListen={canListen} onListen={() => go({ kind: "mic" })} onType={(text) => go({ kind: "typed", text })} onSettings={() => setSettings(true)} onSign={() => navigate("/sign")} />
+          <Home canListen={canListen} onListen={() => go({ kind: "mic" })} onType={(text) => go({ kind: "typed", text })} onSettings={() => setSettings(true)} onSign={() => (__ARTIFACT__ ? setCamera(true) : navigate("/sign"))} />
         )}
         {settings ? <Settings onClose={() => setSettings(false)} /> : null}
+        {__ARTIFACT__ && camera ? <CameraSheet onClose={() => setCamera(false)} /> : null}
       </main>
     </div>
   );

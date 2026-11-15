@@ -1,7 +1,7 @@
 // Settings as a clean sheet: appearance, captions, and where the sign server runs.
 import { useState } from "react";
 import { copy, createSignClient } from "@signlayer/core";
-import { ENV_API, apiBase, getApiSetting, setApiSetting } from "../config";
+import { ARTIFACT, ENV_API, apiBase, getApiSetting, setApiSetting } from "../config";
 import { setPrefs, usePrefs, type Theme } from "../lib/prefs";
 import { Segmented } from "./Segmented";
 
@@ -43,6 +43,7 @@ export function Settings({ onClose }: { onClose(): void }) {
           </div>
         </div>
 
+        {ARTIFACT ? null : (<>
         <p className="group-label"><label htmlFor="api">Sign server</label></p>
         <div className="group">
           <div className="row">
@@ -53,6 +54,7 @@ export function Settings({ onClose }: { onClose(): void }) {
             <button className="btn" type="button" onClick={test}>Test</button>
           </div>
         </div>
+        </>)}
         <p className="footnote">{copy.credit}</p>
       </div>
     </div>

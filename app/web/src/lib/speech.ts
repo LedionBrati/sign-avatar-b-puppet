@@ -3,6 +3,7 @@
 // `continuous`). We restart until stop() is called. iOS may refuse a restart that is not triggered by a tap
 // ("not-allowed" even though permission was granted): after a session has worked once, that is a pause, not a
 // denial: retry with backoff, then ask the user to tap ("paused") instead of reporting the mic as blocked.
+import { ARTIFACT } from "../config";
 
 type Rec = {
   continuous: boolean; interimResults: boolean; lang: string; maxAlternatives: number;
@@ -18,7 +19,8 @@ const Ctor = (): RecCtor | undefined => {
   const w = window as unknown as { SpeechRecognition?: RecCtor; webkitSpeechRecognition?: RecCtor };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 };
-export const speechSupported = () => typeof window !== "undefined" && !!Ctor();
+// The artifact sandbox refuses the microphone without asking, so that build always takes the typed fallback.
+export const speechSupported = () => !ARTIFACT && typeof window !== "undefined" && !!Ctor();
 
 export type SpeechErrorKind = "denied" | "no-mic" | "network" | "paused" | "other";
 export interface SpeechHandlers {

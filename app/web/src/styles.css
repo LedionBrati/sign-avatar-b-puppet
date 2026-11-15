@@ -299,6 +299,21 @@ svg { display: block; }
 .orb-label.sub { font-weight: 400; color: var(--label-2); font-size: 15px; }
 .home .alt { flex: none; width: 100%; min-height: 60px; margin-top: var(--s5); display: grid; place-items: center; }
 .home .alt .typebox { animation: rise .5s var(--spring) both; }
+/* Suggested sentences under the type field (artifact build). One scrolling row on a phone, wrapped on a desktop. */
+.suggest { flex: none; width: calc(100% + 2 * var(--s5)); max-width: 600px; margin: var(--s3) calc(-1 * var(--s5)) 0; padding: 2px var(--s5) 6px;
+  display: flex; gap: var(--s2); overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; overscroll-behavior-x: contain;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--s5), #000 calc(100% - var(--s5)), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 var(--s5), #000 calc(100% - var(--s5)), transparent); }
+.suggest::-webkit-scrollbar { display: none; }
+.chip { flex: none; scroll-snap-align: center; min-height: 36px; padding: 0 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  background: var(--fill); border: 0; color: var(--label); font: 500 14px/1 var(--font); letter-spacing: -.01em;
+  animation: rise .5s calc(.05s + var(--i, 0) * .04s) var(--spring) both; transition: background-color var(--t-ui) ease, transform var(--t-morph) var(--spring-bouncy); }
+.chip:hover { background: var(--fill-2); }
+.chip:active { transform: scale(.94); transition-duration: var(--t-press); }
+.camnote { display: flex; align-items: center; gap: var(--s3); margin: var(--s2) 0 var(--s3); padding: var(--s4); border-radius: var(--r-sm); background: var(--group-bg); }
+.camnote p { margin: 0; font-size: 17px; line-height: 1.4; letter-spacing: -.015em; color: var(--label); }
+.camnote-icon { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); }
+.camnote-icon svg { width: 22px; height: 22px; }
 .homefoot { flex: none; display: flex; justify-content: center; padding: var(--s2) var(--s4) var(--s6); }
 
 /* ───────────────────────── Aura (audio-reactive glow) ───────────────────────── */
@@ -446,6 +461,7 @@ svg { display: block; }
   .orb { width: 156px; height: 156px; }
   .orb svg { width: 52px; height: 52px; }
   .orb-label { margin-top: var(--s4); font-size: 19px; }
+  .suggest { flex-wrap: wrap; justify-content: center; overflow: visible; width: 100%; margin: var(--s3) 0 0; padding: 0; -webkit-mask-image: none; mask-image: none; }
   .stagewrap { padding-top: var(--s2); }
   .sl-cap, .sentence textarea { font-size: 36px; }
   .capzone { padding-top: var(--s6); }
