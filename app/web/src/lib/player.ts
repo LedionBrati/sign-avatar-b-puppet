@@ -1,0 +1,150 @@
+// Gapless playlist player: two stacked <video> elements. While one plays, the next clip preloads in the other;
+// on `ended` the preloaded one starts and is brought to the front only once it is actually playing, so the
+// last frame of the old clip covers any decode gap (every clip starts and ends in the same neutral pose).
+// New phrases append to the running queue; if playback had drained it resumes at the new items.
+
+export interface PlayerItem { url: string; duration_s: number }
+
+// Clips are small (~0.5 MB). Fetching each once into a blob: URL makes the swap instant and avoids media
+// elements holding HTTP connections open (which stalled the next clip for seconds in testing).
+const blobs = new Map<string, Promise<string | null>>();
+const ready = new Map<string, string>();
+export function prefetchClip(url: string): Promise<string | null> {
+  let p = blobs.get(url);
+  if (!p) {
+    p = fetch(url)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((b) => { const u = URL.createObjectURL(b); ready.set(url, u); return u; })
+      .catch(() => { blobs.delete(url); return null; });
+    blobs.set(url, p);
+  }
+  return p;
+}
+
+export class GaplessPlayer {
+  private items: PlayerItem[] = [];
+  private loaded: [number, number] = [-1, -1];
+  private front = 0;
+  private index = -1;
+  private draining = false; // played everything, waiting for more
+  private pending = -1; // index we asked to play and are waiting on
+  private disposed = false;
+  private readonly offs: (() => void)[] = [];
+
+  /** Called with the playlist index now on screen; items.length once the queue has drained. */
+  onIndex: (index: number) => void = () => {};
+
+  constructor(private readonly vids: [HTMLVideoElement, HTMLVideoElement]) {
+    vids.forEach((v, slot) => {
+      v.muted = true;
+      v.playsInline = true;
+      v.preload = "auto";
+      v.setAttribute("playsinline", "");
+      v.setAttribute("muted", "");
+      const ended = () => slot === this.front && this.pending < 0 && this.next();
+      const failed = () => {
+        // A clip that can't load is skipped, never left frozen.
+        if (this.pending >= 0 && this.loaded[slot] === this.pending) { this.index = this.pending; this.pending = -1; this.next(); }
+        else if (slot === this.front && this.pending < 0 && this.index >= 0 && this.index < this.items.length) this.next();
+      };
+      v.addEventListener("ended", ended);
+      v.addEventListener("error", failed);
+      this.offs.push(() => { v.removeEventListener("ended", ended); v.removeEventListener("error", failed); });
+    });
+  }
+
+  get length() { return this.items.length; }
+  get current() { return this.index; }
+
+  append(items: PlayerItem[]) {
+    if (this.disposed || !items.length) return;
+    this.items.push(...items);
+    items.forEach((x) => void prefetchClip(x.url));
+    if (this.index < 0 && this.pending < 0) this.playAt(0);
+    else if (this.draining) this.playAt(this.items.length - items.length);
+    else this.preloadNext();
+  }
+
+  replay() {
+    if (!this.items.length) return;
+    this.pending = -1;
+    this.draining = false;
+    this.vids.forEach((v) => v.pause());
+    // Load clip 0 behind the visible frame, then swap as usual.
+    const back = 1 - this.front;
+    this.loaded = [-1, -1];
+    this.index = -1;
+    this.onIndex(-1);
+    this.load(back, 0);
+    this.playAt(0);
+  }
+
+  stop() {
+    this.pending = -1;
+    this.vids.forEach((v) => v.pause());
+  }
+
+  dispose() {
+    this.disposed = true;
+    this.stop();
+    this.offs.forEach((f) => f());
+    this.vids.forEach((v) => { v.removeAttribute("src"); v.load(); });
+  }
+
+  private load(slot: number, i: number) {
+    const v = this.vids[slot]!;
+    const url = this.items[i]!.url;
+    v.src = ready.get(url) ?? url;
+    v.load();
+    this.loaded[slot] = i;
+    if (!ready.has(url)) {
+      // Not fetched yet: switch to the blob as soon as it lands, if this slot is still only preloading it.
+      void prefetchClip(url).then((u) => {
+        if (u && this.loaded[slot] === i && slot !== this.front && this.pending !== i && v.src === url) { v.src = u; v.load(); }
+      });
+    }
+  }
+
+  private preloadNext() {
+    const n = this.index + 1, back = 1 - this.front;
+    if (n < this.items.length && this.loaded[back] !== n && this.pending < 0) this.load(back, n);
+  }
+
+  private next() {
+    const n = this.index + 1;
+    if (n < this.items.length) this.playAt(n);
+    else { this.draining = true; this.index = this.items.length; this.onIndex(this.index); }
+  }
+
+  private playAt(i: number) {
+    if (this.disposed) return;
+    this.draining = false;
+    let slot = this.loaded.indexOf(i);
+    if (slot < 0 || slot === this.front && this.index >= 0 && this.index !== i) {
+      slot = this.index < 0 && (this.loaded[this.front] ?? -1) < 0 ? this.front : 1 - this.front;
+      this.load(slot, i);
+    }
+    const v = this.vids[slot]!;
+    if (v.currentTime > 0) v.currentTime = 0;
+    this.pending = i;
+    const show = () => {
+      if (this.disposed || this.pending !== i) return;
+      this.pending = -1;
+      const other = this.vids[1 - slot]!;
+      v.classList.add("front"); v.classList.remove("back");
+      other.classList.remove("front"); other.classList.add("back");
+      other.pause();
+      this.front = slot;
+      this.index = i;
+      this.onIndex(i);
+      this.preloadNext();
+    };
+    const rvfc = (v as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }).requestVideoFrameCallback;
+    if (rvfc) rvfc.call(v, show); // swap on the first presented frame
+    v.addEventListener("playing", () => setTimeout(show, 0), { once: true });
+    v.play().catch(() => {
+      // Autoplay refused or source failed: skip ahead rather than hang.
+      if (this.pending === i) { this.pending = -1; this.index = i; this.next(); }
+    });
+  }
+}
