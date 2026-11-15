@@ -1,7 +1,7 @@
 // SIGNLAYER listening wave (ported from the prototype's SignWave): a thin white line with glowing blue lobes that swell with speech.
 import { waveColors } from "@signlayer/core";
 
-export interface WaveOpts { level?: number; talking?: boolean; colors?: readonly string[] }
+export interface WaveOpts { level?: number; talking?: boolean; colors?: readonly string[]; /** live 0..1 level (mic), read every frame */ getLevel?: () => number }
 export interface WaveHandle { set(o: { level?: number; talking?: boolean }): void; destroy(): void }
 
 interface Lobe { c: number; w: number; at: number; a: number; f: number; p: number; ps: number; life: number; dur: number }
@@ -28,7 +28,8 @@ export function signWave(canvas: HTMLCanvasElement, opts: WaveOpts = {}): WaveHa
   function frame(now: number) {
     if (dead || !canvas.isConnected) { raf = 0; return; }
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (talking && now > nextBeat) { target = base * (0.45 + Math.random() * 0.55); nextBeat = now + 180 + Math.random() * 260; }
+    if (talking && opts.getLevel) target = base * (0.14 + 0.9 * opts.getLevel());
+    else if (talking && now > nextBeat) { target = base * (0.45 + Math.random() * 0.55); nextBeat = now + 180 + Math.random() * 260; }
     if (!talking) target = base * 0.04;
     level += (target - level) * Math.min(1, dt * 3.2);
     const W = canvas.width, H = canvas.height, mid = H / 2, amp = (H / 2 - 2 * d) * level;

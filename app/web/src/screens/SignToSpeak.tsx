@@ -4,7 +4,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SignApiError, composeSentence, createSignClient, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
-import { Mark } from "../components/Icons";
+import { ClockIcon, CloseIcon, GridIcon, HandIcon, SpeakerIcon, UndoIcon } from "../components/Icons";
+import { Island, type IslandTone } from "../components/Island";
+import { Segmented } from "../components/Segmented";
 import { createTracker, drawOverlay, type Tracker } from "../lib/holistic";
 import { createSegmenter, type SegState, type SegmentDone } from "../lib/segmenter";
 import { SIGN_VOCAB } from "../lib/vocab";
@@ -215,93 +217,81 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const last = items[items.length - 1];
   const cands = last?.options?.slice(0, 3) ?? [];
   const ready = cam === "ready" && track === "ready";
-  const island = busy ? "Reading the sign" : seg === "recording" ? "Recording" : seg === "armed" ? (hands ? "Start signing" : "Show your hands") : !ready ? (cam === "starting" || track === "loading" ? "Starting camera" : "Camera off") : mode === "spell" ? "Spell mode" : "Ready to sign";
-  const status = cam === "denied" || cam === "nocam" || cam === "error" ? "Camera unavailable" : cam === "starting" ? "Starting the camera…" : track === "loading" ? "Loading hand tracking…" : track === "error" ? "Hand tracking unavailable" : seg === "armed" ? (hands ? "Hands found. Sign now." : "Raise your hands into view") : seg === "recording" ? "Recording… hold still to finish" : busy ? "Reading…" : hands ? "Tracking your hands" : "Tap Sign, then sign one word";
+  const tone: IslandTone = busy ? "busy" : seg === "recording" ? "rec" : seg === "armed" ? "live" : !ready ? (cam === "starting" || track === "loading" ? "busy" : "warn") : "idle";
+  const island = busy ? "Reading the sign" : seg === "recording" ? "Recording" : seg === "armed" ? (hands ? "Start signing" : "Show your hands") : !ready ? (cam === "starting" || track === "loading" ? "Starting camera" : "Camera off") : mode === "spell" ? "Ready to spell" : "Ready to sign";
+  const status = cam === "denied" || cam === "nocam" || cam === "error" ? "Camera unavailable" : cam === "starting" ? "Starting the camera…" : track === "loading" ? "Loading hand tracking…" : track === "error" ? "Hand tracking unavailable" : seg === "armed" ? (hands ? "Hands found. Sign now." : "Raise your hands into view") : seg === "recording" ? "Recording… hold still to finish" : busy ? "Reading…" : hands ? "Tracking your hands" : "Tap the button, then sign one word";
   const btn = busy ? (mode === "spell" ? "Reading letters…" : "Reading…") : seg === "recording" ? "Done" : seg === "armed" ? "Cancel" : mode === "spell" ? "Spell" : "Sign";
 
   return (
-    <div className={`screen signsp field${embed ? " embed" : ""}`}>
-      <div className="g live" />
-      <div className="bar live-bar">
-        {embed ? <span /> : <button className="homebtn" aria-label="Home" onClick={onHome}><Mark /></button>}
-        <span className={`island${seg === "recording" ? " rec" : ""}${!ready || (seg === "idle" && !busy) ? " idle" : ""}`} aria-live="polite"><i />{island}</span>
-        <span className="fps" title={tracker.current ? `MediaPipe on ${tracker.current.delegate}` : ""}>{ready ? `${fps.toFixed(0)} fps` : "–"}</span>
-      </div>
+    <div className={`screen signsp${embed ? " embed" : ""}`}>
+      <header className="topbar">
+        {embed ? <span /> : <button className="circbtn" aria-label="Close" title="Close" onClick={onHome}><CloseIcon /></button>}
+        <Island tone={tone} label={island} className={seg === "recording" ? "rec" : ""} />
+        <button className="circbtn" aria-label="Signs I know" title={`${SIGN_VOCAB.length} signs I know`} onClick={() => setSheet("signs")}><GridIcon /></button>
+      </header>
 
       {camMsg ? (
-        <div className="banner" role="alert">{camMsg}{cam === "denied" || cam === "error" ? <button className="pill sm on retry" onClick={startCam}>Retry</button> : null}</div>
+        <div className="banner" role="alert"><span>{camMsg}</span>{cam === "denied" || cam === "error" ? <button className="retry" onClick={startCam}>Retry</button> : null}</div>
       ) : null}
-      {banner ? <div className="banner" role="alert">{banner}</div> : null}
+      {banner ? <div className="banner" role="alert"><span>{banner}</span></div> : null}
 
-      <section className={`camcard sl-card${seg === "recording" ? " lit rec" : ""}`}>
-        <div className="stage">
+      <section className="stagewrap">
+        <div className={`camcard${seg === "recording" ? " rec" : ""}`} title={ready ? `${fps.toFixed(0)} fps · MediaPipe on ${tracker.current?.delegate ?? "?"}` : undefined}>
           <video ref={video} className="cam" muted playsInline autoPlay />
           <canvas ref={canvas} className="cam overlay" />
-          <span className="sl-chip"><i />You<em>&nbsp;· {mode === "spell" ? "Spelling" : "Signing"}</em></span>
-          <span className={`camstatus${hands ? " on" : ""}`}>{status}</span>
-        </div>
-        <div className="sl-cap sentence">
-          <textarea aria-label="Sentence to speak" rows={2} spellCheck={false} placeholder="Your sentence shows up here" value={sentence}
-            onChange={(e) => setEdit({ text: e.target.value, at: items.length })} />
-          <div className="caprow">
-            <button className="capbtn" onClick={undo} disabled={!items.length && !edit}>Undo</button>
-            <button className="capbtn" onClick={clear} disabled={!items.length && !edit}>Clear</button>
-            <button className="capbtn speak" onClick={speak} disabled={!sentence.trim()}>Speak</button>
-          </div>
+          <span className={`camstatus${hands ? " on" : ""}`} aria-live="polite">{status}</span>
         </div>
       </section>
 
-      <div className="cands" aria-label="Did you sign">
-        {cands.map((o, i) => (
-          <button key={o.label + i} className={`cand${last?.sel === i ? " on" : ""}`} onClick={() => choose(i)}>
-            {o.text || labelText(o.label)}<em>{Math.round(o.confidence * 100)}%</em>
-          </button>
-        ))}
-        {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name or word, letter by letter." : "Top guesses for each sign show up here."}</p> : null}
-      </div>
-      <p className="hint signhint" aria-live="polite">{hint ?? ""}</p>
-
-      <div className="foot signfoot">
-        <div className="signrow">
-          <div className="seg" role="radiogroup" aria-label="Mode">
-            <button role="radio" aria-checked={mode === "sign"} className={mode === "sign" ? "on" : ""} onClick={() => setMode("sign")}>Sign</button>
-            <button role="radio" aria-checked={mode === "spell"} className={mode === "spell" ? "on" : ""} onClick={() => setMode("spell")}>Spell</button>
+      <section className="sentzone">
+        <div className="cands" aria-label="Did you sign">
+          {cands.map((o, i) => (
+            <button key={o.label + i} className={`cand${last?.sel === i ? " on" : ""}`} onClick={() => choose(i)}>
+              {o.text || labelText(o.label)}<em>{Math.round(o.confidence * 100)}%</em>
+            </button>
+          ))}
+          {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name, letter by letter." : `Sign one word at a time · ${SIGN_VOCAB.length} signs`}</p> : null}
+        </div>
+        <div className="sentence">
+          <textarea aria-label="Sentence to speak" rows={2} spellCheck={false} placeholder="Your sentence" value={sentence}
+            onChange={(e) => setEdit({ text: e.target.value, at: items.length })} />
+          <div className="caprow">
+            <button className="capbtn" onClick={undo} disabled={!items.length && !edit}><UndoIcon />Undo</button>
+            <button className="capbtn" onClick={clear} disabled={!items.length && !edit}>Clear</button>
+            <button className="capbtn speak" onClick={speak} disabled={!sentence.trim()}><SpeakerIcon />Speak</button>
           </div>
-          <button id="signbtn" className={`listenbtn signbtn${seg !== "idle" ? " armed" : ""}`} onClick={tap} disabled={!ready || busy}>
-            {busy ? <i className="spin" aria-hidden="true" /> : <HandIcon />}{btn}
-          </button>
         </div>
-        <div className="footrow">
-          <p className="credit">Knows {SIGN_VOCAB.length} everyday signs · <button className="textlink inline" onClick={() => setSheet("signs")}>See signs</button></p>
-          <button className="textlink" onClick={() => setSheet("history")} disabled={!history.length}>Said{history.length ? ` (${history.length})` : ""}</button>
-        </div>
-      </div>
+        <p className="hint signhint" aria-live="polite">{hint ?? ""}</p>
+      </section>
+
+      <footer className="controls">
+        <Segmented<RecognizeMode> label="Mode" value={mode} onChange={setMode} options={[{ value: "sign", label: "Sign" }, { value: "spell", label: "Spell" }]} />
+        <button id="signbtn" className={`shutter${seg !== "idle" ? " armed" : ""}`} onClick={tap} disabled={!ready || busy} aria-label={btn} title={`${btn} (Space)`}>
+          <span className="core">{busy ? <i className="spin" aria-hidden="true" /> : <HandIcon />}</span>
+          <span className="sr-only">{btn}</span>
+        </button>
+        <button className="circbtn lg" aria-label={`Said${history.length ? ` (${history.length})` : ""}`} title="Said" onClick={() => setSheet("history")} disabled={!history.length}><ClockIcon /></button>
+      </footer>
 
       {sheet ? (
         <div className="sheet-back" onClick={() => setSheet(null)}>
-          <div className="sheet" role="dialog" aria-label={sheet === "signs" ? "Signs I know" : "Spoken"} onClick={(e) => e.stopPropagation()}>
+          <div className="sheet" role="dialog" aria-modal="true" aria-label={sheet === "signs" ? "Signs I know" : "Said"} onClick={(e) => e.stopPropagation()}>
+            <div className="grabber" aria-hidden="true" />
+            <header className="sheet-head">
+              <h2>{sheet === "signs" ? `${SIGN_VOCAB.length} signs` : "Said"}</h2>
+              <button className="textbtn" onClick={() => setSheet(null)} autoFocus>Done</button>
+            </header>
             {sheet === "signs" ? (
               <>
-                <h2>{SIGN_VOCAB.length} signs I know</h2>
-                <p>Single ASL signs from the Kaggle GISLR set, one at a time. Anything else comes out as the closest of these, so check the guesses. Names: use Spell.</p>
-                <div className="vocab">{[...SIGN_VOCAB].sort((a, b) => labelText(a).localeCompare(labelText(b))).map((l) => <span key={l}>{labelText(l)}</span>)}</div>
+                <p className="lede">Single ASL signs from the Kaggle GISLR set, one at a time. Anything else comes out as the closest of these, so check the guesses. For names, use Spell.</p>
+                <div className="group vocab">{[...SIGN_VOCAB].sort((a, b) => labelText(a).localeCompare(labelText(b))).map((l) => <span key={l}>{labelText(l)}</span>)}</div>
               </>
             ) : (
-              <>
-                <h2>Said</h2>
-                <ul className="said">{history.map((h, i) => <li key={i}><span>{h}</span><button className="btn" onClick={() => { setEdit({ text: h, at: items.length }); setSheet(null); }}>Use</button></li>)}</ul>
-              </>
+              <ul className="group said">{history.map((h, i) => <li key={i}><span>{h}</span><button className="btn" onClick={() => { setEdit({ text: h, at: items.length }); setSheet(null); }}>Use</button></li>)}</ul>
             )}
-            <div className="row"><span className="status" /><button className="btn primary" onClick={() => setSheet(null)}>Close</button></div>
           </div>
         </div>
       ) : null}
     </div>
   );
 }
-
-export const HandIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11m0-6.5V4a1.5 1.5 0 0 1 3 0v7m0-5.5a1.5 1.5 0 0 1 3 0V12m0-3.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1a6.5 6.5 0 0 1-5.2-2.6L3.6 16a1.6 1.6 0 0 1 2.5-2l1.9 2" />
-  </svg>
-);
