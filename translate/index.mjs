@@ -221,17 +221,14 @@ function prepare(text, vocab, options) {
   const input = text.trim().replace(/\s+/g, " ");
   const sentences = splitSentences(input).map((s) => matchSentence(s, index, options));
   // source_index: index of each token's word in input_text.split(" ") (for captions, "signing X for 'word'").
+  const wordAt = new Uint32Array(input.length + 1);              // char offset -> word index
+  for (let k = 0, wi = 0; k < input.length; k++) { if (input[k] === " ") wi++; wordAt[k + 1] = wi; }
   let cursor = 0;
   for (const s of sentences) {
     const at = input.indexOf(s.text, cursor);
     const base = at >= 0 ? at : cursor;
     cursor = base + s.text.length;
-    for (const t of s.toks) {
-      const off = base + t.start;
-      let wi = 0;
-      for (let k = 0; k < off; k++) if (input[k] === " ") wi++;
-      t.wi = wi;
-    }
+    for (const t of s.toks) t.wi = wordAt[Math.min(base + t.start, input.length)];
   }
   return { input, index, sentences, rules_ms: performance.now() - t0 };
 }
