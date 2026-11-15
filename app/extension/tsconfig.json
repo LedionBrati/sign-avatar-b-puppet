@@ -1,9 +1,4 @@
 {
   "extends": "./.wxt/tsconfig.json",
-  "compilerOptions": {
-    "strict": true,
-    "noUncheckedIndexedAccess": false,
-    "resolveJsonModule": true,
-    "paths": { "@signlayer/core": ["../core/src/index.ts"] }
-  }
+  "compilerOptions": { "strict": true, "resolveJsonModule": true }
 }

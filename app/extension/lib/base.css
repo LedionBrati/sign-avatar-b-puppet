@@ -1,0 +1,57 @@
+/* SIGNLAYER tokens (app/core/src/tokens.ts) + shared glass pieces from the team's prototypes. */
+:root {
+  color-scheme: light;
+  --table: #cbcbcc; --paper: #eeeff1; --paper-2: #f5f5f6; --mist: #c5cdec;
+  --cobalt: #1f3fd6; --cobalt-deep: #0c228f; --cobalt-mid: #2b4be0; --ink-blue: #1f34b5; --ink: #15193a; --white: #fff;
+  --spk: #2f55ff; --glow: #a9bbff;
+  --font: "Helvetica Neue", Helvetica, Inter, Arial, sans-serif;
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font: 400 13px/1.4 var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; }
+@keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Wordmark: lowercase Inter 500, the dotless ı carries a cobalt dot */
+.wm { display: inline-block; font: 500 15px/1 Inter, var(--font); letter-spacing: -0.025em; color: var(--wm-ink, #15193a); white-space: nowrap; }
+.wm .wm-i { position: relative; }
+.wm .wm-i::after { content: ""; position: absolute; left: calc(50% - 0.0125em); top: 0.11em; width: 0.21em; height: 0.21em; border-radius: 50%; background: var(--wm-dot, #1f3fd6); transform: translateX(-50%); }
+.mark { display: inline-block; width: 18px; height: 18px; line-height: 0; flex: none; }
+.mark svg { width: 100%; height: 100%; }
+
+/* Live pill */
+.live { display: inline-flex; gap: 6px; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap;
+  color: var(--ink); background: rgb(255 255 255 / .5); border: 1px solid rgb(255 255 255 / .75); box-shadow: inset 0 1px 0 #fff; }
+.live i { width: 6px; height: 6px; border-radius: 50%; background: #2fd39f; box-shadow: 0 0 8px #2fd39f; animation: breathe 1.2s ease-in-out infinite; }
+.live.off i { background: rgb(21 25 58 / .3); box-shadow: none; animation: none; }
+.live.err i { background: #e5484d; box-shadow: 0 0 8px #e5484d; animation: none; }
+
+/* Segmented control + switch (extension menu) */
+.seg { display: flex; gap: 3px; flex-wrap: wrap; padding: 3px; border-radius: 999px; background: rgb(21 25 58 / .06); border: 1px solid rgb(21 25 58 / .08); }
+.seg button { padding: 6px 12px; border-radius: 999px; border: 0; background: transparent; font-size: 12px; color: rgb(21 25 58 / .7); cursor: pointer; transition: background-color .25s ease, color .25s ease; }
+.seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgb(10 20 60 / .15); }
+.seg button:disabled { cursor: not-allowed; opacity: .45; }
+.seg button small { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; opacity: .8; margin-left: 4px; }
+.switch { width: 46px; height: 28px; border-radius: 999px; border: 0; padding: 0; position: relative; flex: none; cursor: pointer; background: rgb(21 25 58 / .15); transition: background .3s ease; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(10 20 60 / .25); transition: transform .3s cubic-bezier(.2,.9,.25,1.2); }
+.switch[aria-checked="true"] { background: linear-gradient(90deg, #3a6cff, #a46bff); box-shadow: 0 0 16px rgb(58 108 255 / .45); }
+.switch[aria-checked="true"]::after { transform: translateX(18px); }
+.cap-label { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: rgb(21 25 58 / .6); }
+
+/* Grainy cobalt page background (popup, side panel, mic page) */
+.g-live { background:
+  radial-gradient(60% 38% at 50% 34%, rgb(120 150 255 / .55) 0%, rgb(120 150 255 / 0) 70%),
+  radial-gradient(70% 40% at 20% 100%, var(--cobalt-deep) 0%, rgb(12 34 143 / 0) 70%),
+  linear-gradient(180deg, #1530c4 0%, var(--cobalt) 38%, #3352e4 70%, #8fa2ee 100%); }
+.g-paper { background: radial-gradient(50% 60% at 70% 30%, #6f86ea 0%, rgb(111 134 234 / 0) 70%), linear-gradient(160deg, #eeeff1 0%, #c5cdec 35%, #2b4be0 75%, #1631bd 100%); }
+.grain { position: relative; isolation: isolate; }
+.grain::before { content: ""; position: absolute; inset: 0; z-index: -1; background-image: var(--grain); background-size: 220px; mix-blend-mode: soft-light; opacity: .9; pointer-events: none; }
+
+/* Liquid glass panel */
+.glass { position: relative; border-radius: 22px; background: linear-gradient(180deg, rgb(255 255 255 / .62), rgb(255 255 255 / .44));
+  -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / .9), inset 0 -1px 1px rgb(255 255 255 / .35), 0 18px 40px -12px rgb(10 20 60 / .28); }
