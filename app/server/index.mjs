@@ -1,26 +1,32 @@
 // SIGNLAYER local API (contract: app/core/src/api.ts). Plain node:http, no framework.
 //
 //   node app/server/index.mjs            PORT=8787, CLIPS_DIR=dir[,dir2,...], SEMANTIC=0 to disable embeddings
+//                                        OPENAI_API_KEY / OPENAI_API_KEY_FILE enable the agent layer (AGENT=off disables)
 //
-//   GET  /api/health          {ok, signs, semantic: "ready" | "loading" | "off"}
+//   GET  /api/health          {ok, signs, semantic: "ready" | "loading" | "off", agent: "ready" | "off"}
 //   GET  /api/vocab           {signs: [{motion_id, gloss, duration_s}]}
-//   POST /api/sign            {text, semantic?} -> words, playlist, unsupported, fingerspell, markers, plan, timings
+//   POST /api/sign            {text, semantic?, agent?: "auto"|"always"|"off"} -> words, playlist, unsupported, fingerspell,
+//                             markers, plan, safety, translator: "local"|"agent", paraphrase?, timings
 //   GET  /api/sign.mp4?text=  the playlist joined into one mp4 (ffmpeg stream copy), for sharing / download
 //   GET  /clips/<file>        clips from the manifests, with HTTP Range (206) for Safari / iOS / expo-video
 //   POST /api/recognize?mode=sign|spell   float32 landmarks + X-Frames, proxied to app/recognizer (RECOGNIZER_URL, default :8788)
 //   GET  /app/*               the built web app (app/web/dist, WEB_DIST), SPA fallback to index.html
 
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import { createReadStream, existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { networkInterfaces, tmpdir } from "node:os";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { translate, translateRules } from "../../translate/index.mjs";
-import { createNodeMatcher, loadEnglishWords } from "../../translate/node.mjs";
+import { createNodeMatcher, loadEnglishWords, loadVocab } from "../../translate/node.mjs";
 import { joinClips } from "../../pipeline/lib/clips.mjs";
 import { loadClipSets, parseClipsDirs } from "./lib/clips.mjs";
 import { planToPlaylist } from "./lib/sign.mjs";
 import { assessSigning } from "./lib/semantic-safety.mjs";
+import { createAgent } from "./lib/agent.mjs";
+import { loadApiKey, redactor } from "./lib/secrets.mjs";
+import { virtualClips } from "./lib/eval-vocab.mjs";
 
 export const MAX_TEXT = 500;
 const MAX_BODY = 16 * 1024;
@@ -48,21 +54,35 @@ class HttpError extends Error {
  * @param {object} [o.matcher]      SemanticMatcher override (tests)
  * @param {string} [o.recognizerUrl]  default: RECOGNIZER_URL env or http://127.0.0.1:8788
  * @param {string} [o.webDist]        default: WEB_DIST env or app/web/dist
+ * @param {object|null} [o.agent]     agent override ({plan(text, vocab, opts)}, see lib/agent.mjs); null = off.
+ *                                    Default: from OPENAI_API_KEY / OPENAI_API_KEY_FILE unless AGENT=off (never under node --test)
+ * @param {string} [o.evalVocab]      DEV/EVAL ONLY: "dictionary" (EVAL_VOCAB env) plans against the 1,945-sign dictionary
+ *                                    with virtual clips; responses are labelled eval: "virtual_clips" and are never playable
  * @param {(line: string) => void} [o.log]
  */
 export function createApp(o = {}) {
   const clips = loadClipSets(o.clipsDirs ?? parseClipsDirs());
   const recognizerUrl = (o.recognizerUrl ?? process.env.RECOGNIZER_URL ?? "http://127.0.0.1:8788").replace(/\/+$/, "");
   const webDist = resolve(o.webDist ?? process.env.WEB_DIST ?? DEFAULT_WEB_DIST);
-  const vocab = [...clips.signs.values()].map(({ motion_id, gloss }) => ({ motion_id, gloss }));
-  const log = o.log ?? ((line) => console.log(line));
+  const keyInfo = o.agent === undefined ? loadApiKey() : { key: null };
+  const redact = redactor(keyInfo.key);
+  const rawLog = o.log ?? ((line) => console.log(line));
+  const log = (line) => rawLog(redact(line));           // nothing the server logs can contain the API key
   clips.warnings.forEach((w) => log(`warning: ${w}`));
+
+  // Planning vocab + the clip set the playlist builder and the safety gate check against (the real clips, except in eval mode).
+  const evalVocab = o.evalVocab ?? process.env.EVAL_VOCAB;
+  const planClips = evalVocab ? virtualClips(loadVocab(evalVocab)) : clips;
+  if (evalVocab) log(`EVAL MODE: planning against ${planClips.signs.size} "${evalVocab}" signs with VIRTUAL clips; not for playback`);
+  const vocab = [...planClips.signs.values()].map(({ motion_id, gloss }) => ({ motion_id, gloss }));
 
   let englishWords = null;
   try { englishWords = loadEnglishWords(); } catch (error) { log(`warning: English word list unavailable (${error.message}); names only by capitalization`); }
 
+  const agent = o.agent !== undefined ? o.agent : agentFromEnv(keyInfo, englishWords, log);
+
   const semanticWanted = o.semantic ?? process.env.SEMANTIC !== "0";
-  const state = { semantic: semanticWanted ? "loading" : "off", warm_ms: null };
+  const state = { semantic: semanticWanted ? "loading" : "off", warm_ms: null, agent: agent ? "ready" : "off" };
   const matcher = semanticWanted ? (o.matcher ?? createNodeMatcher()) : null;
   const ready = !matcher ? Promise.resolve(false) : (async () => {
     const t0 = performance.now();
@@ -81,27 +101,65 @@ export function createApp(o = {}) {
     }
   })();
 
+  /** One playlist builder + safety gate for every translator: a blocked plan never returns a playable prefix. */
+  function finish(text, plan) {
+    const out = planToPlaylist(plan, planClips);
+    const safety = assessSigning(text, plan, planClips);
+    if (safety.status !== "fully_supported") {
+      out.playlist = [];
+      out.markers = [];
+    }
+    return { out, safety, plan };
+  }
+
   async function sign(body) {
     const t0 = performance.now();
-    if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "bad_request", "body must be a JSON object {text, semantic?}");
-    const { text, semantic = true } = body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "bad_request", "body must be a JSON object {text, semantic?, agent?}");
+    const { text, semantic = true, agent: mode = "auto" } = body;
     if (typeof text !== "string") throw new HttpError(400, "bad_text", "text must be a string");
     if (!text.trim()) throw new HttpError(400, "empty_text", "text is empty");
     if (text.length > MAX_TEXT) throw new HttpError(413, "text_too_long", `text is ${text.length} characters; the limit is ${MAX_TEXT}`);
     if (typeof semantic !== "boolean") throw new HttpError(400, "bad_semantic", "semantic must be a boolean");
+    if (!AGENT_MODES.includes(mode)) throw new HttpError(400, "bad_agent", `agent must be one of ${AGENT_MODES.join(", ")}`);
     const opts = { englishWords: englishWords ?? undefined };
     const t1 = performance.now();
     const plan = semantic && state.semantic === "ready"
       ? await translate(text, vocab, { ...opts, matcher })
       : translateRules(text, vocab, opts);
     const translate_ms = ms(performance.now() - t1);
-    const out = planToPlaylist(plan, clips);
-    const safety = assessSigning(text, plan, clips);
-    if (safety.status !== "fully_supported") {
-      out.playlist = [];
-      out.markers = [];
+    const local = finish(text, plan);
+
+    // Hybrid: the local translator answers instantly; the agent is asked only when that is not fully supported
+    // (or agent: "always"). Its plan goes through the same gate and wins only if the gate rates it better.
+    let chosen = local, translator = "local", trace, agent_ms;
+    const warnings = [];
+    if (agent && mode !== "off" && (mode === "always" || local.safety.status !== "fully_supported")) {
+      const t2 = performance.now();
+      let r;
+      try { r = await agent.plan(text, vocab, opts); } catch (error) { r = { ok: false, code: "internal", error: redact(error) }; }
+      agent_ms = ms(performance.now() - t2);
+      if (r.ok) {
+        const proposed = finish(text, r.plan);
+        const wins = mode === "always" || better(proposed, local);
+        trace = { used: wins, status: proposed.safety.status, local_status: local.safety.status, paraphrase: r.paraphrase, notes: r.notes,
+          model: r.model, cached: Boolean(r.cached), latency_ms: r.latency_ms, usage: r.usage ?? null, rejected: r.rejected ?? [] };
+        if (wins) trace.local_plan = summarize(local.plan); else trace.plan = summarize(proposed.plan);
+        if (r.rejected?.length) log(`agent: rejected ${r.rejected.length} proposed item(s): ${r.rejected.map((x) => `${x.reason}:${x.id ?? x.letters ?? "?"}`).join(", ")}`);
+        if (wins) { chosen = proposed; translator = "agent"; }
+      } else {
+        trace = { used: false, local_status: local.safety.status, model: r.model, code: r.code, error: redact(r.error ?? ""), latency_ms: r.latency_ms };
+        warnings.push(`agent unavailable (${r.code}); local translation used`);
+        log(`agent failed (${r.code}): ${redact(r.error ?? "")}`);
+      }
     }
-    return { text, ...out, safety, plan, timings: { translate_ms, total_ms: ms(performance.now() - t0) } };
+    return {
+      text, ...chosen.out, safety: chosen.safety, plan: chosen.plan, translator,
+      ...(translator === "agent" ? { paraphrase: trace.paraphrase } : {}),
+      ...(trace ? { agent: trace } : {}),
+      ...(warnings.length ? { warnings } : {}),
+      ...(evalVocab ? { eval: "virtual_clips" } : {}),
+      timings: { translate_ms, ...(agent_ms !== undefined ? { agent_ms } : {}), total_ms: ms(performance.now() - t0) },
+    };
   }
 
   async function handle(req, res) {
@@ -112,7 +170,7 @@ export function createApp(o = {}) {
 
     if (path === "/api/health") {
       only(req, "GET", "HEAD");
-      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, recognizer: await recognizerStatus() });
+      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, recognizer: await recognizerStatus() });
     }
     if (path === "/api/vocab") {
       only(req, "GET", "HEAD");
@@ -124,11 +182,13 @@ export function createApp(o = {}) {
     }
     if (path === "/api/sign.mp4") {
       only(req, "GET");
-      const result = await sign({ text: url.searchParams.get("text") ?? "", semantic: url.searchParams.get("semantic") !== "false" });
+      const result = await sign({ text: url.searchParams.get("text") ?? "", semantic: url.searchParams.get("semantic") !== "false",
+        agent: url.searchParams.get("agent") ?? "auto" });
       if (result.safety.status !== "fully_supported") {
         return json(res, 422, { text: result.text, playlist: [], safety: result.safety,
           error: { code: "signing_not_supported", message: "Full signing is not available for this message" } });
       }
+      if (evalVocab) throw new HttpError(409, "eval_mode", "EVAL_VOCAB server has virtual clips; nothing to join");
       return sendJoined(req, res, result);
     }
     if (path === "/api/recognize") {
@@ -228,7 +288,37 @@ export function createApp(o = {}) {
       json(res, status, { error: { code: error.code ?? "internal", message: error instanceof HttpError ? error.message : "internal error" } });
     });
   });
-  return { server, clips, vocab, state, ready, sign, recognizerUrl, webDist };
+  return { server, clips, vocab, state, ready, sign, agent, recognizerUrl, webDist };
+}
+
+const AGENT_MODES = ["auto", "always", "off"];
+const RANK = { caption_only: 0, needs_confirmation: 1, fully_supported: 2 };
+
+/** Agent result beats local only if the gate rates it strictly better; ties go to the local translator. */
+export function better(a, b) {
+  const ra = RANK[a.safety.status], rb = RANK[b.safety.status];
+  if (ra !== rb) return ra > rb;
+  // Both waiting for confirmation: fewer open questions (fewer non-literal signs) is better.
+  return ra === RANK.needs_confirmation && a.safety.reasons.length < b.safety.reasons.length;
+}
+
+/** "HURT WHERE~" style one-liner of a plan (~ = semantic / paraphrased sign) for the agent trace. */
+const summarize = (plan) => plan.items.map((i) => (i.type === "sign" ? i.motion_id : `fs:${i.word}`) + (i.match?.method === "semantic" ? "~" : "")).join(" ");
+
+/** Agent from the environment, or null. Never under node --test (no paid calls from tests) unless AGENT_IN_TESTS=1. */
+function agentFromEnv(keyInfo, englishWords, log) {
+  if (process.env.AGENT === "off" || process.env.AGENT === "0") return null;
+  if (process.env.NODE_TEST_CONTEXT && process.env.AGENT_IN_TESTS !== "1") return null;
+  if (!keyInfo.key) { if (keyInfo.error) log(`agent off: ${keyInfo.error}`); return null; }
+  let OpenAI;
+  try { OpenAI = createRequire(import.meta.url)("openai").OpenAI; } catch {
+    log("agent off: the openai package is not installed (cd app/server && npm i)");
+    return null;
+  }
+  const timeoutMs = Number(process.env.AGENT_TIMEOUT_MS) > 0 ? Number(process.env.AGENT_TIMEOUT_MS) : undefined;
+  const agent = createAgent({ client: new OpenAI({ apiKey: keyInfo.key, maxRetries: 0 }), secrets: [keyInfo.key], englishWords: englishWords ?? undefined, timeoutMs });
+  log(`agent: ${agent.model} (key from ${keyInfo.source === "file" ? "OPENAI_API_KEY_FILE" : "OPENAI_API_KEY"}, timeout ${agent.timeoutMs} ms)`);
+  return agent;
 }
 
 function cors(req, res) {
@@ -339,6 +429,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log(`SIGNLAYER server: ${app.clips.signs.size} signs from ${app.clips.dirs.map((d) => `${d.dir} (${d.signs})`).join(", ")}`);
     for (const u of lanUrls(port)) console.log(`  ${u}`);
     console.log(`semantic: ${app.state.semantic}`);
+    console.log(`agent: ${app.state.agent}${app.agent?.model ? ` (${app.agent.model})` : ""}`);
     console.log(`recognizer: ${app.recognizerUrl}`);
     console.log(`web app: ${existsSync(join(app.webDist, "index.html")) ? `${lanUrls(port).at(-1)}/app/` : `not built (${app.webDist})`}`);
   });
