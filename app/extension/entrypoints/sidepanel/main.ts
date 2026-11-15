@@ -98,12 +98,14 @@ let micWaiting = false; // waiting for the one-time permission tab
 /** Test hook: when the panel page is opened as a tab (scripts/verify.mjs), ?tab=<id> names the tab to capture. */
 const testTab = Number(new URLSearchParams(location.search).get("tab")) || null;
 
-async function startListening() {
+let tabTarget: number | null = null; // the tab being captured (or last tried)
+
+async function startListening(tabId?: number) {
   errorText = ""; hint = "";
   listening = "starting";
   renderControls();
   render();
-  if (s.source === "tab") await startTab();
+  if (s.source === "tab") await startTab(tabId);
   else await startMic();
   renderControls();
   render();
@@ -132,13 +134,14 @@ function fail(text: string) {
   render();
 }
 
-async function startTab() {
-  let tabId = testTab;
+async function startTab(forTab?: number) {
+  let tabId = forTab ?? testTab;
   if (!tabId) {
     const [t] = await browser.tabs.query({ active: true, currentWindow: true });
     tabId = t?.id ?? null;
   }
   if (!tabId) return fail("No tab to listen to. Open a page that plays audio.");
+  tabTarget = tabId;
   const t = new TabAudio(s.apiUrl, {
     onText: (text) => sign(text),
     onLevel: setLevel,
@@ -185,6 +188,22 @@ async function startMic() {
   mic.start();
   listening = "on";
 }
+
+// Toolbar icon clicked on a tab (background.ts): that tab is granted now. In Tab audio mode, listen there right away
+// if the panel is idle after an error, or is listening to a different tab. Needs an earlier click in the panel
+// (sticky activation) so the AudioContext that keeps the tab audible may play; otherwise the user presses Listen.
+browser.runtime.onMessage.addListener((m: unknown) => {
+  const msg = m as { type?: string; tabId?: number };
+  if (msg?.type !== "invoked" || typeof msg.tabId !== "number" || s.source !== "tab" || testTab) return;
+  const idleAfterError = listening === "off" && Boolean(errorText);
+  const otherTab = listening !== "off" && tabTarget !== msg.tabId;
+  if (!idleAfterError && !otherTab) return;
+  if (!(navigator as { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive) {
+    stopListening(); errorText = ""; hint = "Press Listen to this tab."; renderControls(); render(); return;
+  }
+  stopListening();
+  void startListening(msg.tabId);
+});
 
 // The permission tab tells us when the mic is allowed.
 browser.runtime.onMessage.addListener((m: unknown) => {
