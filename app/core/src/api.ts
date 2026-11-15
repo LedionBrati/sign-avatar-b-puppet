@@ -175,7 +175,11 @@ export interface RecognizeResponse {
 export interface ComposeRequest {
   signs: { text: string; options?: { text: string; confidence: number }[] }[];
   /** Optional conversation context: the last <= 2 sentences this screen spoke, the last thing the hearing person said. */
-  context?: { said?: string[]; heard?: string };
+  context?: {
+    said?: string[];
+    heard?: string;
+    history?: { who: "them" | "me"; text: string }[];
+  };
 }
 
 /** makes_sense: the signs already form a complete message. sentence: natural English (best effort even if not).

@@ -18,7 +18,8 @@ export const SEG = {
 
 const KEY = [0, 4, 8, 12, 20]; // wrist + finger tips
 
-function motion(a: HolisticFrame | null, b: HolisticFrame): number {
+/** Mean wrist + fingertip displacement between two frames (a hand appearing or vanishing counts as 0.02). */
+export function motion(a: HolisticFrame | null, b: HolisticFrame): number {
   if (!a) return 0;
   let sum = 0, n = 0;
   for (const k of ["leftHand", "rightHand"] as const) {
