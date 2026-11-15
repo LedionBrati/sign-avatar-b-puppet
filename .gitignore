@@ -1,5 +1,7 @@
 # outputs and dependencies
 out/
+# Local or deployment-only clip media; rights must be checked before sharing.
+public/clips/
 .venv/
 **/__pycache__/
 .pytest_cache/
