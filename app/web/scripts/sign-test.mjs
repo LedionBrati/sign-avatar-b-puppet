@@ -53,12 +53,6 @@ for (const [ci, clip] of clips.entries()) {
     await sleep(2500); // a second of fps
     r.delegate = await page.evaluate(() => window.__sl?.delegate);
     r.fps = await page.evaluate(() => window.__sl?.fps);
-    if (ci === 0) {
-      // Catch the overlay while the hands are up (the clip loops).
-      await page.waitForFunction(() => document.querySelector(".camstatus.on"), { timeout: 15_000, polling: 50 }).catch(() => {});
-      await sleep(300);
-      await shot("sign-tracking.png");
-    }
     // Two tries per clip (the fake camera loops; a press can land mid-sign).
     for (let attempt = 1; attempt <= 2 && !r.top5; attempt++) {
       const before = await page.evaluate(() => window.__sl?.last ?? null);
@@ -83,6 +77,14 @@ for (const [ci, clip] of clips.entries()) {
       await sleep(700);
       r.sentence = await page.$eval(".sentence textarea", (t) => t.value);
       await shot("sign-result.png");
+      // Tracking shot: arm again, and freeze the video mid-sign (hands up) so the frame and overlay match in the screenshot.
+      await page.click("#signbtn");
+      const rec = await page.waitForFunction(() => document.querySelector(".island.rec"), { timeout: 15_000, polling: 30 }).catch(() => null);
+      if (rec) {
+        await page.evaluate(() => document.querySelector("video.cam").pause());
+        await sleep(600);
+        await shot("sign-tracking.png");
+      }
     }
   } catch (e) {
     r.error = String(e.message ?? e);
