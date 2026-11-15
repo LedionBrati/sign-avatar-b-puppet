@@ -3,6 +3,7 @@ import { Home } from "./screens/Home";
 import { Live, type LiveStart } from "./screens/Live";
 import { SignToSpeak } from "./screens/SignToSpeak";
 import { navigate, useRoute } from "./lib/route";
+import { transition } from "./lib/motion";
 import { Settings } from "./components/Settings";
 import { speechSupported } from "./lib/speech";
 
@@ -11,10 +12,10 @@ export function App() {
   const [settings, setSettings] = useState(false);
   const canListen = speechSupported();
   const go = useCallback((start: LiveStart) => {
-    if (start.kind === "typed" && !start.text.trim()) { setLive(null); return; }
-    setLive({ start, key: Date.now() });
+    if (start.kind === "typed" && !start.text.trim()) { transition(() => setLive(null)); return; }
+    transition(() => setLive({ start, key: Date.now() }));
   }, []);
-  const home = useCallback(() => setLive(null), []);
+  const home = useCallback(() => transition(() => setLive(null)), []);
   const route = useRoute();
   const embed = route.params.get("embed") === "1";
   if (route.path === "/sign") {
@@ -29,7 +30,7 @@ export function App() {
   }
   return (
     <div className="app">
-      <main className="device" aria-live="polite">
+      <main className="device">
         {live ? (
           <Live key={live.key} start={live.start} onHome={home} onRestart={go} />
         ) : (
