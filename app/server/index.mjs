@@ -13,6 +13,8 @@
 //   GET  /clips/<file>        clips from the manifests, with HTTP Range (206) for Safari / iOS / expo-video
 //   POST /api/transcribe      raw audio chunk (audio/webm, ...) -> {text, model, timings}; same OpenAI key (lib/transcribe.mjs)
 //   POST /api/recognize?mode=sign|spell   float32 landmarks + X-Frames, proxied to app/recognizer (RECOGNIZER_URL, default :8788)
+//   POST /api/compose         {signs: [{text, options?}]} -> {makes_sense, sentence, picked}: recognized signs -> spoken English
+//                             (same OpenAI key; lib/compose.mjs; COMPOSE=off disables)
 //   GET  /app/*               the built web app (app/web/dist, WEB_DIST), SPA fallback to index.html
 
 import { createServer } from "node:http";
@@ -32,6 +34,7 @@ import { loadApiKey, loadFalKey, redactor } from "./lib/secrets.mjs";
 import { createOnDemand, onDemandConfig, prepareClipsDir } from "./lib/ondemand.mjs";
 import { virtualClips } from "./lib/eval-vocab.mjs";
 import { TRANSCRIBE_ROUTE, createTranscribeHandler, transcriberFromEnv } from "./lib/transcribe.mjs";
+import { COMPOSE_ROUTE, createComposer, parseSigns } from "./lib/compose.mjs";
 
 export const MAX_TEXT = 500;
 const MAX_BODY = 16 * 1024;
@@ -67,6 +70,7 @@ class HttpError extends Error {
  *                                    null = off. Default: from the environment (ONDEMAND=on, FAL_KEY_FILE / FAL_KEY, MOTION_DIRS),
  *                                    never under node --test
  * @param {object|null} [o.transcriber]  speech-to-text override ({transcribe(audio, opts)}, see lib/transcribe.mjs); null = off
+ * @param {object|null} [o.composer]  sign -> sentence override ({compose(signs)}, see lib/compose.mjs); null = off
  * @param {(line: string) => void} [o.log]
  */
 export function createApp(o = {}) {
@@ -103,6 +107,7 @@ export function createApp(o = {}) {
   const agent = o.agent !== undefined ? o.agent : agentFromEnv(keyInfo, englishWords, log);
   const transcriber = o.transcriber !== undefined ? o.transcriber : transcriberFromEnv(keyInfo, log);
   const transcribe = createTranscribeHandler(transcriber, { log });
+  const composer = o.composer !== undefined ? o.composer : composerFromEnv(keyInfo, log);
 
   function reloadClips(ids = []) {
     const before = clips.signs.size;
@@ -236,7 +241,7 @@ export function createApp(o = {}) {
 
     if (path === "/api/health") {
       only(req, "GET", "HEAD");
-      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, transcribe: transcriber ? "ready" : "off", recognizer: await recognizerStatus(),
+      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, transcribe: transcriber ? "ready" : "off", compose: composer ? "ready" : "off", recognizer: await recognizerStatus(),
         ...(odConfig.wanted || ondemand.enabled ? { ondemand: ondemand.health() } : {}) });
     }
     if (path === "/api/ondemand") {
@@ -266,6 +271,16 @@ export function createApp(o = {}) {
       const r = await transcribe(req, url);
       return json(res, r.status, r.body);
     }
+    if (path === COMPOSE_ROUTE) {
+      only(req, "POST");
+      if (!composer) throw new HttpError(503, "compose_off", "no OpenAI key on the server; compose the sentence on the client");
+      let signs;
+      try { signs = parseSigns(await readJson(req)); } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(400, "bad_request", e.message); }
+      try { return json(res, 200, { ok: true, ...(await composer.compose(signs)) }); } catch (e) {
+        log(`compose failed: ${redact(e?.message ?? String(e))}`);
+        throw new HttpError(502, "compose_failed", "the sentence model did not answer");
+      }
+    }
     if (path === "/api/recognize") {
       only(req, "POST");
       return recognize(req, res, url);
@@ -283,7 +298,7 @@ export function createApp(o = {}) {
       if (!file) throw new HttpError(404, "no_clip", `no clip ${rel ?? path}`);
       return sendFile(req, res, file);
     }
-    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "/app/"] });
+    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "POST /api/compose", "/app/"] });
     throw new HttpError(404, "not_found", `no route ${req.method} ${path}`);
   }
 
@@ -364,7 +379,7 @@ export function createApp(o = {}) {
     });
   });
   server.on("close", () => ondemand.stop());
-  return { server, get clips() { return clips; }, get vocab() { return vocab; }, state, ready, sign, agent, transcriber, ondemand, reloadClips, recognizerUrl, webDist };
+  return { server, get clips() { return clips; }, get vocab() { return vocab; }, state, ready, sign, agent, transcriber, composer, ondemand, reloadClips, recognizerUrl, webDist };
 }
 
 /** On-demand settings: explicit options (tests), null = off, or the environment (never under node --test). */
@@ -412,6 +427,18 @@ function agentFromEnv(keyInfo, englishWords, log) {
   const agent = createAgent({ client: new OpenAI({ apiKey: keyInfo.key, maxRetries: 0 }), secrets: [keyInfo.key], englishWords: englishWords ?? undefined, timeoutMs });
   log(`agent: ${agent.model} (key from ${keyInfo.source === "file" ? "OPENAI_API_KEY_FILE" : "OPENAI_API_KEY"}, timeout ${agent.timeoutMs} ms)`);
   return agent;
+}
+
+/** Sentence composer (sign -> voice) from the environment, or null. Never under node --test unless AGENT_IN_TESTS=1. */
+function composerFromEnv(keyInfo, log) {
+  if (process.env.COMPOSE === "off" || process.env.COMPOSE === "0") return null;
+  if (process.env.NODE_TEST_CONTEXT && process.env.AGENT_IN_TESTS !== "1") return null;
+  if (!keyInfo.key) return null;
+  let OpenAI;
+  try { OpenAI = createRequire(import.meta.url)("openai").OpenAI; } catch { return null; }
+  const composer = createComposer({ client: new OpenAI({ apiKey: keyInfo.key, maxRetries: 0 }) });
+  log(`compose: ${composer.model} (sign -> sentence)`);
+  return composer;
 }
 
 function cors(req, res) {
