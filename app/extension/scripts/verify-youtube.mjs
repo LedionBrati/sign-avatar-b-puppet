@@ -100,13 +100,13 @@ try {
   // ── 1. Captions source on a real video ──
   await page.goto(`https://www.youtube.com/watch?v=${video}`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await sleep(2500);
-  // EU consent dialog: "Accept all".
-  const consent = await page.evaluate(() => {
-    const b = [...document.querySelectorAll("button, tp-yt-paper-button")].find((x) => /^accept all$/i.test(x.textContent.trim()) || /accept/i.test(x.getAttribute("aria-label") ?? ""));
+  // EU consent dialog: click the visible "Accept all" (it can show up a few seconds late).
+  const acceptConsent = () => page.evaluate(() => {
+    const b = [...document.querySelectorAll("button, tp-yt-paper-button, a")].find((x) => x.offsetParent && /^\s*accept all\s*$/i.test(x.textContent ?? ""));
     b?.click();
     return !!b;
   });
-  if (consent) { log("consent: accept"); await sleep(3000); }
+  for (let i = 0; i < 8; i++) { if (await acceptConsent()) { log("consent: accept"); await sleep(2500); break; } await sleep(700); }
   const f = await overlay();
   check(!!f, "signer mounted by itself on the YouTube watch page");
   if (!f) throw new Error("no overlay");

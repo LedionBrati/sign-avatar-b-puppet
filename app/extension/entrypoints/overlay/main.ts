@@ -271,6 +271,7 @@ function setFocus(html: string, note = "", actions = "", len = 0) {
     focusText.innerHTML = html;
     focusText.dataset.len = len > 22 ? "l" : len > 11 ? "m" : "s";
     noteActions.innerHTML = actions;
+    focusText.classList.toggle("overflow", focusText.scrollHeight > focusText.clientHeight + 2);
   }
   noteText.innerHTML = note;
 }
@@ -297,7 +298,7 @@ function renderFocus(v: View) {
   setFocus("", "");
   // Hints live in the sheet, as quiet secondary text.
   cc.dataset.empty =
-    v === "ad" ? "Ad playing · signing resumes after it"
+    v === "ad" ? "Signing resumes after the ad"
     : v === "need-cc" ? "Turn on CC in the player"
     : v === "paused" ? ""
     : phrases ? ""

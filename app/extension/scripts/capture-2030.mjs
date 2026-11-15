@@ -43,6 +43,8 @@ try {
   await page.setViewport({ width: 1280, height: 800 });
   const scheme = [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }];
   await page.emulateMediaFeatures(scheme);
+  // YouTube's own theme for signed-out viewers: PREF f6=400 is dark, 80000 light.
+  await browser.setCookie({ name: "PREF", value: dark ? "f6=400" : "f6=80000", domain: ".youtube.com", path: "/" }).catch((e) => log("cookie", e.message));
   page.on("console", (m) => /signlayer/i.test(m.text()) && log("[page]", m.text().slice(0, 160)));
 
   const frameOf = async (ms = 20000) => {
@@ -90,18 +92,20 @@ try {
 
   await page.goto(`https://www.youtube.com/watch?v=${video}`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await sleep(2500);
-  // EU consent dialog: "Accept all".
-  const accepted = await page.evaluate(() => {
-    const b = [...document.querySelectorAll("button, tp-yt-paper-button")].find((x) => /^accept all$/i.test(x.textContent.trim()) || /accept/i.test(x.getAttribute("aria-label") ?? ""));
+  // EU consent dialog: click the visible "Accept all" (it can show up a few seconds late).
+  const acceptConsent = () => page.evaluate(() => {
+    const b = [...document.querySelectorAll("button, tp-yt-paper-button, a")].find((x) => x.offsetParent && /^\s*accept all\s*$/i.test(x.textContent ?? ""));
     b?.click();
     return !!b;
   });
-  if (accepted) await sleep(3000);
+  for (let i = 0; i < 8; i++) { if (await acceptConsent()) { log("consent: accepted"); await sleep(2500); break; } await sleep(700); }
   const f = await frameOf();
   if (!f) throw new Error("no overlay");
   await page.waitForSelector("#movie_player video", { timeout: 30000 });
   await playThroughAds();
-  await page.evaluate(() => { const v = document.querySelector("#movie_player video"); v.currentTime = 9; v.play(); });
+  await acceptConsent();
+  // Through the player API, so YouTube's own state agrees.
+  await page.evaluate(() => { const p = document.querySelector("#movie_player"); p.seekTo?.(9, true); p.playVideo?.(); });
   await page.mouse.move(300, 300);
   const tabId = await sw.evaluate(async () => (await chrome.tabs.query({ url: "https://www.youtube.com/*" }))[0]?.id);
   const signText = (text) => sw.evaluate((id, t) => globalThis.__slSign(id, t), tabId, text);
@@ -126,26 +130,33 @@ try {
       // (A frame with no visible, decoded video would show the empty tile: a "black frame".)
       await signText("Hello, my name is. Thank you, see you later. Where do you hurt?");
       await waitState(f, ["signing"]);
-      const probe = f.evaluate(() => new Promise((done) => {
+      // Sampled every 8 ms with a timer (rAF is throttled in a busy headless tab), no screenshots meanwhile.
+      await waitState(f, ["listening", "paused"], 15000);
+      await signText("Hello, my name is. Thank you, see you later. Where do you hurt?");
+      await waitState(f, ["signing"]);
+      const probe = await f.evaluate(() => new Promise((done) => {
         const vids = [...document.querySelectorAll("video")];
-        let frames = 0, gaps = 0, swaps = 0, last = "";
+        let samples = 0, gaps = 0, swaps = 0, last = "";
         const t0 = performance.now();
-        const tick = () => {
-          frames++;
+        const id = setInterval(() => {
+          samples++;
           const vis = vids.filter((v) => v.classList.contains("on") && v.readyState >= 2);
           if (!vis.length && document.getElementById("card").dataset.state === "signing") gaps++;
           const top = vids.find((v) => v.classList.contains("top"))?.getAttribute("src") ?? "";
           if (top !== last) { swaps++; last = top; }
-          if (performance.now() - t0 < 7000) requestAnimationFrame(tick); else done({ frames, gaps, swaps });
-        };
-        requestAnimationFrame(tick);
+          if (performance.now() - t0 > 9000) { clearInterval(id); done({ samples, gaps, swaps }); }
+        }, 8);
       }));
+      await waitState(f, ["listening", "paused"], 15000);
+      await signText("Hello, my name is. Thank you, see you later.");
+      await waitState(f, ["signing"]);
+      await sleep(300);
       const b = await box(f);
       for (let i = 0; i < 6; i++) {
         await page.screenshot({ path: resolve(out, `${prefix}seq-${String(i).padStart(2, "0")}.png`), clip: { x: b.x, y: b.y, width: b.width, height: b.height } });
-        await sleep(250);
+        await sleep(200);
       }
-      log("seams", await probe);
+      log("seams", probe);
     }
     await waitState(f, ["listening", "paused"], 15000);
   }
