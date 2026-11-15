@@ -216,12 +216,28 @@ try {
     check((s.state === "caption_only" || s.state === "confirm") && s.cc.includes("Turn right at the bank.") && vids.every((v) => !v.src && v.paused),
       `blocked phrase: exact caption + reason, no stale video: [${s.state}] ${s.cc} (${s.note})`);
     await shot("caption-only-text");
+    // needs_confirmation (a paraphrase): stopped until the viewer clicks "Show signs".
+    await sw.evaluate((id) => globalThis.__slSign(id, "Hey there, thanks a lot"), tabId);
+    const t2 = Date.now();
+    while (Date.now() - t2 < 12000) { s = await snap(f); if (s.state === "confirm" || s.state === "caption_only" || s.state === "signing") break; await sleep(150); }
+    if (s.state === "confirm") {
+      check(!s.playing, `needs_confirmation waits for the viewer: ${s.note}`);
+      await shot("confirm");
+      await f.click('[data-act="confirm"]');
+      const t3 = Date.now();
+      while (Date.now() - t3 < 6000) { s = await snap(f); if (s.state === "signing" && s.playing) break; await sleep(150); }
+      check(s.state === "signing", `"Show signs" plays the confirmed signs: ${s.pill}`);
+      await page.mouse.move(300, 300);
+    } else log(`(no needs_confirmation from this server for the paraphrase: [${s.state}])`);
   }
 
   if (only.includes("tab") && !process.env.SKIP_TAB) {
     // Tab audio: the popup click is the user gesture tabCapture needs (Extension.triggerAction opens the popup).
     await page.bringToFront();
-    await page.evaluate(() => { const p = document.querySelector("#movie_player"); p.unMute?.(); p.setVolume?.(100); const v = document.querySelector("#movie_player video"); v.muted = false; v.volume = 1; v.currentTime = 40; v.play(); });
+    // Through the player API, so YouTube's own state agrees (unmuted, playing from 0:40).
+    const resume = () => page.evaluate(() => { const p = document.querySelector("#movie_player"); p.unMute?.(); p.setVolume?.(100); if (p.getPlayerState?.() !== 1) p.playVideo?.(); });
+    await page.evaluate(() => { const p = document.querySelector("#movie_player"); p.seekTo?.(40, true); });
+    await resume();
     await playThroughAds(false);
     const extension = (await browser.extensions()).get(extId);
     const popupTarget = browser.waitForTarget((t) => t.url().includes(`${extId}/popup.html`), { timeout: 8000 }).catch(() => null);
@@ -240,6 +256,9 @@ try {
       const op = off ? await off.asPage() : null;
       if (op && process.env.KEEP_AUDIO) await op.evaluate(() => { globalThis.__slTabAudio.keep = true; });
       await popup.close().catch(() => {});
+      await page.bringToFront();
+      await f.evaluate(() => (document.activeElement)?.blur?.());
+      await page.mouse.move(300, 300);
       const texts = [];
       const tt = Date.now();
       while (Date.now() - tt < 30000 && texts.length < 6) {
@@ -247,9 +266,9 @@ try {
         if (s.cc && !texts.includes(s.cc) && s.cc !== "Captions appear here") {
           texts.push(s.cc);
           log(`+${((Date.now() - tStart) / 1000).toFixed(1)}s [${s.state}] ${s.pill} :: ${s.cc.slice(0, 90)}`);
-          if (texts.length === 2) await shot("tab-audio");
+          if (texts.length === 2) { await sleep(700); await shot("tab-audio"); }
         }
-        if ((Date.now() - tt) % 5000 < 260) log("video", JSON.stringify(await ytVideo()), "muted", await page.evaluate(() => document.querySelector("#movie_player")?.isMuted?.()));
+        if ((Date.now() - tt) % 3000 < 260) { const v = await ytVideo(); if (v?.paused) { log("video paused at", v.t, "-> resume"); await resume(); } }
         await sleep(250);
       }
       check(texts.length >= 1, `tab audio transcripts reached the signer: ${texts.length}`);

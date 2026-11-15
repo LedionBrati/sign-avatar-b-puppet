@@ -80,8 +80,8 @@ body { font-size: 12px; --ink-cap: #111a5c; --amber: #ffc46b; --mint: #5ef2c2; }
   background: rgb(255 255 255 / .86); -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%);
   box-shadow: inset 0 1px 0 #fff, 0 8px 20px -10px rgb(5 12 60 / .6); color: var(--ink);
   opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .2s ease, transform .25s cubic-bezier(.2,.8,.2,1); }
-.card:hover .bar, .card:focus-within .bar, .card.bar-on .bar { opacity: 1; transform: none; pointer-events: auto; }
-.card:hover .pill, .card:focus-within .pill, .card.bar-on .pill { opacity: 0; transform: translateY(-4px); }
+.card:hover .bar, .card:has(:focus-visible) .bar, .card.bar-on .bar { opacity: 1; transform: none; pointer-events: auto; }
+.card:hover .pill, .card:has(:focus-visible) .pill, .card.bar-on .pill { opacity: 0; transform: translateY(-4px); }
 .bar .sp { flex: 1; }
 .grip { display: inline-flex; align-items: center; gap: 5px; cursor: grab; }
 .grip .mark { width: 16px; height: 16px; }

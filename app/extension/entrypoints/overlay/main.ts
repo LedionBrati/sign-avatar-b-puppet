@@ -183,7 +183,7 @@ function render() {
   const cur = job?.res.playlist[idx];
   const [st, sub] =
     v === "signing" ? ["Signing", cur?.gloss ?? ""]
-    : v === "caption_only" ? ["Captions only", ""]
+    : v === "caption_only" ? ["Captions only", origin === "tab" || origin === "mic" ? ORIGIN_LABEL[origin] : ""]
     : v === "confirm" ? ["Confirm signs?", ""]
     : v === "offline" ? ["Offline", ""]
     : v === "tab-error" ? ["Tab audio off", ""]
