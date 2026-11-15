@@ -1,0 +1,47 @@
+import { ROUTES, type ApiError, type HealthResponse, type SignRequest, type SignResponse, type VocabResponse } from "./api";
+
+export class SignApiError extends Error {
+  constructor(public status: number, public code: string, message: string) {
+    super(message);
+    this.name = "SignApiError";
+  }
+}
+
+/** Works in browsers, the extension and React Native (all have fetch + AbortController). */
+export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { timeoutMs?: number } = {}) {
+  const base = baseUrl.replace(/\/$/, "");
+  const abs = (url: string) => (/^https?:/i.test(url) ? url : base + (url.startsWith("/") ? url : `/${url}`));
+
+  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(base + path, {
+        ...init,
+        headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+        signal: init.signal ?? ctrl.signal,
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const err = (body as ApiError | null)?.error;
+        throw new SignApiError(res.status, err?.code ?? "http_error", err?.message ?? `HTTP ${res.status}`);
+      }
+      return body as T;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  return {
+    base,
+    health: () => request<HealthResponse>(ROUTES.health),
+    vocab: () => request<VocabResponse>(ROUTES.vocab),
+    /** Translate text and get the playlist. Clip URLs are made absolute. */
+    async sign(req: SignRequest, signal?: AbortSignal): Promise<SignResponse> {
+      const res = await request<SignResponse>(ROUTES.sign, { method: "POST", body: JSON.stringify(req), signal });
+      return { ...res, playlist: res.playlist.map((p) => ({ ...p, url: abs(p.url) })) };
+    },
+  };
+}
+
+export type SignClient = ReturnType<typeof createSignClient>;
