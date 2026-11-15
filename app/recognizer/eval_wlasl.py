@@ -82,10 +82,16 @@ def cached(video: Path, model: Path, cache: Path, mirror: bool = False) -> np.nd
     key = hashlib.sha1(f"{video.resolve()}|{video.stat().st_size}|{mirror}".encode()).hexdigest()[:16]
     p = cache / f"{key}.npy"
     if p.exists():
-        return np.load(p)
+        try:
+            return np.load(p)
+        except (OSError, ValueError):  # truncated by an interrupted run
+            p.unlink()
     x = extract(video, model, mirror)
     cache.mkdir(parents=True, exist_ok=True)
-    np.save(p, x)
+    tmp = p.with_suffix(f".{os.getpid()}.tmp")
+    with open(tmp, "wb") as f:
+        np.save(f, x)
+    os.replace(tmp, p)
     return x
 
 
