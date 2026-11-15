@@ -405,9 +405,8 @@ function renderCaptions() {
       chunkKey = key;
       const bad = new Set([...res.unsupported, ...(res.fingerspell ?? []), ...res.safety!.reasons.flatMap((r) => r.tokens)].map(bare));
       const words = caption.split(/\s+/).filter(Boolean);
-      const n = CHUNK[s.size] + 6;
-      const tail = words.length > n ? ["…", ...words.slice(-n)] : words;
-      cc.innerHTML = `<i class="hl"></i>${tail.map((w) => `<span class="w caption${bad.has(bare(w)) ? " nosign" : ""}">${esc(w)}</span>`).join(" ")}`;
+      // The whole caption, never trimmed (the sheet grows to 5 lines, then scrolls).
+      cc.innerHTML = `<i class="hl"></i>${words.map((w) => `<span class="w caption${bad.has(bare(w)) ? " nosign" : ""}">${esc(w)}</span>`).join(" ")}`;
     }
     return;
   }

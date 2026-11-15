@@ -126,6 +126,7 @@ body { font-size: 12px; --ink-cap: #111a5c; --amber: #ffc46b; --mint: #5ef2c2; }
 .cc.pending .w { animation: wordIn .4s cubic-bezier(.2,.8,.2,1) both, shimmer 1.4s ease-in-out .4s infinite; }
 @keyframes shimmer { 50% { opacity: .62; } }
 .card.nocc:not(.forcecc) .sheet { display: none; }
+.card.forcecc .cc { max-height: calc(5 * 1.36em + 19px); overflow-y: auto; scrollbar-width: thin; }
 
 /* ── Sizes ── */
 body[data-size="s"] .card { padding: 6px; gap: 6px; border-radius: 22px; }
