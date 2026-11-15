@@ -7,11 +7,23 @@ motion/models/
 node_modules/
 pipeline/node_modules/
 experiments/e0/runs/
+dist/
+.output/
+*.log
+.claude/
 
-# secrets
+# generated screenshots (the committed ones in app/web/docs and app/extension/screenshots stay tracked)
+app/web/screenshots/
+
+# secrets (key files never go in the repo; point FAL_KEY_FILE / OPENAI_API_KEY_FILE at them)
 .env
 .env.*
 *.key
+*.pem
+*-key*.txt
+
+# packaged extension builds
+*.crx
 
 # raw datasets are big, keep them outside the repo
 *.zip
