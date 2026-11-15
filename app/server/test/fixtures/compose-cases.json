@@ -1,0 +1,22 @@
+{
+  "_": "Realistic noisy recognizer output (top-5 guesses as the web client sends them: display text + confidence) for scripts/compose-check.mjs. 'want' is what a good answer looks like, for a human reading the table; the live check is not an exact-match test.",
+  "cases": [
+    { "signs": [[["hello", 0.92], ["bye", 0.03], ["hear", 0.02], ["head", 0.01], ["hat", 0.01]]], "want": "Hello!" },
+    { "signs": [[["thank you", 0.81], ["please", 0.08], ["kiss", 0.04], ["lips", 0.03], ["chin", 0.02]]], "want": "Thank you!" },
+    { "signs": [[["hungry", 0.66], ["thirsty", 0.14], ["hen", 0.08], ["happy", 0.05], ["hot", 0.03]]], "want": "I'm hungry." },
+    { "signs": [[["potty", 0.41], ["pretty", 0.22], ["puppy", 0.12], ["pen", 0.08], ["penny", 0.05]], [["where", 0.71], ["why", 0.12], ["who", 0.07], ["white", 0.04], ["wait", 0.02]]], "want": "Where is the bathroom?" },
+    { "signs": [[["man", 0.38], ["mom", 0.33], ["moon", 0.1], ["milk", 0.07], ["mouth", 0.04]], [["sticky", 0.34], ["sick", 0.31], ["stuck", 0.12], ["snack", 0.08], ["stay", 0.05]]], "want": "My mom is sick." },
+    { "signs": [[["tomorrow", 0.62], ["morning", 0.15], ["time", 0.08], ["later", 0.06], ["now", 0.03]], [["story", 0.36], ["store", 0.33], ["stairs", 0.12], ["stay", 0.06], ["sticky", 0.04]], [["go", 0.55], ["give", 0.14], ["green", 0.08], ["grass", 0.05], ["goose", 0.04]]], "want": "I'm going to the store tomorrow." },
+    { "signs": [[["hello", 0.9], ["bye", 0.04], ["hear", 0.02], ["head", 0.01], ["hat", 0.01]], [["zebra", 0.07], ["owl", 0.06], ["wolf", 0.05], ["frog", 0.04], ["cow", 0.03]]], "want": "Hello!" },
+    { "signs": [[["yesterday", 0.71], ["yes", 0.1], ["yellow", 0.06], ["you", 0.04], ["yucky", 0.02]], [["grandpa", 0.39], ["grandma", 0.37], ["girl", 0.08], ["green", 0.05], ["gift", 0.03]], [["see", 0.52], ["say", 0.2], ["sad", 0.08], ["same", 0.06], ["snow", 0.04]]], "want": "I saw my grandpa yesterday." },
+    { "signs": [[["brother", 0.58], ["boy", 0.17], ["bird", 0.08], ["book", 0.05], ["bug", 0.03]], [["have", 0.49], ["hat", 0.2], ["hate", 0.11], ["happy", 0.06], ["have to", 0.05]], [["cat", 0.42], ["car", 0.36], ["carrot", 0.08], ["cut", 0.05], ["cow", 0.03]]], "want": "My brother has a cat." },
+    { "signs": [[["hurt", 0.52], ["ear", 0.14], ["cheek", 0.1], ["finger", 0.08], ["face", 0.05]], [["where", 0.64], ["why", 0.16], ["white", 0.07], ["who", 0.05], ["wait", 0.03]]], "want": "Where does it hurt?" },
+    { "signs": [[["kitty", 0.33], ["cat", 0.29], ["hat", 0.15], ["cute", 0.09], ["cow", 0.05]], [["cute", 0.61], ["cut", 0.17], ["pretty", 0.1], ["cheek", 0.05], ["chin", 0.03]]], "want": "The kitty is cute." },
+    { "context": { "heard": "Would you like something to drink?" }, "signs": [[["yes", 0.63], ["yesterday", 0.1], ["yellow", 0.08], ["yucky", 0.05], ["you", 0.03]], [["mouse", 0.34], ["milk", 0.31], ["mitten", 0.1], ["moon", 0.07], ["mouth", 0.05]]], "want": "Yes, I'd like some milk." },
+    { "signs": [[["you", 0.48], ["yes", 0.14], ["yellow", 0.1], ["yucky", 0.06], ["yesterday", 0.04]], [["lips", 0.31], ["like", 0.29], ["listen", 0.12], ["lion", 0.08], ["look", 0.05]], [["ice cream", 0.57], ["if", 0.1], ["orange", 0.09], ["into", 0.08], ["hide", 0.05]]], "want": "Do you like ice cream?" },
+    { "signs": [[["finish", 0.6], ["fine", 0.18], ["fish", 0.08], ["find", 0.05], ["first", 0.03]], [["food", 0.47], ["feet", 0.14], ["fall", 0.1], ["for", 0.07], ["fast", 0.05]]], "want": "I finished my food." },
+    { "signs": [[["dad", 0.61], ["duck", 0.12], ["dog", 0.09], ["dance", 0.06], ["dirty", 0.04]], [["giraffe", 0.08], ["gift", 0.07], ["gum", 0.06], ["goose", 0.05], ["grass", 0.05]], [["home", 0.51], ["hot", 0.16], ["horse", 0.1], ["hide", 0.06], ["hair", 0.04]]], "want": "My dad is home." },
+    { "signs": [[["sleepy", 0.47], ["sleep", 0.29], ["smile", 0.1], ["snack", 0.05], ["sad", 0.04]], [["bedroom", 0.38], ["bed", 0.36], ["bath", 0.11], ["bad", 0.06], ["book", 0.04]]], "want": "I'm sleepy, I'm going to bed." },
+    { "context": { "said": ["I'm hungry."], "heard": "What do you want to eat?" }, "signs": [[["pizza", 0.44], ["please", 0.22], ["puzzle", 0.12], ["pig", 0.08], ["pencil", 0.04]]], "want": "Pizza, please." }
+  ]
+}

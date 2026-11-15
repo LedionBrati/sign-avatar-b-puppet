@@ -1,10 +1,11 @@
 // Sign -> speak, continuous: the front camera, MediaPipe Holistic landmarks, always reading while the camera is on
 // (no tap per sign): every segment (hands move -> rest/leave/still) goes to POST /api/recognize; top-1 is appended
-// (top-3 chips to correct it). With the server's OpenAI layer (health.compose), every new sign from the 2nd on asks
-// POST /api/compose "do these make sense yet?": yes -> its sentence is shown and spoken, then a fresh one starts;
-// at 5 signs the best-effort sentence is spoken anyway. Without it (or if it fails), the local composeSentence is
-// spoken once it has 2 signs and the hands have rested ~1.2 s, or as soon as it has 3. Pause/Resume stops reading;
-// Undo/Clear/edit + Speak stay available.
+// (top-3 chips to correct it). With the server's OpenAI layer (health.compose), every new sign asks POST /api/compose
+// in the background (top-5 guesses + the conversation so far; stale calls are aborted) for the sentence. Nothing is
+// spoken while the signer is still signing: once the hands have rested ~800 ms (and no sign is still being read),
+// the model's sentence for exactly these signs is spoken, waiting up to 1.5 s for it, else the local composeSentence.
+// At 8 signs it is spoken anyway. Voice: POST /api/speak (natural TTS) on one reused <audio>, else speechSynthesis.
+// Pause/Resume stops reading; Undo/Clear/edit + Speak stay available.
 // "#/sign?embed=1" is the same screen for the phone app's WebView: results also go to window.ReactNativeWebView.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SignApiError, composeSentence, createSignClient, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
@@ -14,16 +15,20 @@ import { type IslandTone } from "../components/Island";
 import { Segmented } from "../components/Segmented";
 import { createTracker, drawOverlay, type Tracker } from "../lib/holistic";
 import { createSegmenter, type SegState, type SegmentDone } from "../lib/segmenter";
+import { readHeard } from "../lib/heard";
 import { SIGN_VOCAB } from "../lib/vocab";
+import { playVoice, stopVoice, unlockVoice } from "../lib/voice";
 
 type Option = RecognizeResponse["options"][number];
-interface Entry { label: string; options?: Option[]; sel?: number }
+/** fixed: the signer picked this guess from the chips, so the model gets it as certain. */
+interface Entry { label: string; options?: Option[]; sel?: number; fixed?: boolean }
 type Cam = "starting" | "ready" | "denied" | "nocam" | "error";
 
 const LOW = 0.35; // below this the top-3 chips get a "not sure" hint
-const QUIET_MS = 1200; // hands rested/still this long after >= 2 signs -> speak
-const MAX_SIGNS = 3; // local fallback: a sentence this long is spoken right away
-const AI_MAX_SIGNS = 5; // with the model: spoken at this length even if it does not make sense yet
+const REST_MS = 800; // hands rested this long (nothing still being read) -> speak
+const WAIT_MS = 1500; // at rest, wait this long for the model's sentence, then speak the local one
+const CAP = 8; // spoken at this many signs even without a rest
+const VOICE_MS = 6000; // natural voice not back by then -> the device voice
 const END_LAG_MS = 400; // the segmenter needs ~this much stillness before it ends a segment
 const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 const wordOf = (l: string) => (l.startsWith("#") ? cap(l.slice(1).toLowerCase()) : labelText(l));
@@ -63,9 +68,17 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const [history, setHistory] = useState<string[]>([]);
   const [sheet, setSheet] = useState<"signs" | "history" | null>(null);
   /** Model sentence for the exact signs it was asked about (key = epoch + labels); null until it answers. */
-  const [composed, setComposed] = useState<{ key: string; sentence: string; sense: boolean } | null>(null);
+  const [composed, setComposed] = useState<{ key: string; sentence: string } | null>(null);
+  const composedRef = useRef<{ key: string; sentence: string } | null>(null);
   const [composing, setComposing] = useState(false);
   const aiOn = useRef(true); // off when health says compose is off, or the server answers 404 / 503
+  const voiceOn = useRef(true); // natural voice (POST /api/speak); off when health says speak is off, or 404 / 503
+  /** Set while the hands are at rest and we wait for the model's sentence for exactly these signs (keyOf). */
+  const restKey = useRef<string | null>(null);
+  /** The last 2 sentences this screen spoke, oldest first (context for the model). */
+  const said = useRef<string[]>([]);
+  /** Audio for the latest model sentence, fetched ahead so speaking at rest starts at once (the server caches it too). */
+  const voiceAhead = useRef<{ text: string; audio: Promise<Blob> } | null>(null);
   modeRef.current = mode;
 
   // ── Recognize segments: parallel requests, results appended in segment order; a Clear/Pause/spoken sentence
@@ -155,15 +168,25 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
       window.__sl = { ...window.__sl, delegate: t.delegate };
       setTrack("ready");
     }).catch((e) => { if (alive.current) { setTrack("error"); setBanner(`Hand tracking didn't load (${(e as Error).message}). Check the connection and reload.`); } });
-    client.health().then((h) => { aiOn.current = h.compose === "ready"; if (alive.current && h.recognizer === "down") setBanner("The sign recognizer is offline. Start app/recognizer; signing won't work until then."); }).catch(() => {});
+    client.health().then((h) => { aiOn.current = h.compose === "ready"; voiceOn.current = h.speak === "ready"; if (alive.current && h.recognizer === "down") setBanner("The sign recognizer is offline. Start app/recognizer; signing won't work until then."); }).catch(() => {});
     return () => {
       alive.current = false;
       const s = video.current?.srcObject as MediaStream | null;
       s?.getTracks().forEach((t) => t.stop());
       tracker.current?.close();
       tracker.current = null;
+      stopVoice();
     };
   }, [client, startCam]);
+
+  // The camera screen speaks without a gesture: unlock the audio element on the first tap / click / key anywhere.
+  useEffect(() => {
+    if (embed) return;
+    const on = () => unlockVoice();
+    addEventListener("pointerdown", on, { capture: true });
+    addEventListener("keydown", on, { capture: true });
+    return () => { removeEventListener("pointerdown", on, { capture: true }); removeEventListener("keydown", on, { capture: true }); };
+  }, [embed]);
 
   // ── Per-frame loop: detect, draw, segment, fps ──
   useEffect(() => {
@@ -203,7 +226,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
 
   // ── Sentence ──
   const sentence = useMemo(() => {
-    if (!edit) return composed && composed.key === keyOf(order.current.epoch, items) ? composed.sentence : composeSentence(items.map((x) => x.label));
+    if (!edit) return composed?.sentence && composed.key === keyOf(order.current.epoch, items) ? composed.sentence : composeSentence(items.map((x) => x.label));
     const rest = items.slice(edit.at).map((x) => wordOf(x.label));
     if (!rest.length) return edit.text;
     const base = edit.text.trim().replace(/[.?!]+$/, "");
@@ -216,7 +239,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     setItems((xs) => {
       const last = xs[xs.length - 1];
       if (!last?.options?.[i]) return xs;
-      return [...xs.slice(0, -1), { ...last, label: last.options[i]!.label, sel: i }];
+      return [...xs.slice(0, -1), { ...last, label: last.options[i]!.label, sel: i, fixed: true }];
     });
     setHint(null);
   };
@@ -231,21 +254,34 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const lastSpoken = useRef("");
   const speakTimer = useRef(0);
   const speakText = useCallback((text: string) => {
-    if (embed) post({ type: "speak", text });
-    else if ("speechSynthesis" in window) {
+    const done = () => { if (alive.current) setSpeaking((x) => (x === text ? null : x)); };
+    const robot = () => {
+      if (!("speechSynthesis" in window)) return;
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "en-US";
       const voice = speechSynthesis.getVoices().find((v) => v.lang === "en-US");
       if (voice) u.voice = voice;
-      u.onend = u.onerror = () => { if (alive.current) setSpeaking((x) => (x === text ? null : x)); };
+      u.onend = u.onerror = done;
       speechSynthesis.speak(u);
-    }
+    };
+    if (embed) post({ type: "speak", text });
+    else if (voiceOn.current) {
+      const ahead = voiceAhead.current?.text === text ? voiceAhead.current.audio : null;
+      voiceAhead.current = null;
+      (ahead ?? client.speak(text, { signal: AbortSignal.timeout(VOICE_MS) }))
+        .then((blob) => { if (alive.current) return playVoice(blob, done); })
+        .catch((e) => {
+          if (e instanceof SignApiError && (e.status === 404 || e.status === 503)) voiceOn.current = false;
+          if (alive.current) robot(); // no server voice, or the browser refused to play: the device voice
+        });
+    } else robot();
     setSpeaking(text);
     clearTimeout(speakTimer.current);
-    speakTimer.current = window.setTimeout(() => alive.current && setSpeaking((x) => (x === text ? null : x)), 1500 + text.length * 70);
+    speakTimer.current = window.setTimeout(done, 2500 + text.length * 70);
+    said.current = [...said.current, text].slice(-2);
     setHistory((h) => [text, ...h.filter((x) => x !== text)].slice(0, 8));
-  }, [embed]);
+  }, [embed, client]);
   /** Speak the sentence and start a fresh one. The same text twice in a row is not spoken again. */
   const speak = () => {
     const text = sentence.trim();
@@ -256,25 +292,44 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const speakRef = useRef(speak);
   speakRef.current = speak;
 
-  /** Speak a model sentence right away and start fresh (same text twice in a row is not repeated). */
+  /** Speak a finished sentence and start fresh (same text twice in a row is not repeated). */
   const autoSpeak = useCallback((text: string) => {
+    restKey.current = null;
     if (text && text !== lastSpoken.current) { lastSpoken.current = text; speakText(text); }
     order.current.epoch++; setItems([]); setEdit(null); setHint(null);
   }, [speakText]);
 
-  // With the model: every new sign (2+) -> "does it make sense yet?" Stale answers (signs changed since) are dropped.
+  // With the model: every new sign -> ask for the sentence in the background (aborting the stale call). It is only
+  // spoken at rest (below); if the hands are already resting and waiting for exactly this answer, it is spoken now.
   const [aiFailed, setAiFailed] = useState(false);
   useEffect(() => {
-    if (!aiOn.current || aiFailed || paused || editing || edit || items.length < 2) return;
+    if (!aiOn.current || aiFailed || paused || editing || edit || !items.length) return;
     const key = keyOf(order.current.epoch, items);
     const ctrl = new AbortController();
     setComposing(true);
-    client.compose({ signs: items.map((x) => ({ text: wordOf(x.label), ...(x.options ? { options: x.options.slice(0, 3).map((o) => ({ text: o.text || labelText(o.label), confidence: o.confidence })) } : {}) })) }, ctrl.signal)
+    const heard = readHeard();
+    const context = said.current.length || heard ? { ...(said.current.length ? { said: said.current } : {}), ...(heard ? { heard } : {}) } : undefined;
+    const signs = items.map((x) => ({
+      text: wordOf(x.label),
+      ...(x.fixed ? { options: [{ text: wordOf(x.label), confidence: 1 }] }
+        : x.options ? { options: x.options.slice(0, 5).map((o) => ({ text: o.text || labelText(o.label), confidence: o.confidence })) } : {}),
+    }));
+    client.compose({ signs, ...(context ? { context } : {}) }, ctrl.signal)
       .then((r) => {
         if (!alive.current || ctrl.signal.aborted || keyOf(order.current.epoch, items) !== key) return;
         window.__sl = { ...window.__sl, compose: r };
-        setComposed({ key, sentence: r.sentence, sense: r.makes_sense });
-        if (r.sentence && (r.makes_sense || items.length >= AI_MAX_SIGNS)) autoSpeak(r.sentence);
+        const sentence = r.sentence.trim();
+        composedRef.current = { key, sentence };
+        setComposed({ key, sentence });
+        if (sentence && !embed && voiceOn.current && voiceAhead.current?.text !== sentence) {
+          const audio = client.speak(sentence, { signal: AbortSignal.timeout(VOICE_MS) });
+          audio.catch(() => {}); // a failure shows up (and falls back) when it is spoken
+          voiceAhead.current = { text: sentence, audio };
+        }
+        if (restKey.current === key) {
+          if (sentence) autoSpeak(sentence);
+          else restKey.current = null; // every sign dropped as noise: keep them on screen, nothing to say
+        }
       })
       .catch((e) => {
         if (!alive.current || ctrl.signal.aborted) return;
@@ -283,20 +338,33 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
       })
       .finally(() => { if (!ctrl.signal.aborted && alive.current) setComposing(false); });
     return () => { ctrl.abort(); setComposing(false); };
-  }, [items, paused, editing, edit, client, autoSpeak, aiFailed]);
-  useEffect(() => { if (!items.length) { setAiFailed(false); setComposed(null); } }, [items]);
+  }, [items, paused, editing, edit, client, autoSpeak, aiFailed, embed]);
+  useEffect(() => { if (!items.length) { setAiFailed(false); setComposed(null); composedRef.current = null; } }, [items]);
 
-  // Without the model: 3 signs -> now; 2+ signs -> once the hands have rested QUIET_MS (and nothing is still being read).
+  // Speak on rest: hands still ~REST_MS and nothing still being read (or CAP signs) -> the model's sentence for exactly
+  // these signs; if it isn't back yet, wait up to WAIT_MS for it, then the local composeSentence. After an edit, the
+  // edited sentence (plus any signs since) is spoken at rest once something new was signed.
   useEffect(() => {
-    if ((aiOn.current && !aiFailed) || paused || editing || items.length < 2) return;
-    if (items.length >= MAX_SIGNS) { speakRef.current(); return; }
-    if (seg === "recording" || pending > 0) return;
-    const wait = Math.max(0, QUIET_MS - END_LAG_MS - (performance.now() - segEndAt));
-    const t = setTimeout(() => speakRef.current(), wait);
-    return () => clearTimeout(t);
-  }, [items, seg, pending, paused, editing, segEndAt, aiFailed]);
+    if (paused || editing || !items.length) return;
+    if (edit && items.length <= edit.at) return; // only the typed edit: the signer presses Speak
+    const full = items.length >= CAP;
+    if (!full && (seg === "recording" || pending > 0)) return;
+    const key = keyOf(order.current.epoch, items);
+    const labels = items.map((x) => x.label);
+    let waitT = 0;
+    const restT = window.setTimeout(() => {
+      if (edit) { speakRef.current(); return; }
+      if (!aiOn.current || aiFailed) { autoSpeak(composeSentence(labels)); return; }
+      const c = composedRef.current;
+      if (c?.key === key) { if (c.sentence) autoSpeak(c.sentence); return; }
+      restKey.current = key; // the compose answer speaks as soon as it lands...
+      waitT = window.setTimeout(() => { if (restKey.current === key) autoSpeak(composeSentence(labels)); }, WAIT_MS); // ...or not
+    }, full ? 0 : Math.max(0, REST_MS - END_LAG_MS - (performance.now() - segEndAt)));
+    return () => { clearTimeout(restT); clearTimeout(waitT); if (restKey.current === key) restKey.current = null; };
+  }, [items, seg, pending, paused, editing, edit, segEndAt, aiFailed, autoSpeak]);
 
   const tap = () => {
+    unlockVoice();
     setHint(null);
     setPaused((p) => !p);
   };
