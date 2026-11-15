@@ -1,5 +1,6 @@
-// End-to-end check: load the built extension in Chrome, open a test page, sign selected text and a
-// fake YouTube caption, screenshot the overlay at M and L size into docs/.
+// Quick local check (no YouTube): load the built extension in Chrome, open a test page, sign selected text,
+// a blocked phrase and a supported one again, drag to a corner, check the popup. Screenshots: docs/.local-*.png.
+// The real-YouTube check (captions, tab audio, fullscreen) is scripts/verify-youtube.mjs.
 //   npm run build && node scripts/verify.mjs   (API at SIGNLAYER_API, default http://localhost:8787)
 import http from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -53,7 +54,7 @@ try {
   const sw = await swTarget.worker();
   const extId = new URL(swTarget.url()).host;
   console.log("extension id", extId);
-  await sw.evaluate((apiUrl) => chrome.storage.local.set({ apiUrl, size: "m", corner: "br", captions: true, enabled: true, source: "selection" }), api);
+  await sw.evaluate((apiUrl) => chrome.storage.local.set({ apiUrl, size: "m", corner: "br", captions: true, enabled: true, source: "selection", onboarded: true }), api);
 
   const page = (await browser.pages())[0] ?? (await browser.newPage());
   await page.setViewport({ width: 1280, height: 800 });
@@ -70,7 +71,7 @@ try {
     }
     return null;
   };
-  const chip = (f) => f.evaluate(() => document.getElementById("chip")?.textContent ?? "");
+  const chip = (f) => f.evaluate(() => document.getElementById("pill")?.textContent ?? "");
   const waitChip = async (f, re, ms = 8000) => {
     const t0 = Date.now();
     while (Date.now() - t0 < ms) {
@@ -96,37 +97,32 @@ try {
   console.log("videos", JSON.stringify(state.playing));
   check(state.playing.some((v) => v.on && !v.paused && v.t > 0), "a clip is playing");
   await mkdir(shots, { recursive: true });
-  await page.screenshot({ path: resolve(shots, "overlay-m.png") });
-  console.log(`saved ${resolve(shots, "overlay-m.png")}`);
+  await page.screenshot({ path: resolve(shots, ".local-m.png") });
 
   // A blocked phrase clears the playing queue and keeps its full caption visible.
   await sw.evaluate((id) => globalThis.__slSign(id, "Turn right at the bank."), tabId);
-  c = await waitChip(f, /Meaning unclear/);
-  check(/Meaning unclear/.test(c), `ambiguous phrase blocked: "${c}"`);
-  const blocked = await f.evaluate(() => ({ caption: document.getElementById("idle")?.textContent,
+  c = await waitChip(f, /Captions only|Confirm/);
+  check(/Captions only|Confirm/.test(c), `ambiguous phrase blocked: "${c}"`);
+  const blocked = await f.evaluate(() => ({ caption: document.getElementById("cc")?.textContent,
     videos: [...document.querySelectorAll("video")].map((v) => ({ src: v.getAttribute("src"), paused: v.paused })) }));
   check(blocked.caption?.includes("Turn right at the bank.") && blocked.videos.every((v) => !v.src && v.paused),
     `blocked caption and empty queue: ${JSON.stringify(blocked)}`);
-  await page.screenshot({ path: resolve(shots, "overlay-blocked.png") });
+  await page.screenshot({ path: resolve(shots, ".local-blocked.png") });
 
   await sw.evaluate((id) => globalThis.__slSign(id, "Yes, thank you."), tabId);
   c = await waitChip(f, /Signing/);
   check(/Signing/.test(c), `playback resumes: "${c}"`);
 
-  // 2. Page captions (YouTube markup): switch the source, change the caption line, expect a new sign request.
-  await sw.evaluate(() => chrome.storage.local.set({ source: "captions", size: "l" }));
-  await waitChip(f, /Listening/, 20000);
-  await page.evaluate(() => (document.getElementById("cap").textContent = "No, thank you."));
-  c = await waitChip(f, /NO|THANK/, 20000);
-  check(/NO|THANK/.test(c), `caption line signed: "${c}"`);
+  // 2. Size L from the settings (the hover control does the same).
+  await sw.evaluate(() => chrome.storage.local.set({ size: "l" }));
   await sleep(1200);
-  await page.screenshot({ path: resolve(shots, "overlay-l.png") });
-  console.log(`saved ${resolve(shots, "overlay-l.png")}`);
+  check((await (await f.frameElement()).boundingBox()).width > 330, "size L");
+  await page.screenshot({ path: resolve(shots, ".local-l.png") });
 
   // 3. Drag to the top-left corner (overlay posts drag deltas; content script snaps + persists).
   const frameEl = await f.frameElement();
   const box = await frameEl.boundingBox();
-  await page.mouse.move(box.x + 30, box.y + 18);
+  await page.mouse.move(box.x + box.width / 2, box.y + 120);
   await page.mouse.down();
   await page.mouse.move(60, 60, { steps: 12 });
   await page.mouse.up();
@@ -144,8 +140,8 @@ try {
     await sleep(1200);
     await p.screenshot({ path: resolve(shots, `.${name}.png`) });
     if (name === "popup") {
-      const api = await p.evaluate(() => document.getElementById("pliveText")?.textContent);
-      check(api === "Ready", `popup API status: ${api}`);
+      const api = await p.evaluate(() => document.getElementById("statusText")?.textContent);
+      check(/Ready/.test(api ?? ""), `popup API status: ${api}`);
     }
     await p.close();
   }
