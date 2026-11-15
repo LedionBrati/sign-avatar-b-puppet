@@ -2,11 +2,13 @@
 //
 //   node app/server/index.mjs            PORT=8787, CLIPS_DIR=dir[,dir2,...], SEMANTIC=0 to disable embeddings
 //                                        OPENAI_API_KEY / OPENAI_API_KEY_FILE enable the agent layer (AGENT=off disables)
+//                                        ONDEMAND=on + FAL_KEY_FILE + MOTION_DIRS: generate missing clips on use (lib/ondemand.mjs)
 //
-//   GET  /api/health          {ok, signs, semantic: "ready" | "loading" | "off", agent: "ready" | "off"}
+//   GET  /api/health          {ok, signs, semantic: "ready" | "loading" | "off", agent: "ready" | "off", ondemand?}
+//   GET  /api/ondemand        on-demand generator status: queue, spend, recent batches
 //   GET  /api/vocab           {signs: [{motion_id, gloss, duration_s}]}
 //   POST /api/sign            {text, semantic?, agent?: "auto"|"always"|"off"} -> words, playlist, unsupported, fingerspell,
-//                             markers, plan, safety, translator: "local"|"agent", paraphrase?, timings
+//                             markers, plan, safety, translator: "local"|"agent", paraphrase?, generating?, timings
 //   GET  /api/sign.mp4?text=  the playlist joined into one mp4 (ffmpeg stream copy), for sharing / download
 //   GET  /clips/<file>        clips from the manifests, with HTTP Range (206) for Safari / iOS / expo-video
 //   POST /api/recognize?mode=sign|spell   float32 landmarks + X-Frames, proxied to app/recognizer (RECOGNIZER_URL, default :8788)
@@ -25,7 +27,8 @@ import { loadClipSets, parseClipsDirs } from "./lib/clips.mjs";
 import { planToPlaylist } from "./lib/sign.mjs";
 import { assessSigning } from "./lib/semantic-safety.mjs";
 import { createAgent } from "./lib/agent.mjs";
-import { loadApiKey, redactor } from "./lib/secrets.mjs";
+import { loadApiKey, loadFalKey, redactor } from "./lib/secrets.mjs";
+import { createOnDemand, onDemandConfig, prepareClipsDir } from "./lib/ondemand.mjs";
 import { virtualClips } from "./lib/eval-vocab.mjs";
 
 export const MAX_TEXT = 500;
@@ -58,28 +61,75 @@ class HttpError extends Error {
  *                                    Default: from OPENAI_API_KEY / OPENAI_API_KEY_FILE unless AGENT=off (never under node --test)
  * @param {string} [o.evalVocab]      DEV/EVAL ONLY: "dictionary" (EVAL_VOCAB env) plans against the 1,945-sign dictionary
  *                                    with virtual clips; responses are labelled eval: "virtual_clips" and are never playable
+ * @param {object|null} [o.ondemand]  generate-on-use options for lib/ondemand.mjs createOnDemand (tests inject fake steps);
+ *                                    null = off. Default: from the environment (ONDEMAND=on, FAL_KEY_FILE / FAL_KEY, MOTION_DIRS),
+ *                                    never under node --test
  * @param {(line: string) => void} [o.log]
  */
 export function createApp(o = {}) {
-  const clips = loadClipSets(o.clipsDirs ?? parseClipsDirs());
   const recognizerUrl = (o.recognizerUrl ?? process.env.RECOGNIZER_URL ?? "http://127.0.0.1:8788").replace(/\/+$/, "");
   const webDist = resolve(o.webDist ?? process.env.WEB_DIST ?? DEFAULT_WEB_DIST);
   const keyInfo = o.agent === undefined ? loadApiKey() : { key: null };
-  const redact = redactor(keyInfo.key);
+  const odConfig = onDemandFromEnv(o.ondemand);
+  const redact = redactor(keyInfo.key, odConfig.falKey);
   const rawLog = o.log ?? ((line) => console.log(line));
-  const log = (line) => rawLog(redact(line));           // nothing the server logs can contain the API key
-  clips.warnings.forEach((w) => log(`warning: ${w}`));
+  const log = (line) => rawLog(redact(line));           // nothing the server logs can contain an API key
+  const evalVocab = o.evalVocab ?? process.env.EVAL_VOCAB;
+  if (odConfig.wanted && !odConfig.enabled) log(`ondemand off: ${odConfig.reason}`);
+  if (odConfig.enabled && evalVocab) { odConfig.enabled = false; odConfig.reason = "EVAL_VOCAB mode"; log("ondemand off: EVAL_VOCAB mode has virtual clips"); }
+  if (odConfig.enabled && odConfig.falKey && !process.env.FAL_KEY) process.env.FAL_KEY = odConfig.falKey;   // for pipeline/lib/fal.mjs, this process only
+  // Generated clips are one more clip dir, after the configured ones (a configured clip always wins).
+  const clipsDirs = [...(o.clipsDirs ?? parseClipsDirs()), ...(odConfig.enabled ? [odConfig.clipsDir] : [])];
+  if (odConfig.enabled) prepareClipsDir(odConfig.clipsDir);
 
   // Planning vocab + the clip set the playlist builder and the safety gate check against (the real clips, except in eval mode).
-  const evalVocab = o.evalVocab ?? process.env.EVAL_VOCAB;
-  const planClips = evalVocab ? virtualClips(loadVocab(evalVocab)) : clips;
+  // All three are reloaded when on-demand generation adds clips (reloadClips), so new signs work without a restart.
+  let clips, planClips, vocab;
+  const loadClips = () => {
+    clips = loadClipSets(clipsDirs);
+    planClips = evalVocab ? virtualClips(loadVocab(evalVocab)) : clips;
+    vocab = [...planClips.signs.values()].map(({ motion_id, gloss }) => ({ motion_id, gloss }));
+  };
+  loadClips();
+  clips.warnings.forEach((w) => log(`warning: ${w}`));
   if (evalVocab) log(`EVAL MODE: planning against ${planClips.signs.size} "${evalVocab}" signs with VIRTUAL clips; not for playback`);
-  const vocab = [...planClips.signs.values()].map(({ motion_id, gloss }) => ({ motion_id, gloss }));
 
   let englishWords = null;
   try { englishWords = loadEnglishWords(); } catch (error) { log(`warning: English word list unavailable (${error.message}); names only by capitalization`); }
 
   const agent = o.agent !== undefined ? o.agent : agentFromEnv(keyInfo, englishWords, log);
+
+  function reloadClips(ids = []) {
+    const before = clips.signs.size;
+    loadClips();
+    extVocab = null;
+    log(`clips reloaded: ${before} -> ${clips.signs.size} signs${ids.length ? ` (+${ids.join(" ")})` : ""}`);
+  }
+  const ondemand = createOnDemand({ ...odConfig, redact, log, hasClip: (id) => clips.signs.has(id), onClipsAdded: reloadClips });
+  // Clip vocab + signs that only have motion: used (rules only) to find the words on-demand generation could cover.
+  let extVocab = null, extVersion = -1;
+  const extendedVocab = () => {
+    if (!extVocab || extVersion !== ondemand.version) {
+      extVersion = ondemand.version;
+      extVocab = [...vocab, ...ondemand.motionVocab().filter((m) => !planClips.signs.has(m.motion_id))];
+    }
+    return extVocab;
+  };
+  /** Signs the sentence needs that have motion but no clip yet: queue them; the response says which are generating. */
+  function generateMissing(text, chosen, trace, opts) {
+    if (!ondemand.enabled || chosen.safety.status === "fully_supported") return [];
+    try {
+      ondemand.rescan();
+      const covered = new Set(chosen.plan.items.filter((i) => i.type === "sign" && i.match?.method !== "semantic").map((i) => i.source_index));
+      const wanted = translateRules(text, extendedVocab(), opts).items
+        .filter((i) => i.type === "sign" && !clips.signs.has(i.motion_id) && ondemand.has(i.motion_id) && !covered.has(i.source_index));
+      for (const r of trace?.rejected ?? []) if (r.reason === "not_in_vocab" && ondemand.has(r.id)) wanted.push({ motion_id: r.id });
+      return ondemand.request(wanted);
+    } catch (error) {
+      log(`ondemand: request failed: ${error.message}`);
+      return [];
+    }
+  }
 
   const semanticWanted = o.semantic ?? process.env.SEMANTIC !== "0";
   const state = { semantic: semanticWanted ? "loading" : "off", warm_ms: null, agent: agent ? "ready" : "off" };
@@ -155,6 +205,7 @@ export function createApp(o = {}) {
         log(`agent failed (${r.code}): ${redact(r.error ?? "")}`);
       }
     }
+    const generating = generateMissing(text, chosen, trace, opts);
     // Relaxed: anything with signs plays. Clients only play "fully_supported", so report that, and keep the strict
     // verdict + reasons (skipped words stay in the captions via `unsupported`).
     let safety = chosen.safety;
@@ -166,6 +217,7 @@ export function createApp(o = {}) {
       ...(translator === "agent" ? { paraphrase: trace.paraphrase } : {}),
       ...(trace ? { agent: trace } : {}),
       ...(warnings.length ? { warnings } : {}),
+      ...(generating.length ? { generating } : {}),
       ...(evalVocab ? { eval: "virtual_clips" } : {}),
       timings: { translate_ms, ...(agent_ms !== undefined ? { agent_ms } : {}), total_ms: ms(performance.now() - t0) },
     };
@@ -179,7 +231,12 @@ export function createApp(o = {}) {
 
     if (path === "/api/health") {
       only(req, "GET", "HEAD");
-      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, recognizer: await recognizerStatus() });
+      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, recognizer: await recognizerStatus(),
+        ...(odConfig.wanted || ondemand.enabled ? { ondemand: ondemand.health() } : {}) });
+    }
+    if (path === "/api/ondemand") {
+      only(req, "GET", "HEAD");
+      return json(res, 200, ondemand.status());
     }
     if (path === "/api/vocab") {
       only(req, "GET", "HEAD");
@@ -217,7 +274,7 @@ export function createApp(o = {}) {
       if (!file) throw new HttpError(404, "no_clip", `no clip ${rel ?? path}`);
       return sendFile(req, res, file);
     }
-    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/recognize?mode=sign|spell", "/app/"] });
+    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/recognize?mode=sign|spell", "/app/"] });
     throw new HttpError(404, "not_found", `no route ${req.method} ${path}`);
   }
 
@@ -297,7 +354,17 @@ export function createApp(o = {}) {
       json(res, status, { error: { code: error.code ?? "internal", message: error instanceof HttpError ? error.message : "internal error" } });
     });
   });
-  return { server, clips, vocab, state, ready, sign, agent, recognizerUrl, webDist };
+  server.on("close", () => ondemand.stop());
+  return { server, get clips() { return clips; }, get vocab() { return vocab; }, state, ready, sign, agent, ondemand, reloadClips, recognizerUrl, webDist };
+}
+
+/** On-demand settings: explicit options (tests), null = off, or the environment (never under node --test). */
+function onDemandFromEnv(opt) {
+  if (opt === null) return { wanted: false, enabled: false, reason: "off" };
+  if (opt && typeof opt === "object") return { wanted: true, enabled: true, ...opt };
+  if (process.env.NODE_TEST_CONTEXT && process.env.ONDEMAND_IN_TESTS !== "1") return { wanted: false, enabled: false, reason: "tests" };
+  const key = loadFalKey();
+  return onDemandConfig(process.env, { falKey: key.key, keyError: key.error });
 }
 
 const AGENT_MODES = ["auto", "always", "off"];
@@ -447,6 +514,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (const u of lanUrls(port)) console.log(`  ${u}`);
     console.log(`semantic: ${app.state.semantic}`);
     console.log(`agent: ${app.state.agent}${app.agent?.model ? ` (${app.agent.model})` : ""}`);
+    console.log(`ondemand: ${app.ondemand.enabled ? `on (${app.ondemand.clipsDir})` : "off"}`);
     console.log(`recognizer: ${app.recognizerUrl}`);
     console.log(`web app: ${existsSync(join(app.webDist, "index.html")) ? `${lanUrls(port).at(-1)}/app/` : `not built (${app.webDist})`}`);
   });

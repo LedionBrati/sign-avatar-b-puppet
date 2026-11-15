@@ -20,6 +20,7 @@ export function appendResponse(s: SignResponse, r: SignResponse): SignResponse {
     fingerspell: [...s.fingerspell, ...r.fingerspell],
     markers: [...s.markers, ...r.markers.map((m) => ({ ...m, from: m.from + poff, to: m.to + poff }))],
     plan: r.plan,
+    ...(r.generating?.length ? { generating: r.generating } : {}),
     timings: { translate_ms: s.timings.translate_ms + r.timings.translate_ms, total_ms: s.timings.total_ms + r.timings.total_ms },
   };
 }

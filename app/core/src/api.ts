@@ -92,7 +92,21 @@ export interface SignResponse {
   agent?: AgentTrace;
   /** Non-fatal notes, e.g. "agent unavailable (timeout); local translation used". */
   warnings?: string[];
+  /**
+   * Signs this sentence needs that have motion but no realistic clip yet: the server is generating them in the
+   * background (generate-on-use). This response is NOT delayed; it stays caption-only for those words. Once a clip
+   * is ready (about 2–3 min), the next request with that word signs it. Absent when nothing is generating.
+   */
+  generating?: GeneratingSign[];
   timings: { translate_ms: number; agent_ms?: number; total_ms: number };
+}
+
+/** A sign being generated on demand (`SignResponse.generating`). */
+export interface GeneratingSign {
+  motion_id: string;
+  gloss: string;
+  /** Estimated seconds until the clip is available. */
+  eta_s: number;
 }
 
 /** GET /api/vocab response: the signs that have clips right now. */
@@ -108,6 +122,18 @@ export interface HealthResponse {
   agent?: "ready" | "off";
   /** Sign -> voice recognizer service status. */
   recognizer?: "ready" | "down";
+  /** Generate-on-use (server ONDEMAND=on). Omitted when the server has it off. */
+  ondemand?: OnDemandHealth;
+}
+
+export interface OnDemandHealth {
+  enabled: boolean;
+  /** Signs waiting / in the batch being rendered. */
+  queued: number;
+  running: number;
+  done_today: number;
+  /** Conservative fal reserve spent today (USD), counted against the server's daily budget. */
+  spent_today_est: number;
 }
 
 export interface ApiError {
@@ -134,6 +160,7 @@ export const ROUTES = {
   health: "/api/health", // GET -> HealthResponse
   vocab: "/api/vocab", // GET -> VocabResponse
   sign: "/api/sign", // POST SignRequest -> SignResponse
+  ondemand: "/api/ondemand", // GET generate-on-use status (queue, spend, recent batches)
   clips: "/clips/", // GET /clips/<file>.mp4 (static)
   recognize: "/api/recognize", // POST ?mode=sign|spell, octet-stream float32 frames -> RecognizeResponse (proxied to app/recognizer)
   webApp: "/app/", // GET the built web app (phone WebView loads /app/#/sign?embed=1)
