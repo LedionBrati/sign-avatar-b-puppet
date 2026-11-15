@@ -5,7 +5,7 @@
 import { useLayoutEffect, useRef } from "react";
 import type { CapWord } from "../lib/session";
 
-const HINT = { unsupported: "Can't sign yet", fingerspell: "Fingerspelling not available yet" } as const;
+const HINT = { unsupported: "", fingerspell: "" } as const;
 
 export function Captions({ words, now, lines = 2, placeholder, plain }: { words: CapWord[]; now: number; lines?: number; placeholder?: string; plain?: boolean }) {
   const roll = useRef<HTMLDivElement>(null);
