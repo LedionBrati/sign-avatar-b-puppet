@@ -3,12 +3,12 @@
 /* The menu: an Apple-settings-style sheet. One switch, one segmented control, a status dot; the rest in Advanced. */
 :root {
   color-scheme: light dark;
-  --bg: #f2f2f7; --group: #fff; --text: #1d1d1f; --text-2: rgb(60 60 67 / .64); --text-3: rgb(60 60 67 / .32);
+  --bg: #f2f2f7; --group: #fff; --text: #1d1d1f; --text-2: rgb(60 60 67 / .78); --text-3: rgb(60 60 67 / .32);
   --sep: rgb(60 60 67 / .14); --fill: rgb(118 118 128 / .12); --thumb: #fff; --thumb-shadow: 0 3px 8px rgb(0 0 0 / .12), 0 3px 1px rgb(0 0 0 / .04);
   --accent: var(--cobalt); --accent-text: #1f3fd6; --ok: #34c759; --bad: #ff3b30;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #1c1c1e; --group: #2c2c2e; --text: #f5f5f7; --text-2: rgb(235 235 245 / .6); --text-3: rgb(235 235 245 / .3);
+  :root { --bg: #1c1c1e; --group: #2c2c2e; --text: #f5f5f7; --text-2: rgb(235 235 245 / .64); --text-3: rgb(235 235 245 / .3);
     --sep: rgb(84 84 88 / .5); --fill: rgb(118 118 128 / .24); --thumb: #636366; --thumb-shadow: 0 3px 8px rgb(0 0 0 / .3); --accent-text: #9fb0ff; --ok: #30d158; --bad: #ff453a; }
 }
 html { background: var(--bg); }
@@ -33,7 +33,7 @@ body { width: 340px; color: var(--text); background: var(--bg); font-size: 13px;
 .row + .row::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; height: .5px; background: var(--sep); }
 .row.col { flex-direction: column; align-items: stretch; gap: 8px; }
 .row .lbl { font-size: 13px; }
-.hero { min-height: 64px; padding: 12px 14px 12px 16px; }
+.hero { min-height: 64px; padding: 12px 14px 12px 16px; cursor: pointer; }
 .hero .txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .hero b { font: 600 15px/1.2 var(--font-display); letter-spacing: -.01em; }
 .hero span { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -57,6 +57,7 @@ body { width: 340px; color: var(--text); background: var(--bg); font-size: 13px;
   transform: translateX(calc(var(--i, 0) * 100%)); transition: transform .5s var(--spring-bounce); }
 .seg button { position: relative; z-index: 1; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text); font-size: 12.5px; font-weight: 500; cursor: pointer; transition: color .2s ease, transform .3s var(--spring-snappy); }
 .seg button:active { transform: scale(.96); }
+.seg button::after { content: ""; position: absolute; inset: -6px 0; } /* 44 px hit target */
 .seg button[aria-checked="true"] { font-weight: 600; }
 .seg button:focus-visible { outline-offset: -2px; }
 
@@ -77,7 +78,7 @@ body { width: 340px; color: var(--text); background: var(--bg); font-size: 13px;
 .btn svg { width: 15px; height: 15px; }
 
 /* Advanced disclosure */
-.adv summary { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 4px; cursor: pointer; list-style: none; font-size: 12px; font-weight: 500; color: var(--text-2); border-radius: 8px; }
+.adv summary { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 4px; cursor: pointer; list-style: none; font-size: 12px; font-weight: 500; color: var(--text-2); border-radius: 8px; }
 .adv summary::-webkit-details-marker { display: none; }
 .adv summary:hover { color: var(--text); }
 .adv .chev { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .4s var(--spring-bounce); margin-left: 2px; }
@@ -85,7 +86,8 @@ body { width: 340px; color: var(--text); background: var(--bg); font-size: 13px;
 .adv[open] .group { animation: sheetIn .45s var(--spring) both; }
 .adv .group { margin-top: 4px; }
 .mini { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--fill); }
-.mini button { width: 34px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; transition: background-color .25s ease, box-shadow .25s ease; }
+.mini button { position: relative; width: 40px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; transition: background-color .25s ease, box-shadow .25s ease; }
+.mini button::after { content: ""; position: absolute; inset: -8px 0; }
 .mini button.on { background: var(--thumb); box-shadow: var(--thumb-shadow); font-weight: 600; }
 .api { display: flex; gap: 6px; }
 .api input { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border-radius: 8px; border: 0; background: var(--fill); font: 12.5px var(--font); color: var(--text); }

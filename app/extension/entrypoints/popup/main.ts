@@ -69,11 +69,16 @@ function render() {
   if (document.activeElement !== input) input.value = s.apiUrl;
 }
 
-$("sw").addEventListener("click", async () => {
+async function toggleEnabled() {
   const on = !s.enabled;
+  s.enabled = on;
+  render();
   await setSettings({ enabled: on });
   if (on) send({ type: "mount-active" }).catch(() => {});
-});
+}
+$("sw").addEventListener("click", toggleEnabled);
+// The whole row is the hit target, like a settings cell.
+$("hero").addEventListener("click", (e) => { if (!(e.target as HTMLElement).closest("#sw")) toggleEnabled(); });
 $("ccsw").addEventListener("click", () => setSettings({ captions: !s.captions }));
 document.querySelectorAll<HTMLButtonElement>('[data-seg="size"] button').forEach((b) => b.addEventListener("click", () => setSettings({ size: b.dataset.v as Size })));
 
