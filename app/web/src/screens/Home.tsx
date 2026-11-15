@@ -3,8 +3,9 @@ import { copy } from "@signlayer/core";
 import { ExtIcon, GearIcon, Mark, MicIcon, Wordmark } from "../components/Icons";
 import { TypeBox } from "../components/TypeBox";
 import { Wave } from "../components/Wave";
+import { HandIcon } from "./SignToSpeak";
 
-export function Home({ canListen, onListen, onType, onSettings }: { canListen: boolean; onListen(): void; onType(text: string): void; onSettings(): void }) {
+export function Home({ canListen, onListen, onType, onSettings, onSign }: { canListen: boolean; onListen(): void; onType(text: string): void; onSettings(): void; onSign(): void }) {
   const [typing, setTyping] = useState(!canListen);
   return (
     <div className="screen home field">
@@ -32,6 +33,7 @@ export function Home({ canListen, onListen, onType, onSettings }: { canListen: b
         ) : (
           <button className="textlink" id="type" onClick={() => setTyping(true)}>Type instead</button>
         )}
+        <a className="pill sm signentry" id="sign" href="#/sign" onClick={(e) => { e.preventDefault(); onSign(); }}><HandIcon />Sign to speak</a>
       </div>
       <p className="any">{copy.any}</p>
       <div className="extcard">
