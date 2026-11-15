@@ -5,7 +5,11 @@
 // Usage:
 //   node puppet/render.mjs --motion PATH --view skeleton|vrm|sidebyside --out out/puppet/x.mp4
 //        [--video SRC.mp4] [--size 540x720] [--fps 24] [--closeup] [--solver direct|kalidokit]
-//        [--mannequin] [--labels 0|1] [--model URL] [--frames N]
+//        [--mannequin] [--labels 0|1] [--model URL] [--frames N] [--gpu]
+//
+// --gpu   hardware WebGL (ANGLE on D3D11) instead of the default software SwiftShader. The WebGL
+//         renderer string is printed and the run fails if Chrome still fell back to SwiftShader.
+//         Pixels can differ by rounding between the two; frame count and timing do not.
 //
 // Paths are relative to the current directory. Writes <out>.json next to the mp4 with per-frame
 // tracking failures and retargeting errors (degrees). Chrome: set CHROME=/path/to/chrome if it is not
@@ -40,6 +44,7 @@ const closeup = flag("closeup");
 const mannequin = flag("mannequin");
 const labels = arg("labels", null);
 const model = arg("model", null);
+const gpu = flag("gpu");
 if (!["skeleton", "vrm", "sidebyside"].includes(view)) { console.error(`--view must be skeleton, vrm or sidebyside`); process.exit(1); }
 
 const motion = JSON.parse(readFileSync(motionPath, "utf8"));
@@ -94,7 +99,10 @@ const puppeteer = (await import("puppeteer-core")).default;
 const browser = await puppeteer.launch({
   executablePath: findChrome(),
   headless: true,
-  args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "--force-device-scale-factor=1", "--no-first-run"],
+  args: [...(gpu
+    ? ["--enable-gpu", "--use-angle=d3d11", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"]
+    : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]),
+  "--hide-scrollbars", "--force-device-scale-factor=1", "--no-first-run"],
   defaultViewport: { width: pageW, height: H, deviceScaleFactor: 1 },
 });
 let ffmpeg;
@@ -111,6 +119,14 @@ try {
     const err = await page.evaluate(() => document.getElementById("error")?.textContent).catch(() => "");
     throw new Error(`page failed to start: ${e.message}\n${err}\n${logs.join("\n")}`);
   }
+  const gl = await page.evaluate(() => {
+    const c = document.createElement("canvas").getContext("webgl");
+    const ext = c?.getExtension("WEBGL_debug_renderer_info");
+    return ext ? c.getParameter(ext.UNMASKED_RENDERER_WEBGL) : c ? c.getParameter(c.RENDERER) : "no webgl";
+  });
+  const software = /swiftshader|software|llvmpipe/i.test(gl);
+  console.log(`webgl: ${gl} (${software ? "software" : "hardware"})`);
+  if (gpu && software) throw new Error("--gpu asked for hardware WebGL but Chrome fell back to software");
   if (info.warnings?.length) console.warn(`motion warnings: ${info.warnings.slice(0, 5).join("; ")}`);
 
   mkdirSync(dirname(out), { recursive: true });
@@ -139,7 +155,8 @@ try {
 
   // 4. verify the frame count
   const count = Number(execFileSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", out]).toString().trim());
-  console.log(`wrote ${out}: ${count} frames, ${pageW}x${H} @ ${fps} fps (motion has ${N} frames)`);
+  const secs = (Date.now() - t0) / 1000;
+  console.log(`wrote ${out}: ${count} frames, ${pageW}x${H} @ ${fps} fps (motion has ${N} frames), ${secs.toFixed(1)} s, ${(secs / N).toFixed(3)} s/frame, ${software ? "software" : "hardware"} webgl`);
   if (count !== N) { console.error(`FRAME COUNT MISMATCH: video ${count} vs motion ${N}`); process.exitCode = 2; }
 
   // 5. report: tracking failures (no landmarks) vs retargeting failures (landmarks there, avatar off)
