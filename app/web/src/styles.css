@@ -644,3 +644,11 @@ svg { display: block; }
   transform: translate(-50%, -50%) !important; width: min(420px, calc(100vw - 32px)) !important; max-height: calc(100dvh - 120px); }
 .live .fc-head, .live .fc-dock, .live .fc-grip, .live .typerow { display: none !important; }
 .live .fcard.dragging { cursor: default; }
+
+/* Home pills: crisp white frosted glass, dark ink, the serif. */
+.pill { height: 58px; background: rgb(255 255 255 / .72) !important; -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgb(255 255 255 / .9), 0 12px 30px -14px rgb(60 50 140 / .35) !important;
+  color: #2b2660 !important; font: italic 500 21px/1 var(--font-serif) !important; letter-spacing: -.01em; text-shadow: none !important; }
+.pill::before { display: none !important; }
+.pill svg { width: 20px; height: 20px; color: #4446d8 !important; opacity: 1 !important; }
+.pill:hover { background: rgb(255 255 255 / .88) !important; box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px #fff, 0 16px 36px -14px rgb(91 92 240 / .45) !important; }

@@ -12,7 +12,7 @@ export function Mark({ className = "mark" }: { className?: string }) {
           </linearGradient>
         </defs>
         <rect width="32" height="32" rx="9" fill="url(#fluxg)" />
-        <text x="16.5" y="23.5" textAnchor="middle" fill="#fff" style={{ font: "italic 500 22px Newsreader, Georgia, serif" }}>f</text>
+        <text x="15.4" y="16.6" textAnchor="middle" dominantBaseline="central" fill="#fff" style={{ font: "italic 500 22px Newsreader, Georgia, serif" }}>f</text>
       </svg>
     </span>
   );
