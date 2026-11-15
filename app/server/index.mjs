@@ -9,6 +9,7 @@
 //                             markers, plan, safety, translator: "local"|"agent", paraphrase?, timings
 //   GET  /api/sign.mp4?text=  the playlist joined into one mp4 (ffmpeg stream copy), for sharing / download
 //   GET  /clips/<file>        clips from the manifests, with HTTP Range (206) for Safari / iOS / expo-video
+//   POST /api/transcribe      raw audio chunk (audio/webm, ...) -> {text, model, timings}; same OpenAI key (lib/transcribe.mjs)
 //   POST /api/recognize?mode=sign|spell   float32 landmarks + X-Frames, proxied to app/recognizer (RECOGNIZER_URL, default :8788)
 //   GET  /app/*               the built web app (app/web/dist, WEB_DIST), SPA fallback to index.html
 
@@ -27,6 +28,7 @@ import { assessSigning } from "./lib/semantic-safety.mjs";
 import { createAgent } from "./lib/agent.mjs";
 import { loadApiKey, redactor } from "./lib/secrets.mjs";
 import { virtualClips } from "./lib/eval-vocab.mjs";
+import { TRANSCRIBE_ROUTE, createTranscribeHandler, transcriberFromEnv } from "./lib/transcribe.mjs";
 
 export const MAX_TEXT = 500;
 const MAX_BODY = 16 * 1024;
@@ -58,6 +60,7 @@ class HttpError extends Error {
  *                                    Default: from OPENAI_API_KEY / OPENAI_API_KEY_FILE unless AGENT=off (never under node --test)
  * @param {string} [o.evalVocab]      DEV/EVAL ONLY: "dictionary" (EVAL_VOCAB env) plans against the 1,945-sign dictionary
  *                                    with virtual clips; responses are labelled eval: "virtual_clips" and are never playable
+ * @param {object|null} [o.transcriber]  speech-to-text override ({transcribe(audio, opts)}, see lib/transcribe.mjs); null = off
  * @param {(line: string) => void} [o.log]
  */
 export function createApp(o = {}) {
@@ -80,6 +83,8 @@ export function createApp(o = {}) {
   try { englishWords = loadEnglishWords(); } catch (error) { log(`warning: English word list unavailable (${error.message}); names only by capitalization`); }
 
   const agent = o.agent !== undefined ? o.agent : agentFromEnv(keyInfo, englishWords, log);
+  const transcriber = o.transcriber !== undefined ? o.transcriber : transcriberFromEnv(keyInfo, log);
+  const transcribe = createTranscribeHandler(transcriber, { log });
 
   const semanticWanted = o.semantic ?? process.env.SEMANTIC !== "0";
   const state = { semantic: semanticWanted ? "loading" : "off", warm_ms: null, agent: agent ? "ready" : "off" };
@@ -170,7 +175,7 @@ export function createApp(o = {}) {
 
     if (path === "/api/health") {
       only(req, "GET", "HEAD");
-      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, recognizer: await recognizerStatus() });
+      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, transcribe: transcriber ? "ready" : "off", recognizer: await recognizerStatus() });
     }
     if (path === "/api/vocab") {
       only(req, "GET", "HEAD");
@@ -191,6 +196,10 @@ export function createApp(o = {}) {
       if (evalVocab) throw new HttpError(409, "eval_mode", "EVAL_VOCAB server has virtual clips; nothing to join");
       return sendJoined(req, res, result);
     }
+    if (path === TRANSCRIBE_ROUTE) {
+      const r = await transcribe(req, url);
+      return json(res, r.status, r.body);
+    }
     if (path === "/api/recognize") {
       only(req, "POST");
       return recognize(req, res, url);
@@ -208,7 +217,7 @@ export function createApp(o = {}) {
       if (!file) throw new HttpError(404, "no_clip", `no clip ${rel ?? path}`);
       return sendFile(req, res, file);
     }
-    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/recognize?mode=sign|spell", "/app/"] });
+    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "/app/"] });
     throw new HttpError(404, "not_found", `no route ${req.method} ${path}`);
   }
 
@@ -288,7 +297,7 @@ export function createApp(o = {}) {
       json(res, status, { error: { code: error.code ?? "internal", message: error instanceof HttpError ? error.message : "internal error" } });
     });
   });
-  return { server, clips, vocab, state, ready, sign, agent, recognizerUrl, webDist };
+  return { server, clips, vocab, state, ready, sign, agent, transcriber, recognizerUrl, webDist };
 }
 
 const AGENT_MODES = ["auto", "always", "off"];
@@ -430,6 +439,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (const u of lanUrls(port)) console.log(`  ${u}`);
     console.log(`semantic: ${app.state.semantic}`);
     console.log(`agent: ${app.state.agent}${app.agent?.model ? ` (${app.agent.model})` : ""}`);
+    console.log(`transcribe: ${app.transcriber?.model ?? "off"}`);
     console.log(`recognizer: ${app.recognizerUrl}`);
     console.log(`web app: ${existsSync(join(app.webDist, "index.html")) ? `${lanUrls(port).at(-1)}/app/` : `not built (${app.webDist})`}`);
   });

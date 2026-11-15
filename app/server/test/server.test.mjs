@@ -51,7 +51,7 @@ const ids = (r) => r.playlist.map((p) => p.motion_id).join(" ");
 test("health", async () => {
   const res = await fetch(`${base}/api/health`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, signs: 10, semantic: "off", agent: "off", recognizer: "down" });
+  assert.deepEqual(await res.json(), { ok: true, signs: 10, semantic: "off", agent: "off", transcribe: "off", recognizer: "down" });
 });
 
 test("vocab merges dirs, first dir wins, missing files skipped", async () => {
