@@ -125,6 +125,15 @@ test("nothing signable: ok=false, no invented signs, assertPlan would reject", (
   assert.throws(() => assertPlan(plan));
 });
 
+test("source_index points at the spoken word in input_text.split(' '), across sentences and reordering", () => {
+  const words = (p) => p.input_text.split(" ");
+  let plan = translateRules("Thank you,  see you later.", CLIPS, { englishWords });
+  assert.deepEqual(plan.items.map((i) => [i.motion_id, i.source_index]), [["THANK_YOU", 0], ["SEE", 2], ["YOU", 3], ["LATER", 4]]);
+  plan = translateRules("Where does it hurt? Hello, my name is Maria.", CLIPS, { englishWords });
+  assert.deepEqual(plan.items.map((i) => [i.motion_id ?? `fs:${i.word}`, words(plan)[i.source_index]]),
+    [["HURT", "hurt?"], ["WHERE", "Where"], ["HELLO", "Hello,"], ["MY", "my"], ["NAME", "name"], ["fs:MARIA", "Maria."]]);
+});
+
 test("rules layer is fast (< 1 ms per sentence warm)", { skip: noDict }, () => {
   const sentences = DICT_CASES.map((c) => c[0]);
   for (const s of sentences) translateRules(s, DICT, { englishWords });

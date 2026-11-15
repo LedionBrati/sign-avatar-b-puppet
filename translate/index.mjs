@@ -121,12 +121,12 @@ function resolveLeftover(u, semanticHit, threshold) {
   const t = u.token;
   if (u.reason === "name" || u.reason === "not_english") {
     const word = toFingerspell(t.orig);
-    if (word) return { kind: "fingerspell", word, source: t.orig, reason: u.reason === "name" ? "capitalized_name" : "not_in_word_list" };
+    if (word) return { kind: "fingerspell", word, source: t.orig, source_index: t.wi, reason: u.reason === "name" ? "capitalized_name" : "not_in_word_list" };
     return { kind: "unsupported", token: t.orig };
   }
   if (u.reason === "semantic_candidate" && semanticHit && semanticHit.score >= threshold) {
     return { kind: "sign", entry: semanticHit.entry, method: "semantic", score: semanticHit.score,
-      source: t.orig, alternatives: semanticHit.alternatives };
+      source: t.orig, source_index: t.wi, alternatives: semanticHit.alternatives };
   }
   return { kind: "unsupported", token: t.orig, best: semanticHit ? { gloss: semanticHit.entry.gloss, score: semanticHit.score } : undefined };
 }
@@ -179,13 +179,13 @@ function buildPlan(text, sentences, semanticHits, opts, timings, warnings) {
         if (r.best) nearMisses.push({ token: r.token, gloss: r.best.gloss, score: r.best.score });
       }
       else if (r.kind === "fingerspell") {
-        local.push({ type: "fingerspell", word: r.word, source: r.source, match: { method: "fingerspell", reason: r.reason } });
+        local.push({ type: "fingerspell", word: r.word, source: r.source, source_index: r.source_index, match: { method: "fingerspell", reason: r.reason } });
       } else if (r.kind === "sign") {
         const match = { method: r.method };
         if (r.score !== undefined) match.score = r.score;
         if (r.lemma) match.lemma = r.lemma;
         if (r.alternatives) match.alternatives = r.alternatives.map((a) => ({ gloss: a.gloss, score: a.score }));
-        local.push({ type: "sign", gloss: r.entry.gloss, motion_id: r.entry.motion_id, source: r.source, match });
+        local.push({ type: "sign", gloss: r.entry.gloss, motion_id: r.entry.motion_id, source: r.source, source_index: r.source_index ?? r.tokens?.[0]?.wi, match });
       }
     }
     const { items: ordered, markers: m } = orderSentence(s, local);
@@ -220,6 +220,19 @@ function prepare(text, vocab, options) {
   const t0 = performance.now();
   const input = text.trim().replace(/\s+/g, " ");
   const sentences = splitSentences(input).map((s) => matchSentence(s, index, options));
+  // source_index: index of each token's word in input_text.split(" ") (for captions, "signing X for 'word'").
+  let cursor = 0;
+  for (const s of sentences) {
+    const at = input.indexOf(s.text, cursor);
+    const base = at >= 0 ? at : cursor;
+    cursor = base + s.text.length;
+    for (const t of s.toks) {
+      const off = base + t.start;
+      let wi = 0;
+      for (let k = 0; k < off; k++) if (input[k] === " ") wi++;
+      t.wi = wi;
+    }
+  }
   return { input, index, sentences, rules_ms: performance.now() - t0 };
 }
 

@@ -169,6 +169,7 @@ export function tokenize(sentence) {
       w,
       orig: k === 0 ? base : w,
       raw,
+      start: m.index, // char offset of the raw word in `sentence`
       cap: k === 0 && /^\p{Lu}/u.test(raw),
     }));
   }
