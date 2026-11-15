@@ -26,8 +26,9 @@ export const tabDebug = { chunks: [] as { ms: number; bytes: number; latency_ms:
 /** Plain words for the errors Chrome throws at getMediaStreamId / getUserMedia. */
 export function captureError(e: unknown) {
   const m = e instanceof Error ? `${e.name} ${e.message}` : String(e);
+  // Chrome's "not invoked" error also says "Chrome pages cannot be captured", so check the grant first.
+  if (/invoked|activeTab/i.test(m)) return "Go to the tab that's playing audio and click the SIGNLAYER icon in the toolbar. It starts listening there.";
   if (/chrome pages|cannot be captured|chrome:\/\//i.test(m)) return "Chrome's own pages can't be captured. Switch to a tab that plays audio.";
-  if (/invoked|activeTab/i.test(m)) return "Click the SIGNLAYER icon while on the tab you want to hear, then press Start.";
   if (/active stream/i.test(m)) return "This tab is already being captured. Stop the other capture and try again.";
   if (/NotAllowed|Permission|denied/i.test(m)) return "Chrome refused to share this tab's audio.";
   return `Can't capture this tab's audio (${m.slice(0, 80)})`;

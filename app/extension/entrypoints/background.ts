@@ -7,5 +7,7 @@ import { browser } from "wxt/browser";
 export default defineBackground(() => {
   browser.action.onClicked.addListener((tab) => {
     if (tab.windowId != null) browser.sidePanel.open({ windowId: tab.windowId }).catch((e) => console.warn("[signlayer] side panel", e));
+    // An open panel in Tab audio mode switches to this tab (it is granted now); no panel open = nobody listening.
+    if (tab.id != null) browser.runtime.sendMessage({ type: "invoked", tabId: tab.id }).catch(() => {});
   });
 });
