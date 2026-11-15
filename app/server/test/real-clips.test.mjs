@@ -42,6 +42,6 @@ test("real clips: /api/sign.mp4 joins the playlist", { skip: noClips || (!hasFfm
   assert.equal(buf.subarray(4, 8).toString(), "ftyp");
   const none = await fetch(`${base}/api/sign.mp4?text=Xylophone`);
   assert.equal(none.status, 422);
-  assert.equal((await none.json()).error.code, "nothing_to_sign");
+  assert.equal((await none.json()).error.code, "signing_not_supported"); // safety gate (docs/semantic-safety.md) answers first
   assert.equal((await fetch(`${base}/api/sign.mp4`)).status, 400);
 });

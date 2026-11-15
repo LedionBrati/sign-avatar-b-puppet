@@ -1,4 +1,5 @@
-import { ROUTES, type ApiError, type HealthResponse, type SignRequest, type SignResponse, type VocabResponse } from "./api";
+import { FRAMES_HEADER, ROUTES, type ApiError, type HealthResponse, type RecognizeMode, type RecognizeResponse, type SignRequest, type SignResponse, type VocabResponse } from "./api";
+import { LEGACY_POINTS } from "./landmarks";
 
 export class SignApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -47,6 +48,17 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
       // An older or inconsistent server must never make a partial playlist playable.
       const playlist = safety.status === "fully_supported" ? res.playlist.map((p) => ({ ...p, url: abs(p.url) })) : [];
       return { ...res, safety, playlist, markers: playlist.length ? res.markers : [] };
+    },
+    /** Sign -> voice: send one segment of packed landmark frames (landmarks.ts packSegment). */
+    recognize(mode: RecognizeMode, frames: Float32Array, signal?: AbortSignal): Promise<RecognizeResponse> {
+      const n = frames.length / (LEGACY_POINTS * 3);
+      if (!Number.isInteger(n) || n < 1) throw new Error("frames must be a whole number of 543x3 frames");
+      return request<RecognizeResponse>(`${ROUTES.recognize}?mode=${mode}`, {
+        method: "POST",
+        body: frames.buffer.slice(frames.byteOffset, frames.byteOffset + frames.byteLength) as ArrayBuffer,
+        headers: { "content-type": "application/octet-stream", [FRAMES_HEADER]: String(n) },
+        signal,
+      });
     },
   };
 }

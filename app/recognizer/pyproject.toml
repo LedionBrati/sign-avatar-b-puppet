@@ -1,0 +1,20 @@
+[project]
+name = "signlayer-recognizer"
+version = "0.1.0"
+description = "Sign -> voice recognizer: pretrained GISLR (isolated signs) and ASL fingerspelling TFLite models behind a small HTTP API"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "ai-edge-litert>=2.0",
+    "numpy>=1.26",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+# Only for eval_wlasl.py (landmark extraction from video); the service itself does not need it.
+eval = ["mediapipe==1.2.3"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

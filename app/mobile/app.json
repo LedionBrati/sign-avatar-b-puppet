@@ -18,13 +18,15 @@
           "NSAllowsArbitraryLoads": true,
           "NSAllowsLocalNetworking": true
         },
-        "NSLocalNetworkUsageDescription": "SIGNLAYER connects to the signing server on your local network."
+        "NSLocalNetworkUsageDescription": "SIGNLAYER connects to the signing server on your local network.",
+        "NSCameraUsageDescription": "SIGNLAYER watches your hands so your signing can be turned into speech. Video stays on this phone and your own server."
       }
     },
     "android": {
       "package": "app.signlayer.mobile",
       "permissions": [
         "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
         "android.permission.INTERNET"
       ],
       "adaptiveIcon": {
@@ -42,6 +44,14 @@
     },
     "plugins": [
       "expo-video",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SIGNLAYER watches your hands so your signing can be turned into speech. Video stays on this phone and your own server.",
+          "microphonePermission": false,
+          "recordAudioAndroid": true
+        }
+      ],
       [
         "expo-speech-recognition",
         {

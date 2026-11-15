@@ -27,3 +27,7 @@ puppet/models/
 puppet/node_modules/
 puppet/dist/
 translate/cache/
+
+# app/recognizer/
+app/recognizer/models/
+app/recognizer/.venv/

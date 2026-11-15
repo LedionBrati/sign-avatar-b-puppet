@@ -35,7 +35,8 @@ writeFileSync(join(dirB, "manifest.json"), JSON.stringify({
 let app, base;
 const logs = [];
 before(async () => {
-  app = createApp({ clipsDirs: [dirA, dirB, join(root, "empty")], semantic: false, log: (l) => logs.push(l) });
+  // recognizerUrl: a closed port, so health reports the recognizer as down (recognize.test.mjs covers the proxy).
+  app = createApp({ clipsDirs: [dirA, dirB, join(root, "empty")], semantic: false, recognizerUrl: "http://127.0.0.1:1", log: (l) => logs.push(l) });
   await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${app.server.address().port}`;
 });
@@ -50,7 +51,7 @@ const ids = (r) => r.playlist.map((p) => p.motion_id).join(" ");
 test("health", async () => {
   const res = await fetch(`${base}/api/health`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, signs: 10, semantic: "off" });
+  assert.deepEqual(await res.json(), { ok: true, signs: 10, semantic: "off", recognizer: "down" });
 });
 
 test("vocab merges dirs, first dir wins, missing files skipped", async () => {
