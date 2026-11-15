@@ -6,30 +6,59 @@
   <title>SIGNLAYER</title>
 </head>
 <body class="g-paper grain">
-  <div class="popup glass" role="dialog" aria-label="SIGNLAYER settings">
-    <div class="row"><span class="word" id="brand"></span><span class="live off" id="plive"><i></i><span id="pliveText">Checking</span></span></div>
-    <div class="row"><span>Signer on</span><button class="switch" id="sw" role="switch" aria-checked="true" aria-label="Signer on"></button></div>
-    <hr />
-    <div class="col"><span class="cap-label">Listen to</span>
-      <div class="seg" data-seg="source">
-        <button data-v="captions">Captions</button><button data-v="mic">Microphone</button><button data-v="selection">Selected text</button><button data-v="tab" disabled title="Tab audio needs cloud speech-to-text. Coming soon">Tab audio<small>soon</small></button>
+  <!-- First run: one screen on what the sources are and which permission each asks for -->
+  <section class="popup glass onboard" id="onboard" hidden aria-label="Welcome to SIGNLAYER">
+    <div class="row"><span class="word brand"></span><span class="step">Welcome</span></div>
+    <h1>Hear anything.<br />See it signed.</h1>
+    <p class="lede">A signer rides along in the corner of any tab, with captions underneath. Pick what it listens to:</p>
+    <ul class="srcs">
+      <li><span class="ico" data-icon="captions"></span><div><b>Captions</b><span>YouTube's transcript or CC, or any video with captions. No permission needed.</span></div></li>
+      <li><span class="ico" data-icon="tab"></span><div><b>Tab audio</b><span>Whatever the tab plays, turned into text by your SIGNLAYER server. Starts when you click it here.</span></div></li>
+      <li><span class="ico" data-icon="mic"></span><div><b>Microphone</b><span>Speech around you, recognised by Chrome. Asks for the mic once.</span></div></li>
+      <li><span class="ico" data-icon="selection"></span><div><b>Selected text</b><span>Right-click › Sign with SIGNLAYER, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>.</span></div></li>
+    </ul>
+    <p class="fine">Signs we don't have yet stay as captions, never guessed. <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> shows or hides the signer.</p>
+    <button class="btn wide" id="start">Get started</button>
+  </section>
+
+  <section class="popup glass" id="main" hidden aria-label="SIGNLAYER">
+    <div class="row">
+      <span class="word brand"></span>
+      <span class="status" id="status" role="status"><i></i><span id="statusText">Checking…</span></span>
+    </div>
+
+    <div class="hero" id="hero">
+      <div class="hero-text"><b>Sign this tab</b><span id="site">This page</span></div>
+      <button class="switch" id="sw" role="switch" aria-checked="true" aria-label="Signer on"></button>
+    </div>
+
+    <div class="block">
+      <span class="cap-label">Listen to</span>
+      <div class="srcseg" role="radiogroup" aria-label="Listen to" id="srcseg">
+        <button role="radio" data-v="captions"><span class="ico" data-icon="captions"></span>Captions</button>
+        <button role="radio" data-v="tab"><span class="ico" data-icon="tab"></span>Tab audio</button>
+        <button role="radio" data-v="mic"><span class="ico" data-icon="mic"></span>Mic</button>
+        <button role="radio" data-v="selection"><span class="ico" data-icon="selection"></span>Text</button>
       </div>
       <p class="hint" id="hint"></p>
-      <button class="btn" id="micBtn" hidden>Open the mic panel</button>
+      <button class="btn" id="act" hidden></button>
     </div>
-    <div class="col"><span class="cap-label">Signer size</span>
-      <div class="seg" data-seg="size"><button data-v="s">S</button><button data-v="m">M</button><button data-v="l">L</button></div>
+
+    <div class="block two">
+      <div><span class="cap-label">Size</span>
+        <div class="seg" data-seg="size"><button data-v="s">S</button><button data-v="m">M</button><button data-v="l">L</button></div>
+      </div>
+      <div><span class="cap-label">Captions</span>
+        <button class="switch sm" id="ccsw" role="switch" aria-checked="true" aria-label="Captions under the signer"></button>
+      </div>
     </div>
-    <div class="col"><span class="cap-label">Captions</span>
-      <div class="seg" data-seg="captions"><button data-v="on">Under signer</button><button data-v="off">Off</button></div>
-    </div>
-    <hr />
-    <div class="col"><span class="cap-label">Sign API</span>
-      <form class="api" id="apiForm"><input id="apiUrl" type="url" spellcheck="false" aria-label="API URL" /><button class="btn sm" type="submit">Save</button></form>
+
+    <details class="server" id="server">
+      <summary><span class="cap-label">Server</span><span class="url" id="urlShort"></span></summary>
+      <form class="api" id="apiForm"><input id="apiUrl" type="url" spellcheck="false" aria-label="Sign API URL" /><button class="btn sm" type="submit">Save</button></form>
       <p class="hint" id="apiStatus"></p>
-    </div>
-    <span class="cap-label foot">Real signer recordings · no cartoon avatars</span>
-  </div>
+    </details>
+  </section>
   <script type="module" src="./main.ts"></script>
 </body>
 </html>
