@@ -121,3 +121,37 @@ test("compose-cases fixture (scripts/compose-check.mjs): realistic top-5 cases a
     assert.ok(c.signs.flat().every(([t]) => SIGN_LABELS.includes(t) || display.has(t)), JSON.stringify(c.signs));
   }
 });
+
+test("compose: history becomes a transcript in the input, is validated, and is part of the cache key", async () => {
+  const n = calls.length;
+  const history = [{ who: "them", text: "Hi there!" }, { who: "me", text: "Hello!" }, { who: "them", text: "How are you?" }];
+  const body = { signs: [{ text: "good", options: [{ text: "good", confidence: 0.5 }, { text: "fine", confidence: 0.4 }] }], context: { history, heard: "How are you?" } };
+  assert.equal((await post(base, body)).status, 200);
+  const user = userMsg(calls.at(-1));
+  assert.match(user, /Them: "Hi there!"\nMe \(signing\): "Hello!"\nThem: "How are you\?"/);
+  assert.match(user, /last thing they heard: "How are you\?"/);
+  assert.doesNotMatch(user, /Hearing person just said/); // heard repeats the last turn: shown once
+  // A different history is a different request (no stale cache hit).
+  await post(base, { ...body, context: { history: [{ who: "them", text: "What do you want to drink?" }] } });
+  assert.equal(calls.length, n + 2);
+  for (const bad of ["nope", [{ who: "them" }], [{ who: "you", text: "hi" }], [null], [{ who: "me", text: 3 }]]) {
+    assert.equal((await post(base, { signs: [{ text: "good" }], context: { history: bad } })).status, 400, JSON.stringify(bad));
+  }
+  assert.equal(calls.length, n + 2);
+});
+
+test("parseContext: history keeps the last 12 non-empty turns, each cut to 300 chars; said/heard still work", () => {
+  const history = Array.from({ length: 20 }, (_, i) => ({ who: i % 2 ? "me" : "them", text: i === 19 ? "x".repeat(500) : `turn ${i}` }));
+  history.splice(10, 0, { who: "me", text: "   " });
+  const c = parseContext({ context: { history, said: ["Hello!"], heard: "Bye" } });
+  assert.equal(c.history.length, 12);
+  assert.deepEqual(c.history[0], { who: "them", text: "turn 8" });
+  assert.equal(c.history.at(-1).text.length, 300);
+  assert.deepEqual(c.said, ["Hello!"]);
+  assert.equal(c.heard, "Bye");
+  assert.deepEqual(parseContext({ context: { history: [] } }), {});
+  // A sign the recognizer flagged as junk is marked for the model.
+  const signs = parseSigns({ signs: [{ text: "hello" }, { text: "zebra", reject: true }] });
+  assert.equal(signs[1].reject, true);
+  assert.equal(signs[0].reject, undefined);
+});

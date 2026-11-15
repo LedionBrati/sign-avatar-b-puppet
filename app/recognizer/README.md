@@ -16,7 +16,7 @@ cd app/recognizer
 uv sync                                  # ai-edge-litert + numpy (Python 3.13, Windows wheels OK)
 uv run python fetch_models.py            # ~52 MB into models/ (gitignored); reads only 2 members of the 192 MB zip via HTTP Range
 uv run python server.py                  # http://127.0.0.1:8788, loads + warms both models (~2 s)
-uv run pytest -q                         # 20 tests
+uv run pytest -q                         # 25 tests
 ```
 
 `RECOGNIZER_PORT` / `RECOGNIZER_HOST` (default `127.0.0.1`), `RECOGNIZER_MODELS` (models folder). `fetch_models.py --from DIR` copies files you already have (`gislr.tflite`/`islr.tflite`, `map.json`, `fs.tflite`, `fs_args.json`).
@@ -32,7 +32,14 @@ Everything at once from the repo root: `node app/start.mjs` (this service + the 
   {"mode":"sign","options":[{"label":"thankyou","text":"thank you","confidence":0.83}, ...5],"frames":48,"timings":{"inference_ms":95.1,"total_ms":97.4}}
   {"mode":"spell","options":[{"label":"#MARIA","text":"MARIA","confidence":0.71}],"text":"MARIA","frames":90,"timings":{...}}
   ```
-  `text` for `options` uses the same label mapping as `labelText` in `app/core/src/compose.ts`. For `spell`, `text` is `""` when the model gives no reading (its built-in low-confidence/too-short fallback phrase `2 a-e -aroe` is mapped to empty) and `options` is then `[]`.
+  `text` for `options` maps GISLR labels that are not plain words to adult-conversation text (`potty` -> "bathroom",
+  `callonphone` -> "call", `minemy` -> "my", `weus` -> "we", `hesheit` -> "he", `yourself` -> "you", `haveto` -> "have to",
+  `thankyou` -> "thank you", `glasswindow` -> "window", ...); labels are unchanged.
+  Sign mode also returns `motion` (mean frame-to-frame displacement of wrists + fingertips, in shoulder widths; real
+  signs ~0.07+, a held pose with tracking jitter ~0.015-0.03) and `reject: true` when `motion < MOTION_MIN` (0.025) or
+  the best confidence is below `REJECT_CONF` (0.2): probably no sign / a transition. Options are still returned.
+  GISLR confidences for 39 toddler-vocabulary labels (animal, zebra, puppy, balloon, ...; `KID_LABELS`) are scaled by
+  `KID_PRIOR` (0.35; `KID_PRIOR=1.0` disables) before ranking and merging. For `spell`, `text` is `""` when the model gives no reading (its built-in low-confidence/too-short fallback phrase `2 a-e -aroe` is mapped to empty) and `options` is then `[]`.
 - Errors: `{error: {code, message}}` with `bad_frames`, `bad_body_size`, `too_many_frames` (413), `bad_mode`, `not_found`, `internal`.
 
 **Privacy:** landmark bodies contain face points (biometric). The service never logs or stores them; the access log has method, path and status only.

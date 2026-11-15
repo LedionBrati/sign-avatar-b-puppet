@@ -22,22 +22,45 @@ OFFSETS = {"face": 0, "left_hand": 468, "pose": 489, "right_hand": 522}
 COUNTS = {"face": 468, "left_hand": 21, "pose": 33, "right_hand": 21}
 MODELS_DIR = Path(os.environ.get("RECOGNIZER_MODELS") or Path(__file__).resolve().parent / "models")
 
-# Same as LABEL_TEXT in app/core/src/compose.ts (GISLR labels that are not plain English words).
+# GISLR labels that are not plain English words -> the text a client shows / speaks (labels stay unchanged).
+# Mostly the same as LABEL_TEXT in app/core/src/compose.ts; here tuned for adult conversation (potty -> bathroom,
+# callonphone -> call, hesheit -> he).
 LABEL_TEXT = {
     "thankyou": "thank you",
-    "callonphone": "call on the phone",
+    "callonphone": "call",
     "minemy": "my",
-    "hesheit": "they",
+    "hesheit": "he",
     "weus": "we",
     "haveto": "have to",
     "glasswindow": "window",
     "frenchfries": "french fries",
     "icecream": "ice cream",
+    "potty": "bathroom",
     "owie": "hurt",
     "shhh": "quiet",
     "TV": "TV",
     "yourself": "you",
 }
+
+# GISLR is a toddler-vocabulary model (PopSign): these childhood words are unlikely in adult conversation, and the
+# model is forced to pick one of its 250 labels even for transitions, so their confidence is scaled by KID_PRIOR
+# before ranking and merging. KID_PRIOR=1.0 (env) disables it.
+KID_LABELS = frozenset("""
+alligator animal balloon bee bird carrot cat chocolate clown cow cowboy donkey doll duck elephant fireman frenchfries
+frog giraffe goose gum hen horse kitty lion mitten owl owie penny pig puppy puzzle snack tiger vacuum wolf zebra
+zipper underwear
+""".split())
+KID_PRIOR = float(os.environ.get("KID_PRIOR", "0.35"))
+
+# "No sign" signal: mean per-frame displacement of the wrists + fingertips (in shoulder widths). Below MOTION_MIN the
+# hands barely moved (rest, a held pose, tracking jitter); a best merged confidence below REJECT_CONF means neither
+# recognizer really knows the segment. Either sets reject: true (options are kept so clients can still show chips).
+# Calibration: 40 random WLASL clips (25 fps, rest frames included) 0.067-0.16+ (min-median); a held pose with
+# 0.002 / 0.004 landmark jitter ~0.015 / ~0.03. So 0.025 = clearly below any real sign.
+MOTION_POINTS = np.array([h + i for h in (468, 522) for i in (0, 4, 8, 12, 16, 20)], dtype=np.int64)
+SHOULDERS = (489 + 11, 489 + 12)
+MOTION_MIN = float(os.environ.get("MOTION_MIN", "0.025"))
+REJECT_CONF = float(os.environ.get("REJECT_CONF", "0.2"))
 
 # The fingerspelling tflite returns this phrase (as one-hot rows) when its own confidence head is low or the
 # clip is very short: a Kaggle-metric trick (cfg_2.dummy_phrase_ids). For a user it means "no reading".
@@ -82,6 +105,42 @@ def spell_columns(selected_columns: list[str]) -> tuple[np.ndarray, np.ndarray]:
         pts.append(OFFSETS[part] + i)
         coords.append("xyz".index(axis))
     return np.array(pts, dtype=np.int64), np.array(coords, dtype=np.int64)
+
+
+def apply_prior(p: np.ndarray, index_to_label: dict[int, str], prior: float | None = None) -> np.ndarray:
+    """GISLR probabilities with the kid-vocabulary labels scaled by prior (not renormalised: a down-weighted label
+    should not push the others up)."""
+    w = KID_PRIOR if prior is None else prior
+    if w == 1.0:
+        return p
+    out = p.copy()
+    for i, label in index_to_label.items():
+        if label in KID_LABELS and i < len(out):
+            out[i] *= w
+    return out
+
+
+def motion_energy(x: np.ndarray) -> float:
+    """Mean frame-to-frame displacement of the wrists + fingertips (both hands, x/y), in shoulder widths. NaN-safe:
+    only point pairs tracked in both frames count; no such pair (or no hands) -> 0.0."""
+    if x.ndim != 3 or x.shape[0] < 2:
+        return 0.0
+    pts = x[:, MOTION_POINTS, :2].astype(np.float64)
+    d = np.linalg.norm(np.diff(pts, axis=0), axis=-1)  # [frames-1, points], NaN where either frame misses the point
+    d = d[np.isfinite(d)]
+    if not d.size:
+        return 0.0
+    sw = np.linalg.norm(x[:, SHOULDERS[0], :2].astype(np.float64) - x[:, SHOULDERS[1], :2], axis=-1)
+    sw = sw[np.isfinite(sw) & (sw > 1e-3)]
+    width = float(np.median(sw)) if sw.size else 0.25  # no shoulders tracked: a typical webcam framing
+    return float(np.mean(d) / width)
+
+
+def should_reject(options: list[dict], motion: float, motion_min: float | None = None, min_conf: float | None = None) -> bool:
+    m = MOTION_MIN if motion_min is None else motion_min
+    c = REJECT_CONF if min_conf is None else min_conf
+    best = max((o["confidence"] for o in options), default=0.0)
+    return motion < m or best < c
 
 
 def softmax(logits: np.ndarray) -> np.ndarray:
@@ -140,6 +199,7 @@ class Recognizer:
             p = softmax(logits)
             if not np.all(np.isfinite(p)):
                 p = np.full_like(p, 1 / len(p))
+            p = apply_prior(p, self.index_to_label)
             order = np.argsort(-p)[:top]
             options = [{"label": self.index_to_label[int(i)], "text": label_text(self.index_to_label[int(i)]),
                         "confidence": round(float(p[i]), 4)} for i in order]
@@ -148,7 +208,10 @@ class Recognizer:
 
                 options = merge(options, self.templates.match(x, top), top)
                 inference_ms = (time.perf_counter() - t0) * 1000
-            result = {"mode": "sign", "options": options}
+            motion = motion_energy(x)
+            result = {"mode": "sign", "options": options, "motion": round(motion, 4)}
+            if should_reject(options, motion):
+                result["reject"] = True
         elif mode == "spell":
             if self._spell is None:
                 raise RecognizeError(503, "spell_unavailable", "fingerspelling model not loaded")

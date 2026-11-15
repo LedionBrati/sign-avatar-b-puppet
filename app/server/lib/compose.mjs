@@ -2,7 +2,8 @@
 // natural spoken English sentence. One small structured-output call per new sign; the client speaks the latest answer
 // once the signer's hands rest.
 //
-//   POST /api/compose  {signs: [{text, options?: [{text, confidence}]}], context?: {said?: string[], heard?: string}}
+//   POST /api/compose  {signs: [{text, options?: [{text, confidence}], reject?}],
+//                       context?: {said?: string[], heard?: string, history?: [{who: "them" | "me", text}]}}
 //                      ->  {makes_sense, sentence, picked, latency_ms, model}     (picked[i] = -1: sign i was dropped)
 //
 // Only the recognized words (and the optional conversation context) are sent to OpenAI (store: false), never landmarks
@@ -16,6 +17,8 @@ export const DEFAULT_COMPOSE_MODEL = "gpt-5.4-mini";
 const MAX_SIGNS = 8;
 const MAX_OPTIONS = 5;
 const MAX_SAID = 2;
+const MAX_HISTORY = 12;
+const MAX_TURN = 300;
 const CACHE_SIZE = 300;
 
 export const INSTRUCTIONS = `You are the voice of a deaf person who is signing ASL to a hearing person. A sign recognizer reads their signs
@@ -39,14 +42,21 @@ The recognizer only knows the vocabulary in the developer message and is often w
    Never output a word list, a bare noun list ("Yes, milk."), a gloss, or a fragment that stops mid-thought ("I want the.", "Me go store.").
    If the signs do not form a full message, give the best short natural sentence the confident signs support.
    A single sign becomes a natural short phrase ("Hello!", "Thank you!", "Yes.", "Water, please.").
-   One sentence, at most about 15 words.
+   Output one natural sentence (or two very short ones), at most about 15 words.
 3. makes_sense: true when the picked signs carry a clear message a listener would understand; false if it looks
    unfinished (ends on a word that needs more, like WANT or GO) or had to be guessed.
 
-Context, when given, is the conversation so far: what the hearing person just said and what the signer said before.
-Use it to choose between guesses and to turn short answers into a full natural reply to what was asked
-(heard "Do you want juice?", signs YES -> "Yes, please."; signs YES WATER -> "Yes, I'd like some water."). Never voice
-the context itself again.
+Context, when given, is the conversation so far: a short transcript ("Them:" = the hearing person, "Me (signing):" =
+what this signer already said) and/or what the hearing person just said. Continue that conversation naturally:
+- The signs answer or follow the last thing "Them" said: make the sentence fit that question (heard "How are you?",
+  signs GOOD -> "I'm good, thanks!"; heard "What do you want to drink?", signs COFFEE -> "Coffee, please.";
+  heard "Do you want juice?", signs YES -> "Yes, please."; signs YES WATER -> "Yes, I'd like some water.").
+- When guesses are close, prefer the word that fits the conversation.
+- Keep pronouns and tense consistent with the conversation; do not repeat what "Me" already said, and never voice
+  the context itself again.
+- The conversation only helps interpret the signs: never add facts, names or details that were not signed.
+A sign marked "(recognizer: probably no sign)" is likely a transition or junk: drop it (-1) unless one of its guesses
+is confident and clearly fits. Also drop signs that fit neither the other signs nor the conversation, unless confident.
 
 Examples (gloss -> sentence):
 ME HUNGRY -> I'm hungry.
@@ -88,7 +98,8 @@ const SCHEMA = {
 const bad = (message) => Object.assign(new Error(message), { status: 400, code: "bad_request" });
 const clean = (s, n) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, n) : "");
 
-/** Validate the request body into [{text, options:[{text, confidence}]}] (1-8 signs, up to 5 options each). Throws {status, code, message}. */
+/** Validate the request body into [{text, options:[{text, confidence}], reject?}] (1-8 signs, up to 5 options each).
+ *  reject: the recognizer flagged that segment as probably no sign (RecognizeResponse.reject). Throws {status, code, message}. */
 export function parseSigns(body) {
   if (!body || typeof body !== "object" || !Array.isArray(body.signs)) throw bad("body must be {signs: [{text, options?}]}");
   if (!body.signs.length) throw bad("signs is empty");
@@ -100,31 +111,48 @@ export function parseSigns(body) {
       .filter((o) => typeof o?.text === "string" && o.text.trim())
       .slice(0, MAX_OPTIONS)
       .map((o) => ({ text: clean(o.text, 40), confidence: Number.isFinite(o.confidence) ? Math.round(Math.min(1, Math.max(0, o.confidence)) * 100) / 100 : null }));
-    return { text, options: options.length ? options : [{ text, confidence: null }] };
+    return { text, options: options.length ? options : [{ text, confidence: null }], ...(s.reject === true ? { reject: true } : {}) };
   });
 }
 
-/** Optional conversation context: {said: last <= 2 sentences the signer's screen spoke, heard: last thing the hearing person said}. */
+/** Optional conversation context: {said: last <= 2 sentences the signer's screen spoke, heard: last thing the hearing
+ *  person said, history: the conversation so far, oldest first, [{who: "them" | "me", text}] (the last 12 turns are
+ *  kept, each text cut to 300 chars, empty turns dropped)}. */
 export function parseContext(body) {
   const c = body?.context;
   if (c == null) return {};
-  if (typeof c !== "object" || Array.isArray(c)) throw bad("context must be {said?: string[], heard?: string}");
+  if (typeof c !== "object" || Array.isArray(c)) throw bad("context must be {said?: string[], heard?: string, history?: [{who, text}]}");
   const said = (Array.isArray(c.said) ? c.said : []).map((x) => clean(x, 200)).filter(Boolean).slice(-MAX_SAID);
   const heard = clean(c.heard, 300);
-  return { ...(said.length ? { said } : {}), ...(heard ? { heard } : {}) };
+  let history = [];
+  if (c.history != null) {
+    const turn = 'every context.history turn must be {who: "them" | "me", text: string}';
+    if (!Array.isArray(c.history)) throw bad(turn);
+    for (const t of c.history) if (!t || typeof t !== "object" || (t.who !== "them" && t.who !== "me") || typeof t.text !== "string") throw bad(turn);
+    history = c.history.map((t) => ({ who: t.who, text: clean(t.text, MAX_TURN) })).filter((t) => t.text).slice(-MAX_HISTORY);
+  }
+  return { ...(said.length ? { said } : {}), ...(heard ? { heard } : {}), ...(history.length ? { history } : {}) };
 }
 
 /** The per-request user message (everything that changes; the fixed prefix is instructions + VOCAB_MESSAGE). */
 export function composeInput(signs, context = {}) {
   const lines = [];
-  if (context.heard || context.said?.length) {
+  const history = context.history ?? [];
+  // said / heard usually repeat the transcript's last turns (older clients send only those): show each line once.
+  const inHistory = (who, text) => history.some((t) => t.who === who && t.text.toLowerCase() === text.toLowerCase());
+  const said = (context.said ?? []).filter((s) => !inHistory("me", s));
+  const heard = context.heard && !inHistory("them", context.heard) ? context.heard : "";
+  if (history.length || heard || said.length) {
     lines.push("Conversation so far (context only, do not voice it again):");
-    if (context.heard) lines.push(`Hearing person just said: "${context.heard}"`);
-    for (const s of context.said ?? []) lines.push(`Signer said earlier: "${s}"`);
+    for (const t of history) lines.push(`${t.who === "them" ? "Them" : "Me (signing)"}: "${t.text}"`);
+    for (const s of said) lines.push(`Signer said earlier: "${s}"`);
+    if (heard) lines.push(`Hearing person just said: "${heard}"`);
+    const last = heard || history.findLast((t) => t.who === "them")?.text;
+    if (last) lines.push(`The signs below are the signer's reply now; the last thing they heard: "${last}"`);
     lines.push("");
   }
   lines.push(`Signs so far (${signs.length}; picked needs exactly ${signs.length} entries, one per position, in order):`);
-  signs.forEach((s, i) => lines.push(`${i + 1}. ${s.options.map((x, j) => `[${j}] ${x.text}${x.confidence == null ? "" : ` ${x.confidence}`}`).join("  ")}`));
+  signs.forEach((s, i) => lines.push(`${i + 1}. ${s.options.map((x, j) => `[${j}] ${x.text}${x.confidence == null ? "" : ` ${x.confidence}`}`).join("  ")}${s.reject ? "  (recognizer: probably no sign)" : ""}`));
   return lines.join("\n");
 }
 
@@ -150,7 +178,7 @@ export function createComposer(o) {
       return { ...hit, cached: true, latency_ms: 0 };
     }
     const p = {
-      model, instructions: INSTRUCTIONS, store: false, max_output_tokens: 300, prompt_cache_key: "signlayer-compose-v2",
+      model, instructions: INSTRUCTIONS, store: false, max_output_tokens: 300, prompt_cache_key: "signlayer-compose-v3",
       input: [
         { role: "developer", content: VOCAB_MESSAGE },
         { role: "user", content: text },
