@@ -1,0 +1,61 @@
+// SIGNLAYER app contract: the local API (app/server) and every client (web, extension, mobile).
+// Change this file first, then the server and clients.
+
+/** One clip in the signing playlist. Clips start and end in the same neutral pose, so they play back to back. */
+export interface PlaylistItem {
+  motion_id: string; // catalog ID, e.g. "THANK_YOU"
+  gloss: string; // display gloss, e.g. "THANK YOU"
+  url: string; // clip URL (absolute, or relative to the API base)
+  duration_s: number;
+  /** Index into `words` of the spoken word this sign translates, -1 if none (for "Signing X for 'word'"). */
+  word_index: number;
+}
+
+/** POST /api/sign request. */
+export interface SignRequest {
+  text: string;
+  /** Default true. false = rules only (sub-millisecond, no local model). */
+  semantic?: boolean;
+}
+
+/** POST /api/sign response. */
+export interface SignResponse {
+  text: string;
+  /** The input split into display words, in spoken order (captions). */
+  words: string[];
+  /** Signs in signing order (ASL order can differ from `words`). Empty if nothing could be signed. */
+  playlist: PlaylistItem[];
+  /** Words we could not sign (shown in captions, never invented). */
+  unsupported: string[];
+  /** Names the translator wanted to fingerspell; skipped until A-Z letter clips exist. */
+  fingerspell: string[];
+  /** Approximate facial-grammar markers over playlist indices (inclusive). */
+  markers: { type: string; from: number; to: number }[];
+  /** The full translator plan (shared/contracts.mjs format) for debugging. */
+  plan: unknown;
+  timings: { translate_ms: number; total_ms: number };
+}
+
+/** GET /api/vocab response: the signs that have clips right now. */
+export interface VocabResponse {
+  signs: { motion_id: string; gloss: string; duration_s: number }[];
+}
+
+export interface HealthResponse {
+  ok: true;
+  signs: number;
+  semantic: "ready" | "loading" | "off";
+}
+
+export interface ApiError {
+  error: { code: string; message: string };
+}
+
+export const ROUTES = {
+  health: "/api/health", // GET -> HealthResponse
+  vocab: "/api/vocab", // GET -> VocabResponse
+  sign: "/api/sign", // POST SignRequest -> SignResponse
+  clips: "/clips/", // GET /clips/<file>.mp4 (static)
+} as const;
+
+export const DEFAULT_PORT = 8787;

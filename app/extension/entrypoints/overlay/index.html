@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="color-scheme" content="light" />
+  <title>SIGNLAYER signer</title>
+</head>
+<body data-size="m">
+  <main class="card" id="card" role="region" aria-label="SIGNLAYER signer">
+    <div class="hd" id="grip" title="Drag to any corner">
+      <span id="brand"></span>
+      <span class="sp"></span>
+      <span class="live off" id="live"><i></i>ASL</span>
+      <span class="tools">
+        <span class="sizes" role="group" aria-label="Signer size">
+          <button data-size="s" aria-label="Small signer">S</button><button data-size="m" aria-label="Medium signer">M</button><button data-size="l" aria-label="Large signer">L</button>
+        </span>
+        <button class="ic" id="ccBtn" aria-label="Captions" aria-pressed="true">CC</button>
+        <button class="ic" id="closeBtn" aria-label="Close the signer"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </span>
+    </div>
+    <div class="vid" id="stage">
+      <video id="v0" muted playsinline preload="auto"></video>
+      <video id="v1" muted playsinline preload="auto"></video>
+      <span class="who" id="chip"><i></i><b id="chipState">Listening</b><em id="chipSub"></em></span>
+      <span class="idle" id="idle"></span>
+    </div>
+    <p class="cc" id="cc" aria-live="polite"></p>
+  </main>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

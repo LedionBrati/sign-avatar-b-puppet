@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>City briefing (test page)</title>
+<style>
+  body { margin: 0; font: 16px/1.55 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #1d2130; background: #f6f7f9; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 28px; background: #fff; border-bottom: 1px solid #e3e4e8; }
+  header b { font-size: 18px; } header span { color: #6b7090; font-size: 14px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; max-width: 1180px; margin: 22px auto; padding: 0 28px; }
+  .player { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden;
+    background: radial-gradient(60% 70% at 30% 35%, #4a5f8f 0%, #1c2236 60%, #0d1020 100%); }
+  .player .lt { position: absolute; left: 18px; top: 16px; color: #fff; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; background: #e5484d; padding: 3px 8px; border-radius: 4px; }
+  .player .speaker { position: absolute; left: 50%; top: 46%; translate: -50% -50%; width: 140px; height: 180px; border-radius: 70px 70px 20px 20px; background: linear-gradient(180deg, #8e9bbd, #3d4766); opacity: .55; }
+  /* YouTube-like caption markup: the extension reads .ytp-caption-segment */
+  .ytp-caption-window-container { position: absolute; left: 0; right: 0; bottom: 54px; text-align: center; }
+  .ytp-caption-segment { display: inline; padding: 2px 8px; background: rgb(8 8 8 / .75); color: #fff; font-size: 22px; line-height: 1.5; }
+  .ctl { position: absolute; left: 0; right: 0; bottom: 0; height: 44px; background: linear-gradient(180deg, transparent, rgb(0 0 0 / .6)); }
+  .ctl i { position: absolute; left: 14px; right: 14px; bottom: 14px; height: 4px; border-radius: 2px; background: rgb(255 255 255 / .3); }
+  .ctl i::before { content: ""; position: absolute; inset: 0 62% 0 0; background: #f03; border-radius: 2px; }
+  h1 { font-size: 22px; margin: 16px 0 4px; } .meta { color: #6b7090; font-size: 14px; }
+  article p { max-width: 64ch; }
+  aside .item { display: grid; grid-template-columns: 120px 1fr; gap: 10px; margin-bottom: 14px; font-size: 14px; }
+  aside .th { aspect-ratio: 16 / 9; border-radius: 8px; background: linear-gradient(135deg, #c5cdec, #2b4be0); }
+  aside .item:nth-child(2n) .th { background: linear-gradient(135deg, #f0c27b, #4b1248); }
+  #sel { background: #fff3b0; }
+</style>
+</head>
+<body>
+<header><b>CityTube</b><span>Fictional test page for the SIGNLAYER extension</span></header>
+<main>
+  <section>
+    <div class="player" id="player">
+      <span class="lt">Live</span>
+      <div class="speaker"></div>
+      <div class="ytp-caption-window-container"><span class="captions-text"><span class="ytp-caption-segment" id="cap">Hello, my name is Maria.</span></span></div>
+      <div class="ctl"><i></i></div>
+    </div>
+    <h1>Morning briefing: where to find help this week</h1>
+    <p class="meta">City Hall · 12,408 watching</p>
+    <article>
+      <p id="sel">Hello, my name is Maria. Thank you for joining. See you later at the clinic.</p>
+      <p>If you feel unwell or something hurts, ask a volunteer where the nearest first-aid tent is. Volunteers wear blue vests and can sign with you through the SIGNLAYER app.</p>
+    </article>
+  </section>
+  <aside>
+    <div class="item"><span class="th"></span><span>Road works on Main Street, what changes</span></div>
+    <div class="item"><span class="th"></span><span>Library opening hours this weekend</span></div>
+    <div class="item"><span class="th"></span><span>Free flu shots at the community centre</span></div>
+  </aside>
+</main>
+</body>
+</html>

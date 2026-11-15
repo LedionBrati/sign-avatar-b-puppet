@@ -11,10 +11,9 @@
 //        node pipeline/sign-clips.mjs say --clips out/realtime/clips --out sentence.mp4 THANK_YOU SEE YOU LATER
 //   joins the clips with stream copy (no re-encode) and prints how long it took.
 
-import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { ffmpeg, joinClips, toId } from "./lib/clips.mjs";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const opt = {};
@@ -23,8 +22,6 @@ for (let i = 0; i < rest.length; i++) {
   if (rest[i].startsWith("--")) opt[rest[i].slice(2)] = rest[++i];
   else positional.push(rest[i]);
 }
-const ffmpeg = (args) => execFileSync("ffmpeg", ["-v", "error", "-y", ...args], { stdio: ["ignore", "ignore", "inherit"] });
-const toId = (gloss) => gloss.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
 
 // Every clip gets the same encoding so `say` can join them without re-encoding.
 const ENCODE = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "24", "-g", "12", "-movflags", "+faststart"];
@@ -52,22 +49,9 @@ if (cmd === "cut") {
 } else if (cmd === "say") {
   const { clips, out } = opt;
   if (!clips || !out || positional.length === 0) throw new Error("say needs --clips --out and glosses");
-  const t0 = performance.now();
-  const manifest = JSON.parse(readFileSync(join(clips, "manifest.json"), "utf8"));
-  const ids = positional.map(toId);
-  const missing = ids.filter((id) => !manifest[id]);
-  if (missing.length) {
-    console.log(JSON.stringify({ ok: false, unsupported: missing }));
-    process.exit(1);
-  }
-  const dir = mkdtempSync(join(tmpdir(), "say-"));
-  const list = join(dir, "list.txt");
-  writeFileSync(list, ids.map((id) => `file '${resolve(clips, manifest[id].file).replace(/\\/g, "/")}'`).join("\n"));
-  ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", out]);
-  rmSync(dir, { recursive: true, force: true });
-  const ms = Math.round(performance.now() - t0);
-  const seconds = ids.reduce((sum, id) => sum + manifest[id].seconds, 0);
-  console.log(JSON.stringify({ ok: true, out, signs: ids, video_seconds: Number(seconds.toFixed(2)), assemble_ms: ms }));
+  const result = joinClips({ clipsDir: clips, ids: positional.map(toId), out });
+  console.log(JSON.stringify(result));
+  if (!result.ok) process.exit(1);
 } else {
   console.error("usage: sign-clips.mjs cut --video V --segments S --out-dir D | say --clips D --out O GLOSS...");
   process.exit(2);
