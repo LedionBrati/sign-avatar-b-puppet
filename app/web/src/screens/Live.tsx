@@ -19,6 +19,7 @@ const WORD_MS = 210; // typed text is "heard" at about speaking pace under the w
 const MIN_LISTEN_MS = 1400;
 
 export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome(): void; onRestart(s: LiveStart): void }) {
+  const engineeringPreview = import.meta.env.VITE_ENGINEERING_PREVIEW === "1";
   const client = useMemo(() => createSignClient(apiBase()), []);
   const player = useRef<GaplessPlayer | null>(null);
   const [phrases, setPhrases] = useState<Phrase[]>([]);
@@ -179,6 +180,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
     : latestError ? "Connection lost"
     : blocked ? (safety.status === "needs_confirmation" ? "Meaning unclear" : "Caption only")
     : done ? "1 speaker · Done" : "1 speaker";
+  const islandLabel = engineeringPreview && revealed && !latestError && !blocked ? (done ? "Test playback done" : "Test playback") : island;
 
   function stop() {
     if (!phrases.length) { stopMic(); onHome(); return; }
@@ -196,7 +198,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
       <div className="g live" />
       <div className="bar live-bar">
         <button className="homebtn" aria-label="Home" onClick={onHome}><Mark /></button>
-        <span key={bump} className={`island${bump ? " bump" : ""}${done || (!micOn && !revealed && start.kind === "mic") ? " idle" : ""}`} aria-live="polite"><i />{island}</span>
+        <span key={bump} className={`island${bump ? " bump" : ""}${done || (!micOn && !revealed && start.kind === "mic") ? " idle" : ""}`} aria-live="polite"><i />{islandLabel}</span>
         <button className={`pill sm stopbtn${done ? " hide" : ""}`} onClick={stop}>Stop</button>
       </div>
 
@@ -208,8 +210,8 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
       ) : null}
 
       <div className="lanes">
-        <Lane index={0} label="Speaker 1" mode={revealed ? (done ? "rest" : "lit") : "unseen"} arrive={arrive} speaking={view.now >= 0}
-          stage={<SignerStage onReady={onPlayer} on={revealed} label={blocked || latestError ? "Signing paused; caption shown" : "Speaker 1, signed"}
+        <Lane index={0} label={engineeringPreview ? "Test cards" : "Speaker 1"} mode={revealed ? (done ? "rest" : "lit") : "unseen"} arrive={arrive} speaking={view.now >= 0} activityLabel={engineeringPreview ? "Synthetic, not ASL" : undefined}
+          stage={<SignerStage onReady={onPlayer} on={revealed} label={engineeringPreview ? "Synthetic test cards, not sign language" : blocked || latestError ? "Signing paused; caption shown" : "Speaker 1, signed"}
             safety={safety} error={latestError ? { caption: phrases.at(-1)?.text ?? "", message: latestError } : undefined} />}
           caption={<Captions words={view.words} now={view.now} lines={2} />} />
         <div className={`listen${revealed ? " off" : ""}`} aria-live="polite">
@@ -227,6 +229,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
           <>
             {latestError ? <p className="sumline"><span><b>Signing unavailable</b></span><span>Server connection failed</span></p>
               : blocked ? <p className="sumline"><span><b>{safety.status === "needs_confirmation" ? "Meaning needs confirmation" : "Caption only"}</b></span><span>No signing for this message</span></p>
+              : engineeringPreview ? <p className="sumline"><span><b>Test cards played</b></span><span>{total} synthetic clip{total === 1 ? "" : "s"}</span><span>{Math.round(secs)} s</span></p>
               : <p className="sumline"><span><b>Signed</b></span><span>1 voice</span><span>{total} sign{total === 1 ? "" : "s"}</span><span>{Math.round(secs)} s</span></p>}
             <Hints u={latestUnsupported} f={latestFingerspell} />
             <div className="acts">
@@ -240,7 +243,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
           <>
             <p className="nowline">
               {view.nowGloss ? (
-                <>Signing <b>{view.nowGloss}</b>{view.nowWord ? <> <span className="for">for “{view.nowWord}”</span></> : null}</>
+                <>{engineeringPreview ? "Playing test card" : "Signing"} <b>{view.nowGloss}</b>{view.nowWord ? <> <span className="for">for “{view.nowWord}”</span></> : null}</>
               ) : micOn ? "Listening…" : pending ? "Translating…" : ""}
             </p>
             {revealed ? <Hints u={latestUnsupported} f={latestFingerspell} /> : null}
@@ -248,7 +251,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         )}
         {typing ? <TypeBox onSubmit={submit} autoFocus placeholder="Type to sign" /> : null}
         <div className="footrow">
-          <p className="credit">{copy.credit}</p>
+          <p className="credit">{engineeringPreview ? "Synthetic test clips · NOT ASL or signing" : copy.credit}</p>
           {!typing ? <button className="textlink" onClick={() => setTyping(true)}>Type</button> : null}
         </div>
       </div>

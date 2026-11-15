@@ -18,7 +18,7 @@ export function Home({ canListen, onListen, onType, onSettings, onSign }: { canL
       </div>
       <div className="headline">
         <h1>{engineeringPreview ? <>Engineering<br />preview.</> : <>Hear anything.<br />See it signed.</>}</h1>
-        <p>{engineeringPreview ? "Web interface only. Signing and sign-to-voice need an online API and authorized clips." : copy.sub}</p>
+        <p>{engineeringPreview ? "Synthetic test cards only — not sign language. The camera recognizer is offline." : copy.sub}</p>
       </div>
       <div className="orbwrap">
         <div className="orbbox" aria-hidden="true" onClick={() => (canListen ? onListen() : setTyping(true))}>
@@ -36,7 +36,7 @@ export function Home({ canListen, onListen, onType, onSettings, onSign }: { canL
         )}
         <a className="pill sm signentry" id="sign" href="#/sign" onClick={(e) => { e.preventDefault(); onSign(); }}><HandIcon />Sign to speak</a>
       </div>
-      <p className="any">{engineeringPreview ? "Use Settings to connect the sign server when it is available." : copy.any}</p>
+      <p className="any">{engineeringPreview ? "Authorized clips and signer review are needed for a live demo." : copy.any}</p>
       {!engineeringPreview && <div className="extcard">
         <span className="exticon"><ExtIcon /></span>
         <span className="exttxt"><b>{copy.extTitle}</b><span>{copy.extSub}</span></span>
