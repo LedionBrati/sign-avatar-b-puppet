@@ -12,6 +12,7 @@
     "shots": "node scripts/shots.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
