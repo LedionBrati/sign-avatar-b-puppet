@@ -12,6 +12,7 @@ const root = resolve(here, "..");
 const ext = resolve(root, ".output/chrome-mv3");
 const chrome = process.env.CHROME ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const api = process.env.SIGNLAYER_API ?? "http://localhost:8787";
+const shots = process.env.QA_SHOTS_DIR ?? resolve(root, "docs");
 const headless = process.env.HEADFUL ? false : "new";
 const PORT = 8799;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -81,15 +82,12 @@ try {
   };
 
   // 1. Selected text, exactly what the context menu does.
-  await sw.evaluate((id) => globalThis.__slSign(id, "Hello, my name is Maria. Thank you for joining. See you later."), tabId);
+  await sw.evaluate((id) => globalThis.__slSign(id, "Hello, thank you."), tabId);
   const f = await overlayFrame();
   check(!!f, "overlay iframe mounted");
   let c = await waitChip(f, /Signing/);
   check(/Signing/.test(c), `chip while signing: "${c}"`);
-  // wait for the 3rd clip (NAME) so the captions show progress
-  const t0 = Date.now();
-  while (Date.now() - t0 < 8000 && !/THANK/.test(await chip(f))) await sleep(100);
-  await sleep(500);
+  await f.waitForFunction(() => [...document.querySelectorAll("video")].some((v) => v.classList.contains("on") && !v.paused && v.currentTime > 0), { timeout: 5000 });
   const state = await f.evaluate(() => ({
     words: [...document.querySelectorAll(".cc .w")].map((w) => `${w.textContent}:${w.className.replace("w ", "")}`),
     playing: [...document.querySelectorAll("video")].map((v) => ({ on: v.classList.contains("on"), paused: v.paused, t: +v.currentTime.toFixed(2), src: v.src.split("/").pop() })),
@@ -97,19 +95,33 @@ try {
   console.log("captions", state.words.join(" "));
   console.log("videos", JSON.stringify(state.playing));
   check(state.playing.some((v) => v.on && !v.paused && v.t > 0), "a clip is playing");
-  await mkdir(resolve(root, "docs"), { recursive: true });
-  await page.screenshot({ path: resolve(root, "docs/overlay-m.png") });
-  console.log("saved docs/overlay-m.png");
+  await mkdir(shots, { recursive: true });
+  await page.screenshot({ path: resolve(shots, "overlay-m.png") });
+  console.log(`saved ${resolve(shots, "overlay-m.png")}`);
+
+  // A blocked phrase clears the playing queue and keeps its full caption visible.
+  await sw.evaluate((id) => globalThis.__slSign(id, "Turn right at the bank."), tabId);
+  c = await waitChip(f, /Meaning unclear/);
+  check(/Meaning unclear/.test(c), `ambiguous phrase blocked: "${c}"`);
+  const blocked = await f.evaluate(() => ({ caption: document.getElementById("idle")?.textContent,
+    videos: [...document.querySelectorAll("video")].map((v) => ({ src: v.getAttribute("src"), paused: v.paused })) }));
+  check(blocked.caption?.includes("Turn right at the bank.") && blocked.videos.every((v) => !v.src && v.paused),
+    `blocked caption and empty queue: ${JSON.stringify(blocked)}`);
+  await page.screenshot({ path: resolve(shots, "overlay-blocked.png") });
+
+  await sw.evaluate((id) => globalThis.__slSign(id, "Yes, thank you."), tabId);
+  c = await waitChip(f, /Signing/);
+  check(/Signing/.test(c), `playback resumes: "${c}"`);
 
   // 2. Page captions (YouTube markup): switch the source, change the caption line, expect a new sign request.
   await sw.evaluate(() => chrome.storage.local.set({ source: "captions", size: "l" }));
   await waitChip(f, /Listening/, 20000);
-  await page.evaluate(() => (document.getElementById("cap").textContent = "Where does it hurt? Thank you."));
-  c = await waitChip(f, /WHERE|HURT/, 20000);
-  check(/WHERE|HURT/.test(c), `caption line signed: "${c}"`);
+  await page.evaluate(() => (document.getElementById("cap").textContent = "No, thank you."));
+  c = await waitChip(f, /NO|THANK/, 20000);
+  check(/NO|THANK/.test(c), `caption line signed: "${c}"`);
   await sleep(1200);
-  await page.screenshot({ path: resolve(root, "docs/overlay-l.png") });
-  console.log("saved docs/overlay-l.png");
+  await page.screenshot({ path: resolve(shots, "overlay-l.png") });
+  console.log(`saved ${resolve(shots, "overlay-l.png")}`);
 
   // 3. Drag to the top-left corner (overlay posts drag deltas; content script snaps + persists).
   const frameEl = await f.frameElement();
@@ -122,7 +134,7 @@ try {
   const corner = await sw.evaluate(() => chrome.storage.local.get("corner").then((r) => r.corner));
   const box2 = await frameEl.boundingBox();
   check(corner === "tl", `dragged + snapped to corner "${corner}" at ${Math.round(box2.x)},${Math.round(box2.y)}`);
-  await page.screenshot({ path: resolve(root, "docs/.drag-check.png") });
+  await page.screenshot({ path: resolve(shots, ".drag-check.png") });
 
   // 4. Extension menu + mic side panel render (opened as tabs; headless has no toolbar).
   for (const [name, w, h] of [["popup", 350, 600], ["sidepanel", 360, 640]]) {
@@ -130,7 +142,7 @@ try {
     await p.setViewport({ width: w, height: h });
     await p.goto(`chrome-extension://${extId}/${name}.html`, { waitUntil: "load" });
     await sleep(1200);
-    await p.screenshot({ path: resolve(root, `docs/.${name}.png`) });
+    await p.screenshot({ path: resolve(shots, `.${name}.png`) });
     if (name === "popup") {
       const api = await p.evaluate(() => document.getElementById("pliveText")?.textContent);
       check(api === "Ready", `popup API status: ${api}`);

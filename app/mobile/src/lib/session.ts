@@ -13,6 +13,7 @@ export function appendResponse(s: SignResponse, r: SignResponse): SignResponse {
   const off = s.words.length, poff = s.playlist.length;
   return {
     text: s.text ? `${s.text} ${r.text}` : r.text,
+    safety: r.safety,
     words: [...s.words, ...r.words],
     playlist: [...s.playlist, ...r.playlist.map((p) => ({ ...p, word_index: p.word_index >= 0 ? p.word_index + off : -1 }))],
     unsupported: [...s.unsupported, ...r.unsupported],
