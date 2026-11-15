@@ -5,7 +5,7 @@
 //
 //   npm run build && node scripts/capture-2030.mjs
 //   env: SIGNLAYER_API (default http://localhost:8787), VIDEO (default arj7oStGLkU), DARK=1 (dark YouTube + popup),
-//        OUT=dir (default docs), PREFIX (default "2030-"), ONLY=listening,signing,blocked,hover,sizes,fullscreen,seq,popup
+//        OUT=dir (default docs), PREFIX (default "2030-"), ONLY=listening,signing,blocked,hover,sizes,fullscreen,theater,seq,popup
 //        HEADFUL=1, CHROME=path
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ const video = process.env.VIDEO ?? "arj7oStGLkU";
 const dark = !!process.env.DARK;
 const out = process.env.OUT ?? resolve(root, "docs");
 const prefix = (process.env.PREFIX ?? "2030-") + (dark ? "dark-" : "");
-const only = (process.env.ONLY ?? "listening,signing,blocked,hover,sizes,fullscreen,seq,popup").split(",");
+const only = (process.env.ONLY ?? "listening,signing,blocked,hover,sizes,fullscreen,theater,seq,popup").split(",");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
@@ -99,19 +99,28 @@ try {
     return !!b;
   });
   for (let i = 0; i < 8; i++) { if (await acceptConsent()) { log("consent: accepted"); await sleep(2500); break; } await sleep(700); }
-  const f = await frameOf();
-  if (!f) throw new Error("no overlay");
+  // The page can reload once after consent: always talk to the live signer frame.
+  let live = await frameOf();
+  if (!live) throw new Error("no overlay");
+  const f = new Proxy({}, {
+    get: (_, k) => async (...a) => {
+      if (live.detached) live = await frameOf();
+      return live[k](...a);
+    },
+  });
   await page.waitForSelector("#movie_player video", { timeout: 30000 });
   await playThroughAds();
   await acceptConsent();
   // Through the player API, so YouTube's own state agrees.
   await page.evaluate(() => { const p = document.querySelector("#movie_player"); p.seekTo?.(9, true); p.playVideo?.(); });
-  await page.mouse.move(300, 300);
+  await page.mouse.move(300, 300, { steps: 8 });
   const tabId = await sw.evaluate(async () => (await chrome.tabs.query({ url: "https://www.youtube.com/*" }))[0]?.id);
   const signText = (text) => sw.evaluate((id, t) => globalThis.__slSign(id, t), tabId, text);
 
   if (only.includes("listening")) {
     // Let the transcript drive it for a while: whatever state it is in after ~8 s.
+    await playThroughAds();
+    await page.evaluate(() => { const p = document.querySelector("#movie_player"); p.seekTo?.(9, true); p.playVideo?.(); });
     await sleep(8000);
     log("transcript state", await state(f));
     await shot("transcript", f);
@@ -184,8 +193,10 @@ try {
     await sleep(700);
     await shot("source-menu", f);
     await f.click("#srcBtn");
-    await page.mouse.move(300, 300);
+    await page.mouse.move(300, 300, { steps: 8 });
     await sleep(600);
+    log("after hover", await f.evaluate(() => ({ active: document.activeElement?.id || document.activeElement?.tagName, hover: document.getElementById("card").matches(":hover"),
+      fv: !!document.querySelector(":focus-visible"), barOn: document.getElementById("card").classList.contains("bar-on"), bar: getComputedStyle(document.getElementById("bar")).opacity })));
   }
 
   if (only.includes("sizes")) {
@@ -211,6 +222,18 @@ try {
     await sleep(400);
     await shot("fullscreen", f, { crop: false });
     await page.evaluate(() => document.exitFullscreen?.().catch(() => {}));
+    await sleep(800);
+  }
+
+  if (only.includes("theater")) {
+    await page.evaluate(() => document.querySelector(".ytp-size-button")?.click());
+    await sleep(1500);
+    await page.evaluate(() => scrollTo(0, 0));
+    await signText("Hello, thank you.");
+    await waitState(f, ["signing"]);
+    await sleep(500);
+    await shot("theater", f, { crop: false });
+    await page.evaluate(() => document.querySelector(".ytp-size-button")?.click());
     await sleep(800);
   }
 

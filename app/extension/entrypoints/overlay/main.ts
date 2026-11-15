@@ -164,14 +164,21 @@ const endDrag = () => {
 };
 card.addEventListener("pointerup", endDrag);
 card.addEventListener("pointercancel", endDrag);
-// Touch / pen: a tap shows the controls for a few seconds.
-let barTimer = 0;
-card.addEventListener("pointerup", (e) => {
-  if (e.pointerType === "mouse") return;
-  card.classList.add("bar-on");
-  clearTimeout(barTimer);
-  barTimer = window.setTimeout(() => srcMenu.hidden && card.classList.remove("bar-on"), 4000);
-});
+// Controls wake with the pointer and fold back into the island after a moment of stillness (like a video player),
+// or as soon as the pointer leaves. Touch / pen: a tap wakes them.
+let awakeTimer = 0;
+const bar = $("bar");
+function wake(ms = 2600) {
+  card.classList.add("awake");
+  clearTimeout(awakeTimer);
+  awakeTimer = window.setTimeout(() => {
+    if (srcMenu.hidden && !bar.matches(":hover")) card.classList.remove("awake");
+    else wake(ms);
+  }, ms);
+}
+card.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" && !drag?.on) wake(); });
+card.addEventListener("pointerleave", () => { clearTimeout(awakeTimer); if (srcMenu.hidden) card.classList.remove("awake"); });
+card.addEventListener("pointerup", (e) => { if (e.pointerType !== "mouse") wake(4000); });
 
 // ── Player state ──
 const jobs: Job[] = [];
@@ -352,6 +359,7 @@ const rate = () => {
 };
 
 let swapToken = 0;
+let swapping = false; // the back video is starting: don't load anything else into it until it is on screen
 function advance() {
   if (job && idx + 1 < job.res.playlist.length) idx++;
   else {
@@ -380,6 +388,7 @@ function advance() {
   if (back.currentTime > 0.01) back.currentTime = 0;
   back.playbackRate = rate();
   let swapped = false;
+  swapping = true;
   const token = ++swapToken;
   // On the incoming clip's first painted frame: fade it in on top; the outgoing clip stays visible underneath
   // until the fade is done, then steps back and preloads whatever comes next.
@@ -391,6 +400,7 @@ function advance() {
     front = 1 - front;
     setTimeout(() => {
       if (token !== swapToken) return;
+      swapping = false; // the fade is done: the old clip may now take the next one
       cur.classList.remove("on");
       cur.pause();
       const next = peek();
@@ -433,7 +443,7 @@ function enqueue(j: Job) {
   }
   jobs.push(j);
   if (!job) advance();
-  else {
+  else if (!swapping) {
     const next = peek();
     if (next) load(vids[1 - front]!, next.url);
   }
@@ -445,6 +455,7 @@ function clearQueuedVideo() {
   idx = -1;
   front = 0;
   swapToken++;
+  swapping = false;
   vids.forEach((v) => { v.pause(); v.removeAttribute("src"); delete v.dataset.url; v.load(); v.classList.remove("on", "top"); });
 }
 

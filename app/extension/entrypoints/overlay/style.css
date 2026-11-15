@@ -104,8 +104,8 @@ html, body { background: transparent; overflow: hidden; }
   box-shadow: inset 0 .5px 0 rgb(255 255 255 / .18), 0 8px 24px -8px rgb(0 0 0 / .5);
   opacity: 0; transform: translateX(-50%) scale(.55, .7); transform-origin: 50% 0; filter: blur(4px); pointer-events: none;
   transition: opacity .2s ease, transform .55s var(--spring-bounce), filter .3s ease; }
-.card:hover .toolbar, .card:has(:focus-visible) .toolbar, .card.bar-on .toolbar { opacity: 1; transform: translateX(-50%); filter: none; pointer-events: auto; transition-delay: .03s; }
-.card:hover .island, .card:has(:focus-visible) .island, .card.bar-on .island { opacity: 0; transform: translateX(-50%) scale(1.2, 1.3); filter: blur(4px); }
+.card.awake .toolbar, .card:has(:focus-visible) .toolbar, .card.bar-on .toolbar { opacity: 1; transform: translateX(-50%); filter: none; pointer-events: auto; transition-delay: .03s; }
+.card.awake .island, .card:has(:focus-visible) .island, .card.bar-on .island { opacity: 0; transform: translateX(-50%) scale(1.2, 1.3); filter: blur(4px); }
 .card.dragging .toolbar { opacity: 0; transform: translateX(-50%) scale(.55, .7); }
 .card.dragging .island { opacity: 1; transform: translateX(-50%) scale(.96); filter: none; }
 .tb { position: relative; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: rgb(255 255 255 / .92); cursor: pointer;
