@@ -29,7 +29,7 @@ Translate by meaning, not word by word:
 - Paraphrase into VOCAB signs when the exact word is missing ("hey there" -> HELLO, "catch you later" -> SEE YOU LATER, "headache" -> HEAD HURT if both exist).
 - Use only IDs that appear in VOCAB, spelled exactly. Never make up an ID. If a meaning cannot be expressed with VOCAB, put that word's index in "unsupported" (do not guess).
 - Never change who or what is meant: keep person (YOU is not MY), number, time, place and negation. If they cannot be kept, mark the word unsupported.
-- A word whose meaning a sign carries approximately (intensifiers like "a lot" or "so", politeness, idiom parts) goes in that sign's covers; "unsupported" is only for meaning that is actually lost.
+- covers may add only words with no content of their own: intensifiers ("a lot", "so much"), "there" in "hey there", a phrasal-verb particle. A noun, verb or adjective that no sign renders goes in "unsupported", never in another sign's covers.
 - Choose the sense that fits the sentence; VOCAB notes in parentheses give senses.
 - Order ASL-ish: time signs first; WH-question sign (WHERE, WHAT, ...) last; a question_wh marker spans the whole WH question; a yes/no question gets question_yn over its signs; a negation sign gets a negation marker from it to the end of its clause. Marker from/to are item indices (inclusive).
 - Fingerspell names and proper nouns: type "fingerspell", letters = the word in A-Z only, id null.
@@ -109,6 +109,13 @@ export function lru(max = 200) {
 const isReasoningModel = (model) => /^(gpt-5|gpt-6|o\d)/i.test(model);
 const clean = (word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
 const dropOnly = (word) => { const t = tokenize(word); return t.length > 0 && t.every((x) => DROP.has(x.w)); };
+/** Words a paraphrased sign may absorb: intensifiers / discourse particles anywhere, phrasal particles only next to it. */
+const ABSORB = new Set(["lot", "lots", "so", "much", "very", "really", "just", "please", "quite", "indeed", "totally", "oh", "ah"]);
+const ABSORB_NEAR = new Set(["there", "up", "out", "off", "away", "over", "on"]);
+const absorbable = (word, distance) => {
+  const t = tokenize(word);
+  return t.length > 0 && t.every((x) => DROP.has(x.w) || ABSORB.has(x.w) || (ABSORB_NEAR.has(x.w) && distance <= 2));
+};
 
 /**
  * @param {object} o
@@ -288,7 +295,12 @@ export function buildPlan(input, words, proposal, byId, vocab, { englishWords, m
         content.forEach((i) => literal.add(i));
       }
     }
-    covers.forEach((i) => claimed.add(i));
+    // A paraphrased sign renders its source word; it may only absorb meaning-light extras ("a lot", "so", "there" in
+    // "hey there"). Any other content word it claims ("stomach" under HURT) is not rendered -> unsupported.
+    for (const i of covers) {
+      if (match.method !== "semantic" || i === raw.source || dropOnly(words[i]) || absorbable(words[i], Math.abs(i - raw.source))) claimed.add(i);
+      else rejected.push({ reason: "overclaimed_cover", id: entry.motion_id, source, word: clean(words[i]) });
+    }
     keptIndex[pi] = items.length;
     items.push({ type: "sign", gloss: entry.gloss, motion_id: entry.motion_id, source, source_index: raw.source, match });
   }

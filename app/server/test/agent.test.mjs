@@ -60,8 +60,10 @@ const SCRIPT = {
   "Bye Zoe": proposal([sign("HELLO", 0, [0], 0.3), { type: "fingerspell", id: null, letters: "ZOEY", source: 1, covers: [1], confidence: 1 }]),
   "Where is the pain": proposal([sign("HURT", 3, [3], 0.8), sign("GHOST", 0), sign("WHERE", 0)],
     { markers: [{ type: "question_wh", from: 0, to: 2 }], paraphrase: "Where does it hurt?" }),
+  // Claims "stomach" is covered by HURT: not a meaning-light word, so it stays unsupported.
+  "My stomach hurts.": proposal([sign("HURT", 2, [1, 2], 0.8), sign("MY", 0)], { paraphrase: "My stomach hurts." }),
   "Slow sentence": () => new Promise(() => {}),                                     // never answers
-  "Flaky once": (_p, _o, n) => { if (n === 1) throw Object.assign(new Error("upstream 503"), { status: 503 }); return reply(proposal([sign("HELLO", 0, [0, 1])], { paraphrase: "Hello." })); },
+  "Hi there": (_p, _o, n) => { if (n === 1) throw Object.assign(new Error("upstream 503"), { status: 503 }); return reply(proposal([sign("HELLO", 0, [0, 1])], { paraphrase: "Hello." })); },
   "Not json": () => ({ status: "completed", output_text: "{oops" }),
   "Leaky error": () => { throw Object.assign(new Error(`401 Incorrect API key provided: ${FAKE_KEY}. Authorization: Bearer ${FAKE_KEY}`), { status: 401 }); },
 };
@@ -142,6 +144,14 @@ test("safety gate still blocks partial agent plans", async () => {
   }
 });
 
+test("a paraphrased sign cannot absorb a content word (\"stomach\" under HURT)", async () => {
+  const { body } = await post({ text: "My stomach hurts.", agent: "always" });
+  assert.deepEqual(body.plan.unsupported_tokens, ["stomach"]);
+  assert.ok(body.agent.rejected.some((r) => r.reason === "overclaimed_cover" && r.word === "stomach"));
+  assert.equal(body.safety.status, "caption_only");
+  assert.deepEqual(body.playlist, []);
+});
+
 test("a literal agent plan is verified against the local rules and can play (agent: always)", async () => {
   const { body } = await post({ text: "Hello, thank you.", agent: "always" });
   assert.equal(body.translator, "agent");
@@ -184,8 +194,8 @@ test("timeout falls back to the local result quickly, with a warning", async () 
 });
 
 test("one retry on a transient error; bad JSON falls back", async () => {
-  const { body } = await post({ text: "Flaky once" });
-  assert.equal(callsFor("Flaky once"), 2);
+  const { body } = await post({ text: "Hi there" });
+  assert.equal(callsFor("Hi there"), 2);
   assert.equal(body.agent.status, "needs_confirmation");
   const bad = await post({ text: "Not json" });
   assert.equal(bad.body.translator, "local");
