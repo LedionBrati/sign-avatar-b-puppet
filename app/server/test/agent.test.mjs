@@ -261,3 +261,13 @@ test("dictionary vocab (1,945 signs) is described compactly as IDs", { skip: !di
   assert.ok(v.text.length < v.count * 14, `${v.text.length} chars`);     // ~IDs only
   assert.equal(describeVocab(dictionary), v);                              // cached per vocab array
 });
+
+test("buildPlan never fingerspells a pronoun or function word", () => {
+  const vocab = IDS.map((id) => ({ motion_id: id, gloss: id.replaceAll("_", " ") }));
+  const v = describeVocab(vocab);
+  const fs = (letters, source) => ({ type: "fingerspell", id: null, letters, source, covers: [source], confidence: 1 });
+  const { plan, rejected } = buildPlan("I lost Mia", ["I", "lost", "Mia"], proposal([fs("I", 0), fs("MIA", 2)], { unsupported: [1] }), v.byId, vocab);
+  assert.deepEqual(plan.items.map((i) => i.word), ["MIA"]);
+  assert.deepEqual(rejected.map((r) => r.reason), ["fingerspell_function_word"]);
+  assert.deepEqual(plan.unsupported_tokens, ["I", "lost"]);
+});

@@ -2,7 +2,7 @@
 //
 // The model only proposes. Code decides:
 //   - every motion_id must be in the vocab passed in (unknown IDs are rejected, never invented);
-//   - fingerspelling must spell the source word itself (A-Z);
+//   - fingerspelling must spell the source word itself (A-Z), and never a pronoun / function word;
 //   - each sign's match method is re-derived locally: a sign the local rules would also pick for exactly those
 //     words keeps that method (exact / phrase / lemma / synonym); anything else is a paraphrase -> "semantic",
 //     which the safety gate (lib/semantic-safety.mjs) treats as needs_confirmation, like the local embeddings;
@@ -15,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { assertPlan } from "../../../shared/contracts.mjs";
 import { translateRules } from "../../../translate/index.mjs";
-import { DROP, tokenize, toFingerspell, toMotionId } from "../../../translate/rules.mjs";
+import { DROP, NO_SEMANTIC, WH, tokenize, toFingerspell, toMotionId } from "../../../translate/rules.mjs";
 import { redactor } from "./secrets.mjs";
 
 export const DEFAULT_MODEL = "gpt-5.4-mini";
@@ -264,8 +264,10 @@ export function buildPlan(input, words, proposal, byId, vocab, { englishWords, m
 
     if (raw.type === "fingerspell") {
       const letters = toFingerspell(raw.letters ?? "");
-      if (!letters || letters !== toFingerspell(source)) {
-        rejected.push({ reason: "fingerspell_mismatch", letters: raw.letters ?? null, source });
+      // Spells the source word itself, and never a pronoun / function word ("I" is not a name to fingerspell).
+      const fn = tokenize(source).some((t) => NO_SEMANTIC.has(t.w) || WH.has(t.w) || DROP.has(t.w));
+      if (!letters || letters !== toFingerspell(source) || fn) {
+        rejected.push({ reason: fn ? "fingerspell_function_word" : "fingerspell_mismatch", letters: raw.letters ?? null, source });
         lose();
         continue;
       }
