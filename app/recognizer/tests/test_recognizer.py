@@ -111,6 +111,9 @@ def test_spell_decode(rec):
     s[0, 32] = s[1, 33] = s[2, 61] = 10
     text, conf = rec.decode_spell(s)
     assert text == "AB" and 0.9 < conf <= 1
+    s2 = np.full((4, 63), -10, np.float32)
+    s2[0, 33] = s2[1, 0] = s2[2, 32] = s2[3, 35] = 10  # "b ad"
+    assert rec.decode_spell(s2)[0] == "BAD"
     dummy = np.full((11, 63), 0, np.float32)
     for i, ch in enumerate("2 a-e -aroe"):
         dummy[i, {v: k for k, v in rec.fs_chars.items()}[ch]] = 1

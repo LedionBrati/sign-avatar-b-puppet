@@ -162,4 +162,6 @@ class Recognizer:
         if raw == FS_DUMMY:
             return "", 0.0
         probs = [float(softmax(row)[i]) for row, i in zip(scores, ids) if int(i) in self.fs_chars]
-        return raw.upper().strip(), round(float(np.mean(probs)) if probs else 0.0, 4)
+        # Spell mode is one word or name: the model (trained on phrases, addresses, URLs) sometimes inserts a
+        # space at a pause between letters ("B A D"), so spaces are dropped.
+        return raw.upper().replace(" ", ""), round(float(np.mean(probs)) if probs else 0.0, 4)
