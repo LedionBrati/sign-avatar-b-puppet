@@ -34,8 +34,8 @@ export function Settings({ onClose }: { onClose(): void }) {
         <div className="group">
           <div className="row">
             <span>Appearance</span>
-            <Segmented<Theme> label="Appearance" value={prefs.theme} onChange={(theme: Theme) => setPrefs({ theme })}
-              options={[{ value: "auto", label: "Auto" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
+            <Segmented<Theme> label="Appearance" value={prefs.theme === "light" ? "light" : "dark"} onChange={(theme: Theme) => setPrefs({ theme })}
+              options={[{ value: "dark", label: "Dark" }, { value: "light", label: "Light" }]} />
           </div>
           <div className="row">
             <span id="cap-l">Captions</span>

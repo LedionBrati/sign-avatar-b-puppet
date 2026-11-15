@@ -1,4 +1,4 @@
-// Home: the wordmark, one big listen orb, a quiet way to type, and the other direction (sign to speak).
+// Home: the wordmark, one big glass listen orb, a quiet way to type, and the other direction (sign to speak).
 import { useState } from "react";
 import { copy } from "@signlayer/core";
 import { GearIcon, HandIcon, Mark, MicIcon, Wordmark } from "../components/Icons";
@@ -16,9 +16,11 @@ export function Home({ canListen, onListen, onType, onSettings, onSign }: { canL
       </header>
 
       <section className="hero">
-        <h1 className="title">Hear anything.<br />See it signed.</h1>
+        <p className="eyebrow"><i aria-hidden="true" />Live sign language · real signers</p>
+        <h1 className="title">Hear anything.<br /><span className="grad">See it signed.</span></h1>
         <div className="orbzone">
           <div className="aura" aria-hidden="true" />
+          <div className="orbring" aria-hidden="true" />
           <button id="listen" className={`orb${canListen ? "" : " off"}`} aria-label={copy.listen} onClick={() => (canListen ? onListen() : setTyping(true))}><MicIcon /></button>
         </div>
         {canListen ? <p className="orb-label">{copy.listen}</p> : <p className="orb-label sub">{ARTIFACT ? "Mic works in the full app." : "Listening needs Chrome or Edge. Type instead."}</p>}
