@@ -89,6 +89,31 @@ try {
       await page.click("#stop").catch(() => {});
     }
 
+    if (want("hints")) {
+      // Words with no sign yet: muted + dotted in the captions, named under them.
+      await page.goto(APP, { waitUntil: "networkidle0" });
+      await page.click("#type");
+      await page.type(".typebox input", "Turn right at the bank, my name is Zork.");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector(".sumline", { timeout: +(process.env.WAIT_MS ?? 120000) }).catch(() => {});
+      await sleep(900);
+      await shot("hints");
+    }
+
+    if (want("offline")) {
+      // Sign server unreachable: banner + caption-only card.
+      await page.goto(APP, { waitUntil: "networkidle0" });
+      await page.evaluate(() => localStorage.setItem("sl-api", "http://127.0.0.1:9"));
+      await page.reload({ waitUntil: "networkidle0" });
+      await page.click("#type");
+      await page.type(".typebox input", "Where is the train station?");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector(".banner", { timeout: 20000 }).catch(() => {});
+      await sleep(1500);
+      await shot("offline");
+      await page.evaluate(() => localStorage.removeItem("sl-api"));
+    }
+
     if (want("sign")) {
       await page.goto(`${APP}/#/sign`, { waitUntil: "networkidle0" });
       await page.waitForFunction(() => document.querySelector(".island")?.textContent?.startsWith("Ready"), { timeout: 30000 }).catch(() => {});
