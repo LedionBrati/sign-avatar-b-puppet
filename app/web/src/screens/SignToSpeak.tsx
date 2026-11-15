@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SignApiError, composeSentence, createSignClient, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
 import { ClockIcon, CloseIcon, GridIcon, HandIcon, PauseIcon, SpeakerIcon, UndoIcon } from "../components/Icons";
-import { Island, type IslandTone } from "../components/Island";
+import { type IslandTone } from "../components/Island";
 import { Segmented } from "../components/Segmented";
 import { createTracker, drawOverlay, type Tracker } from "../lib/holistic";
 import { createSegmenter, type SegState, type SegmentDone } from "../lib/segmenter";
@@ -324,7 +324,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     <div className={`screen signsp${embed ? " embed" : ""}`}>
       <header className="topbar">
         {embed ? <span /> : <button className="circbtn" aria-label="Close" title="Close" onClick={onHome}><CloseIcon /></button>}
-        <Island tone={tone} label={island} detail={speaking ?? undefined} className={seg === "recording" && !speaking ? "rec" : ""} />
+        <span />
         <button className="circbtn" aria-label="Signs I know" title={`${SIGN_VOCAB.length} signs I know`} onClick={() => setSheet("signs")}><GridIcon /></button>
       </header>
 
