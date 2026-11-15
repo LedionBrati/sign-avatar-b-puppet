@@ -116,7 +116,7 @@ try {
   const box = await frameEl.boundingBox();
   await page.mouse.move(box.x + 30, box.y + 18);
   await page.mouse.down();
-  await page.mouse.move(box.x - 500, box.y - 300, { steps: 12 });
+  await page.mouse.move(60, 60, { steps: 12 });
   await page.mouse.up();
   await sleep(900);
   const corner = await sw.evaluate(() => chrome.storage.local.get("corner").then((r) => r.corner));

@@ -20,6 +20,31 @@ export default defineContentScript({
     let pos = { x: 0, y: 0 };
     let dragStart: { x: number; y: number } | null = null;
     let closedByUser = false;
+    let shield: HTMLDivElement | null = null;
+    let grab: { x: number; y: number } | null = null;
+
+    function startDrag(g: { x: number; y: number } | null) {
+      if (!frame || dragStart) return;
+      dragStart = { ...pos };
+      grab = g;
+      frame.classList.add("dragging");
+      if (shield && g) shield.hidden = false;
+    }
+    function moveTo(x: number, y: number) {
+      if (frame) frame.style.transform = `translate(${x}px, ${y}px)`;
+    }
+    function endDrag() {
+      if (!frame || !dragStart) return;
+      const r = frame.getBoundingClientRect();
+      dragStart = grab = null;
+      if (shield) shield.hidden = true;
+      frame.classList.remove("dragging");
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const corner = `${cy < innerHeight / 2 ? "t" : "b"}${cx < innerWidth / 2 ? "l" : "r"}` as Corner;
+      s.corner = corner;
+      place(corner);
+      setSettings({ corner });
+    }
 
     function place(corner: Corner = s.corner) {
       if (!frame) return;
@@ -45,14 +70,23 @@ export default defineContentScript({
           box-shadow: 0 18px 40px -12px rgb(10 20 60 / .32), 0 2px 8px rgb(10 20 60 / .1);
           transition: transform .55s cubic-bezier(.2,.9,.25,1.05), width .45s cubic-bezier(.2,.8,.2,1), height .3s ease, opacity .3s ease; }
         iframe.dragging { transition: width .45s ease, height .3s ease; }
-        iframe.gone { opacity: 0; pointer-events: none; }`;
+        iframe.gone { opacity: 0; pointer-events: none; }
+        .shield { position: fixed; inset: 0; z-index: 2147483647; cursor: grabbing; background: transparent; }`;
       frame = document.createElement("iframe");
       frame.src = browser.runtime.getURL("/overlay.html");
       frame.title = "SIGNLAYER signer";
       frame.setAttribute("allowtransparency", "true");
       frame.setAttribute("allow", "autoplay");
       frame.classList.add("dragging");
-      root.append(style, frame);
+      shield = document.createElement("div");
+      shield.className = "shield";
+      shield.hidden = true;
+      // If the page (not the iframe) gets the pointer during a drag, the shield tracks it.
+      shield.addEventListener("pointermove", (e) => {
+        if (dragStart && grab) moveTo(e.clientX - grab.x, e.clientY - grab.y);
+      });
+      shield.addEventListener("pointerup", () => endDrag());
+      root.append(style, frame, shield);
       document.documentElement.appendChild(host);
       place();
       requestAnimationFrame(() => requestAnimationFrame(() => frame?.classList.remove("dragging")));
@@ -60,7 +94,8 @@ export default defineContentScript({
 
     function unmount() {
       host?.remove();
-      host = frame = null;
+      host = frame = shield = null;
+      dragStart = grab = null;
     }
 
     addEventListener("message", (e: MessageEvent) => {
@@ -70,22 +105,13 @@ export default defineContentScript({
       if (m.type === "height") {
         height = Math.ceil(m.h);
         place();
+      } else if (m.type === "dragstart") {
+        startDrag({ x: m.x, y: m.y });
       } else if (m.type === "drag") {
-        if (!dragStart) {
-          dragStart = { ...pos };
-          frame.classList.add("dragging");
-        }
-        frame.style.transform = `translate(${dragStart.x + m.dx}px, ${dragStart.y + m.dy}px)`;
+        startDrag(null);
+        if (dragStart) moveTo(dragStart.x + m.dx, dragStart.y + m.dy);
       } else if (m.type === "dragend") {
-        if (!dragStart) return;
-        const r = frame.getBoundingClientRect();
-        dragStart = null;
-        frame.classList.remove("dragging");
-        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-        const corner = `${cy < innerHeight / 2 ? "t" : "b"}${cx < innerWidth / 2 ? "l" : "r"}` as Corner;
-        s.corner = corner;
-        place(corner);
-        setSettings({ corner });
+        endDrag();
       } else if (m.type === "size") {
         setSettings({ size: m.size });
       } else if (m.type === "close") {

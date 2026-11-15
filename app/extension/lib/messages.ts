@@ -21,6 +21,7 @@ export type ToContent = { type: "mount" } | { type: "ping" };
 
 /** Overlay iframe -> its content script (postMessage; the content script checks event.source). */
 export type FromOverlay =
+  | { sl: 1; type: "dragstart"; x: number; y: number }
   | { sl: 1; type: "drag"; dx: number; dy: number }
   | { sl: 1; type: "dragend" }
   | { sl: 1; type: "height"; h: number }

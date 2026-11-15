@@ -59,7 +59,7 @@ body { font-size: 12px; }
 
 /* Sizes */
 body[data-size="s"] #brand .wm { display: none; }
-body[data-size="s"] .live { display: none; }
+body:not([data-size="l"]) .live { display: none; }
 body[data-size="s"] .cc { font-size: 11.5px; }
 body[data-size="l"] .cc { font-size: 15px; }
 body[data-size="l"] .who { font-size: 9.5px; height: 24px; }

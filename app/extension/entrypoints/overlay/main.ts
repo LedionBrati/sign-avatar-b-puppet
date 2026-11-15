@@ -52,6 +52,7 @@ grip.addEventListener("pointerdown", (e) => {
   drag = { x: e.screenX, y: e.screenY };
   grip.setPointerCapture(e.pointerId);
   grip.classList.add("dragging");
+  post({ sl: 1, type: "dragstart", x: e.clientX, y: e.clientY });
 });
 grip.addEventListener("pointermove", (e) => {
   if (drag) post({ sl: 1, type: "drag", dx: e.screenX - drag.x, dy: e.screenY - drag.y });
@@ -217,7 +218,7 @@ function renderCaptions() {
   const playing = job ? idx : res.playlist.length;
   const frame = res.playlist.length ? captionFrame(res, res.words.length, playing) : null;
   const states = frame?.states ?? res.words.map(() => "heard" as const);
-  const unsupported = new Set(res.unsupported.map((w) => w.toLowerCase()));
+  const unsupported = new Set([...res.unsupported, ...(res.fingerspell ?? [])].map((w) => w.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, "")));
   const n = CHUNK[s.size];
   let focus = states.indexOf("now");
   if (focus < 0) focus = job ? Math.max(0, states.lastIndexOf("signed")) : res.words.length - 1;
