@@ -124,6 +124,8 @@ export interface HealthResponse {
   transcribe?: "ready" | "off";
   /** Sign -> voice recognizer service status. */
   recognizer?: "ready" | "down";
+  /** POST /api/compose (signs -> spoken sentence by meaning): "ready" when an OpenAI key is configured. Older servers omit it. */
+  compose?: "ready" | "off";
   /** Generate-on-use (server ONDEMAND=on). Omitted when the server has it off. */
   ondemand?: OnDemandHealth;
 }
@@ -167,6 +169,22 @@ export interface RecognizeResponse {
   timings: { inference_ms: number; total_ms: number };
 }
 
+/** POST /api/compose. The signs read so far, each with the recognizer's guesses (best first, up to 3). */
+export interface ComposeRequest {
+  signs: { text: string; options?: { text: string; confidence: number }[] }[];
+}
+
+/** makes_sense: the signs already form a complete message. sentence: natural English (best effort even if not).
+ *  picked: which guess was used per sign. */
+export interface ComposeResponse {
+  makes_sense: boolean;
+  sentence: string;
+  picked: number[];
+  model: string;
+  cached: boolean;
+  latency_ms: number;
+}
+
 export const FRAMES_HEADER = "X-Frames";
 
 export const ROUTES = {
@@ -176,6 +194,7 @@ export const ROUTES = {
   ondemand: "/api/ondemand", // GET generate-on-use status (queue, spend, recent batches)
   clips: "/clips/", // GET /clips/<file>.mp4 (static)
   transcribe: "/api/transcribe", // POST audio/webm chunk -> TranscribeResponse
+  compose: "/api/compose", // POST ComposeRequest -> ComposeResponse (signs -> sentence, OpenAI)
   recognize: "/api/recognize", // POST ?mode=sign|spell, octet-stream float32 frames -> RecognizeResponse (proxied to app/recognizer)
   webApp: "/app/", // GET the built web app (phone WebView loads /app/#/sign?embed=1)
 } as const;

@@ -1,8 +1,10 @@
 // Sign -> speak, continuous: the front camera, MediaPipe Holistic landmarks, always reading while the camera is on
 // (no tap per sign): every segment (hands move -> rest/leave/still) goes to POST /api/recognize; top-1 is appended
-// (top-3 chips to correct it). The sentence (composeSentence, no model call) is spoken automatically once it has
-// 2 signs and the hands have rested ~1.2 s, or as soon as it has 3; then a fresh sentence starts. Pause/Resume stops
-// reading; Undo/Clear/edit + Speak stay available.
+// (top-3 chips to correct it). With the server's OpenAI layer (health.compose), every new sign from the 2nd on asks
+// POST /api/compose "do these make sense yet?": yes -> its sentence is shown and spoken, then a fresh one starts;
+// at 5 signs the best-effort sentence is spoken anyway. Without it (or if it fails), the local composeSentence is
+// spoken once it has 2 signs and the hands have rested ~1.2 s, or as soon as it has 3. Pause/Resume stops reading;
+// Undo/Clear/edit + Speak stay available.
 // "#/sign?embed=1" is the same screen for the phone app's WebView: results also go to window.ReactNativeWebView.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SignApiError, composeSentence, createSignClient, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
@@ -20,10 +22,12 @@ type Cam = "starting" | "ready" | "denied" | "nocam" | "error";
 
 const LOW = 0.35; // below this the top-3 chips get a "not sure" hint
 const QUIET_MS = 1200; // hands rested/still this long after >= 2 signs -> speak
-const MAX_SIGNS = 3; // a sentence this long is spoken right away
+const MAX_SIGNS = 3; // local fallback: a sentence this long is spoken right away
+const AI_MAX_SIGNS = 5; // with the model: spoken at this length even if it does not make sense yet
 const END_LAG_MS = 400; // the segmenter needs ~this much stillness before it ends a segment
 const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 const wordOf = (l: string) => (l.startsWith("#") ? cap(l.slice(1).toLowerCase()) : labelText(l));
+const keyOf = (epoch: number, xs: Entry[]) => `${epoch}|${xs.map((x) => x.label).join(" ")}`;
 
 declare global { interface Window { ReactNativeWebView?: { postMessage(s: string): void }; __sl?: Record<string, unknown> } }
 /** Embed mode: the phone app's WebView gets a JSON string; its web/iframe fallback gets the object on window "message". */
@@ -58,6 +62,10 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const [hint, setHint] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [sheet, setSheet] = useState<"signs" | "history" | null>(null);
+  /** Model sentence for the exact signs it was asked about (key = epoch + labels); null until it answers. */
+  const [composed, setComposed] = useState<{ key: string; sentence: string; sense: boolean } | null>(null);
+  const [composing, setComposing] = useState(false);
+  const aiOn = useRef(true); // off when health says compose is off, or the server answers 404 / 503
   modeRef.current = mode;
 
   // ── Recognize segments: parallel requests, results appended in segment order; a Clear/Pause/spoken sentence
@@ -147,7 +155,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
       window.__sl = { ...window.__sl, delegate: t.delegate };
       setTrack("ready");
     }).catch((e) => { if (alive.current) { setTrack("error"); setBanner(`Hand tracking didn't load (${(e as Error).message}). Check the connection and reload.`); } });
-    client.health().then((h) => { if (alive.current && h.recognizer === "down") setBanner("The sign recognizer is offline. Start app/recognizer; signing won't work until then."); }).catch(() => {});
+    client.health().then((h) => { aiOn.current = h.compose === "ready"; if (alive.current && h.recognizer === "down") setBanner("The sign recognizer is offline. Start app/recognizer; signing won't work until then."); }).catch(() => {});
     return () => {
       alive.current = false;
       const s = video.current?.srcObject as MediaStream | null;
@@ -195,12 +203,12 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
 
   // ── Sentence ──
   const sentence = useMemo(() => {
-    if (!edit) return composeSentence(items.map((x) => x.label));
+    if (!edit) return composed && composed.key === keyOf(order.current.epoch, items) ? composed.sentence : composeSentence(items.map((x) => x.label));
     const rest = items.slice(edit.at).map((x) => wordOf(x.label));
     if (!rest.length) return edit.text;
     const base = edit.text.trim().replace(/[.?!]+$/, "");
     return base ? `${base} ${rest.join(" ")}.` : composeSentence(items.slice(edit.at).map((x) => x.label));
-  }, [items, edit]);
+  }, [items, edit, composed]);
 
   useEffect(() => { if (embed) post({ type: "sentence", text: sentence }); }, [sentence, embed]);
 
@@ -248,15 +256,45 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const speakRef = useRef(speak);
   speakRef.current = speak;
 
-  // Auto-speak: 3 signs -> now; 2+ signs -> once the hands have rested QUIET_MS (and nothing is still being read).
+  /** Speak a model sentence right away and start fresh (same text twice in a row is not repeated). */
+  const autoSpeak = useCallback((text: string) => {
+    if (text && text !== lastSpoken.current) { lastSpoken.current = text; speakText(text); }
+    order.current.epoch++; setItems([]); setEdit(null); setHint(null);
+  }, [speakText]);
+
+  // With the model: every new sign (2+) -> "does it make sense yet?" Stale answers (signs changed since) are dropped.
+  const [aiFailed, setAiFailed] = useState(false);
   useEffect(() => {
-    if (paused || editing || items.length < 2) return;
+    if (!aiOn.current || aiFailed || paused || editing || edit || items.length < 2) return;
+    const key = keyOf(order.current.epoch, items);
+    const ctrl = new AbortController();
+    setComposing(true);
+    client.compose({ signs: items.map((x) => ({ text: wordOf(x.label), ...(x.options ? { options: x.options.slice(0, 3).map((o) => ({ text: o.text || labelText(o.label), confidence: o.confidence })) } : {}) })) }, ctrl.signal)
+      .then((r) => {
+        if (!alive.current || ctrl.signal.aborted || keyOf(order.current.epoch, items) !== key) return;
+        window.__sl = { ...window.__sl, compose: r };
+        setComposed({ key, sentence: r.sentence, sense: r.makes_sense });
+        if (r.sentence && (r.makes_sense || items.length >= AI_MAX_SIGNS)) autoSpeak(r.sentence);
+      })
+      .catch((e) => {
+        if (!alive.current || ctrl.signal.aborted) return;
+        if (e instanceof SignApiError && (e.status === 404 || e.status === 503)) aiOn.current = false;
+        setAiFailed(true); // this sentence falls back to the local rules; the next one tries the model again
+      })
+      .finally(() => { if (!ctrl.signal.aborted && alive.current) setComposing(false); });
+    return () => { ctrl.abort(); setComposing(false); };
+  }, [items, paused, editing, edit, client, autoSpeak, aiFailed]);
+  useEffect(() => { if (!items.length) { setAiFailed(false); setComposed(null); } }, [items]);
+
+  // Without the model: 3 signs -> now; 2+ signs -> once the hands have rested QUIET_MS (and nothing is still being read).
+  useEffect(() => {
+    if ((aiOn.current && !aiFailed) || paused || editing || items.length < 2) return;
     if (items.length >= MAX_SIGNS) { speakRef.current(); return; }
     if (seg === "recording" || pending > 0) return;
     const wait = Math.max(0, QUIET_MS - END_LAG_MS - (performance.now() - segEndAt));
     const t = setTimeout(() => speakRef.current(), wait);
     return () => clearTimeout(t);
-  }, [items, seg, pending, paused, editing, segEndAt]);
+  }, [items, seg, pending, paused, editing, segEndAt, aiFailed]);
 
   const tap = () => {
     setHint(null);
@@ -276,7 +314,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const last = items[items.length - 1];
   const cands = last?.options?.slice(0, 3) ?? [];
   const ready = cam === "ready" && track === "ready";
-  const busy = pending > 0;
+  const busy = pending > 0 || composing;
   const camOff = !ready ? (cam === "starting" || track === "loading" ? "Starting camera" : "Camera off") : null;
   const tone: IslandTone = speaking ? "sign" : camOff ? (cam === "starting" || track === "loading" ? "busy" : "warn") : paused ? "idle" : seg === "recording" ? "rec" : busy ? "busy" : "live";
   const island = speaking ? "Speaking:" : camOff ?? (paused ? "Paused" : seg === "recording" ? "Signing…" : "Reading");
@@ -310,7 +348,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
               {o.text || labelText(o.label)}<em>{Math.round(o.confidence * 100)}%</em>
             </button>
           ))}
-          {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name, letter by letter." : `Just sign: 2–3 words are spoken automatically · ${SIGN_VOCAB.length} signs`}</p> : null}
+          {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name, letter by letter." : `Just sign: as soon as the words make sense they're spoken · ${SIGN_VOCAB.length} signs`}</p> : null}
         </div>
         <div className="sentence">
           <textarea aria-label="Sentence to speak" rows={2} spellCheck={false} placeholder="Your sentence" value={sentence}
