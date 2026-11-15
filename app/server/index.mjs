@@ -18,6 +18,7 @@ import { createNodeMatcher, loadEnglishWords } from "../../translate/node.mjs";
 import { joinClips } from "../../pipeline/lib/clips.mjs";
 import { loadClipSets, parseClipsDirs } from "./lib/clips.mjs";
 import { planToPlaylist } from "./lib/sign.mjs";
+import { assessSigning } from "./lib/semantic-safety.mjs";
 
 export const MAX_TEXT = 500;
 const MAX_BODY = 16 * 1024;
@@ -78,7 +79,12 @@ export function createApp(o = {}) {
       : translateRules(text, vocab, opts);
     const translate_ms = ms(performance.now() - t1);
     const out = planToPlaylist(plan, clips);
-    return { text, ...out, plan, timings: { translate_ms, total_ms: ms(performance.now() - t0) } };
+    const safety = assessSigning(text, plan, clips);
+    if (safety.status !== "fully_supported") {
+      out.playlist = [];
+      out.markers = [];
+    }
+    return { text, ...out, safety, plan, timings: { translate_ms, total_ms: ms(performance.now() - t0) } };
   }
 
   async function handle(req, res) {
@@ -102,6 +108,10 @@ export function createApp(o = {}) {
     if (path === "/api/sign.mp4") {
       only(req, "GET");
       const result = await sign({ text: url.searchParams.get("text") ?? "", semantic: url.searchParams.get("semantic") !== "false" });
+      if (result.safety.status !== "fully_supported") {
+        return json(res, 422, { text: result.text, playlist: [], safety: result.safety,
+          error: { code: "signing_not_supported", message: "Full signing is not available for this message" } });
+      }
       return sendJoined(req, res, result);
     }
     if (path.startsWith("/clips/")) {
