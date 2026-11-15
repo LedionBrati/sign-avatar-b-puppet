@@ -171,12 +171,14 @@ function readJson(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    const tooLarge = () => new HttpError(413, "body_too_large", `body over ${MAX_BODY} bytes`);
     req.on("data", (c) => {
       size += c.length;
-      if (size > MAX_BODY) { reject(new HttpError(413, "body_too_large", `body over ${MAX_BODY} bytes`)); req.destroy(); return; }
-      chunks.push(c);
+      if (size <= MAX_BODY) chunks.push(c);
+      else if (size > 64 * MAX_BODY) { reject(tooLarge()); req.destroy(); }   // drain small overflows so the 413 reaches the client
     });
     req.on("end", () => {
+      if (size > MAX_BODY) return reject(tooLarge());
       const raw = Buffer.concat(chunks).toString("utf8");
       if (!raw.trim()) return reject(new HttpError(400, "empty_body", "send JSON {text}"));
       try { resolve(JSON.parse(raw)); } catch { reject(new HttpError(400, "bad_json", "body is not valid JSON")); }
