@@ -8,7 +8,13 @@
 //    the source video instead of mirroring it. Its euler angles target VRM0 axes, so x and z are
 //    negated for VRM1 models.
 //  - "direct": aims each bone straight at the tracked landmarks (upper arm with elbow bend plane,
-//    forearm with palm twist, hand with palm normal, every finger joint with swing, so spread is kept).
+//    hand with palm normal, forearm taking the hand's roll, every finger joint with swing, so spread is kept).
+//
+// Two ways to play a motion:
+//  - bake() + showAt()/showFrame() (default): every frame is solved once, the rotations are cleaned over the
+//    whole clip (src/track.ts: tracker glitches out, dropouts bridged, light zero-phase smoothing) and played
+//    back interpolated between frames, with hair/cloth physics. What the viewer and render.mjs use.
+//  - applyFrame() (raw, viewer `smooth=0`, render `--raw`): each frame solved and shown as tracked.
 //
 // Coordinates: MediaPipe is x image-right, y down, z away from the camera. The avatar faces the camera
 // (+Z toward the camera, y up), so subject-left = image-right = avatar-left = +X: a point maps to (x, -y, -z).
@@ -19,8 +25,48 @@ import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from "@pix
 import * as Kalidokit from "kalidokit";
 import type { Motion, MotionFrame, Vec3 } from "./motion";
 import { angleDeg, mirrorFrame, mpToThree, palmNormal, sub3 } from "./geom";
+import { cleanQuatChannel, cleanScalarChannel, DEFAULT_CLEAN, framePos, linkedSpikes, twistAbout, type ChannelParams, type CleanStats, type QuatChannel } from "./track";
 
 export type Solver = "kalidokit" | "direct";
+
+/**
+ * Clean-up per bone group (src/track.ts): the fastest a joint can plausibly turn (anything faster that comes
+ * straight back is a tracker glitch) and a small zero-phase Gaussian. Fingers get the most room: handshape
+ * changes are the fastest real motion in signing.
+ */
+export type BoneGroup = "torso" | "head" | "arm" | "twist" | "hand" | "finger";
+export const CHANNEL_PARAMS: Record<BoneGroup, ChannelParams> = {
+  torso: { maxSpeedDegS: 400, sigmaS: 0.04 },
+  head: { maxSpeedDegS: 600, sigmaS: 0.04 },
+  arm: { maxSpeedDegS: 1000, sigmaS: 0.025 },
+  twist: { maxSpeedDegS: 1000, sigmaS: 0.025 },
+  hand: { maxSpeedDegS: 1000, sigmaS: 0.025 },
+  finger: { maxSpeedDegS: 1500, sigmaS: 0.025 },
+};
+
+const EXPRESSIONS = ["aa", "ee", "ih", "oh", "ou", "blinkLeft", "blinkRight", "blink"];
+
+/** A motion solved once into bone rotations and cleaned (bake), ready to play at any time between frames. */
+export interface BakedTrack {
+  n: number;
+  fps: number;
+  solver: Solver;
+  /** one entry per driven bone; the forearm keeps its roll (twist) separately, it is tracked with the hand */
+  bones: { node: THREE.Object3D; q: Float32Array; twist: Float32Array | null }[];
+  expressions: { name: string; v: Float32Array }[];
+  browUp: Float32Array;
+  browDown: Float32Array;
+  /** per frame: tracking and retargeting report of the cleaned pose */
+  reports: RetargetReport[];
+  /** what the clean-up changed, per bone group (frames summed over the group's bones) */
+  stats: Record<BoneGroup, CleanStats>;
+}
+
+/** forward steps longer than this (seconds) restart the hair/cloth simulation instead of integrating */
+const SPRING_MAX_STEP_S = 0.25;
+const SPRING_SETTLE_S = 0.6;
+const SPRING_SUBSTEP_S = 1 / 60;
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qc = new THREE.Quaternion();
 
 export interface PuppetOptions {
   solver?: Solver;
@@ -170,30 +216,228 @@ export class VrmPuppet {
     }
   }
 
-  /** Apply one frame; returns tracking and retargeting problems for it. */
+  /**
+   * Raw mode: solve and show one frame as tracked, no clean-up, no physics (viewer `smooth=0`, render `--raw`).
+   * Returns tracking and retargeting problems for it.
+   */
   applyFrame(f: MotionFrame | null, m: Motion): RetargetReport {
-    const vrm = this.vrm!;
-    const report: RetargetReport = { frame: f?.i ?? -1, tracking: [], retarget: [], err: {} };
-    this.restPose();
-    if (!f) { report.tracking.push("no frame"); this.finish(); return report; }
-    if (!f.pose || !f.poseWorld) report.tracking.push("pose");
-    if (!f.leftHand) report.tracking.push("L hand");
-    if (!f.rightHand) report.tracking.push("R hand");
-    if (!f.face) report.tracking.push("face");
+    const report: RetargetReport = { frame: f?.i ?? -1, tracking: this.solveFrame(f, m), retarget: [], err: {} };
+    this.springFrame = null;
+    this.finish();
+    if (f) this.measure(f, m, report);
+    return report;
+  }
 
+  /** Solve one frame into the normalized bones and expression values. Returns the parts the tracker missed. */
+  private solveFrame(f: MotionFrame | null, m: Motion): string[] {
+    const tracking: string[] = [];
+    this.restPose();
+    this.resetExpressions();
+    if (!f) { tracking.push("no frame"); return tracking; }
+    if (!f.pose || !f.poseWorld) tracking.push("pose");
+    if (!f.leftHand) tracking.push("L hand");
+    if (!f.rightHand) tracking.push("R hand");
+    if (!f.face) tracking.push("face");
     this.solveHead(f, m);
     if (this.opts.solver === "kalidokit") this.solveKalidokit(f, m);
     else this.solveDirect(f, m);
     this.solveExpressions(f, m);
-    this.finish();
-    this.measure(f, m, report);
-    return report;
+    return tracking;
   }
 
   private finish() {
     this.vrm!.update(0); // normalized -> raw bones, constraints, expressions (spring bones get dt = 0)
     this.applyBrowMorphs();
     this.vrm!.scene.updateMatrixWorld(true);
+  }
+
+  // ---------------------------------------------------------------- baked, cleaned playback
+  /** baked track of the current motion (null until bake) */
+  track: BakedTrack | null = null;
+  /** track position (frames) the hair/cloth simulation was last stepped to; null = needs a restart */
+  private springFrame: number | null = null;
+
+  /** Which parts of a frame the solver actually had, i.e. which bone groups are tracked (not rest fallback). */
+  private tracked(f: MotionFrame) {
+    const torso = !!(f.pose && f.poseWorld);
+    const arm = (side: Side) => {
+      if (!torso) return false;
+      if (this.opts.solver === "kalidokit") return true; // kalidokit rigs the arms whenever there is a pose
+      const [el, wr] = side === "left" ? [13, 15] : [14, 16];
+      return Math.min(f.pose![el][3] ?? 1, f.pose![wr][3] ?? 1) >= 0.3; // same test as solveDirect
+    };
+    const hand = (side: Side) => arm(side) && !!(side === "left" ? f.leftHand : f.rightHand);
+    const bs = f.faceBlendshapes;
+    return {
+      torso, head: !!(f.face || f.poseWorld), face: !!((bs && Object.keys(bs).length) || f.face),
+      arm: { left: arm("left"), right: arm("right") }, hand: { left: hand("left"), right: hand("right") },
+    };
+  }
+
+  /** The bones the solvers drive, with their group and side. */
+  private drivenBones(): { name: VRMHumanBoneName; group: BoneGroup; side: Side | null }[] {
+    const out: { name: VRMHumanBoneName; group: BoneGroup; side: Side | null }[] = [];
+    for (const name of ["spine", "chest", "upperChest"] as VRMHumanBoneName[]) out.push({ name, group: "torso", side: null });
+    for (const name of ["neck", "head"] as VRMHumanBoneName[]) out.push({ name, group: "head", side: null });
+    for (const side of SIDES) {
+      out.push({ name: `${side}UpperArm`, group: "arm", side }, { name: `${side}LowerArm`, group: "arm", side }, { name: `${side}Hand`, group: "hand", side });
+      for (const fg of FINGER_BONES) for (const seg of segNames(fg)) out.push({ name: boneName(side, fg, seg), group: "finger", side });
+    }
+    return out.filter((b) => this.node(b.name));
+  }
+
+  /**
+   * Solve every frame once, then clean the rotations over the whole clip (src/track.ts): tracker glitches out,
+   * dropouts bridged or eased, light zero-phase smoothing. Signs keep their timing (nothing lags) and held
+   * handshapes stay exact. Needed before showAt / showFrame.
+   */
+  bake(m: Motion): BakedTrack {
+    const vrm = this.vrm!;
+    const n = m.frames.length, fps = m.fps;
+    const bones = this.drivenBones().map((b) => {
+      const node = this.node(b.name)!;
+      const forearm = b.name === "leftLowerArm" || b.name === "rightLowerArm";
+      const child = forearm ? this.node(`${b.side}Hand` as VRMHumanBoneName) : null;
+      const channel = (name: string, group: BoneGroup): QuatChannel => ({ name, q: new Float32Array(4 * n), valid: new Uint8Array(n), params: CHANNEL_PARAMS[group] });
+      return {
+        ...b, node,
+        rot: channel(b.name, b.group),
+        // the forearm's roll is tracked with the hand, its direction with the arm: two channels
+        twist: forearm && child ? channel(`${b.name} roll`, "twist") : null,
+        // roll axis = toward the hand, in the forearm's own rest frame
+        axis: forearm && child ? child.position.clone().normalize() : null,
+      };
+    });
+    const scalar = (name: string) => ({ name, v: new Float32Array(n), valid: new Uint8Array(n) });
+    const expressions = EXPRESSIONS.map(scalar);
+    const browUp = scalar("browUp"), browDown = scalar("browDown");
+    const tracking: string[][] = [];
+    const swing = new THREE.Quaternion(), roll = new THREE.Quaternion();
+
+    for (let i = 0; i < n; i++) {
+      const f = m.frames[i];
+      tracking.push(this.solveFrame(f, m));
+      const ok = this.tracked(f);
+      for (const b of bones) {
+        const valid = b.group === "torso" ? ok.torso : b.group === "head" ? ok.head : b.group === "arm" ? ok.arm[b.side!] : ok.hand[b.side!];
+        if (b.twist && b.axis) {
+          roll.copy(twistAbout(b.node.quaternion, b.axis)); // q = swing * roll
+          swing.copy(b.node.quaternion).multiply(roll.clone().invert());
+          swing.toArray(b.rot.q as unknown as number[], 4 * i);
+          b.rot.valid[i] = ok.arm[b.side!] ? 1 : 0;
+          roll.toArray(b.twist.q as unknown as number[], 4 * i);
+          b.twist.valid[i] = ok.hand[b.side!] ? 1 : 0;
+        } else {
+          b.node.quaternion.toArray(b.rot.q as unknown as number[], 4 * i);
+          b.rot.valid[i] = valid ? 1 : 0;
+        }
+      }
+      const em = vrm.expressionManager;
+      for (const e of expressions) { e.v[i] = em?.getValue(e.name) ?? 0; e.valid[i] = ok.face ? 1 : 0; }
+      browUp.v[i] = this.browUp; browDown.v[i] = this.browDown;
+      browUp.valid[i] = browDown.valid[i] = ok.face ? 1 : 0;
+    }
+
+    const zero = (): CleanStats => ({ spikeFrames: 0, bridgedFrames: 0, fadedFrames: 0 });
+    const stats: Record<BoneGroup, CleanStats> = { torso: zero(), head: zero(), arm: zero(), twist: zero(), hand: zero(), finger: zero() };
+    const add = (g: BoneGroup, s: CleanStats) => { stats[g].spikeFrames += s.spikeFrames; stats[g].bridgedFrames += s.bridgedFrames; stats[g].fadedFrames += s.fadedFrames; };
+    // Bones that move as one are repaired together where the chain glitches (linkedSpikes): torso, head, each
+    // arm (upper arm + forearm direction), each hand (forearm roll + wrist, then the 15 finger bones). Otherwise
+    // a hand read inside out could get its fingers repaired but not its wrist, and they would point the wrong
+    // way. On Judy a misread hand flags 10-14 hand bones at once, a single bad finger 1-2: hence 5 votes.
+    const chains = new Map<string, { ch: QuatChannel; group: BoneGroup; parent: boolean }[]>();
+    const link = (key: string, ch: QuatChannel, group: BoneGroup, parent: boolean) => {
+      if (!chains.has(key)) chains.set(key, []);
+      chains.get(key)!.push({ ch, group, parent });
+    };
+    for (const b of bones) {
+      if (b.group === "torso" || b.group === "head") link(b.group, b.rot, b.group, b.name === "spine" || b.name === "neck");
+      else if (b.group === "arm") link(`${b.side} arm`, b.rot, b.group, b.name.endsWith("UpperArm"));
+      else link(`${b.side} hand`, b.rot, b.group, b.group === "hand");
+      if (b.twist) link(`${b.side} hand`, b.twist, "twist", true);
+    }
+    for (const [key, chain] of chains) {
+      chain.sort((x, y) => Number(y.parent) - Number(x.parent)); // parents first (stable)
+      const rule = { parents: chain.filter((c) => c.parent).length, minVotes: key.endsWith("hand") ? 5 : chain.length };
+      const spikes = linkedSpikes(chain.map((c) => c.ch), n, fps, rule, DEFAULT_CLEAN);
+      chain.forEach(({ ch, group }, k) => add(group, cleanQuatChannel(ch, n, fps, DEFAULT_CLEAN, spikes[k])));
+    }
+    for (const s of [...expressions, browUp, browDown]) cleanScalarChannel(s, n, fps, DEFAULT_CLEAN);
+
+    const track: BakedTrack = {
+      n, fps, solver: this.opts.solver,
+      bones: bones.map((b) => ({ node: b.node, q: b.rot.q, twist: b.twist?.q ?? null })),
+      expressions: expressions.map(({ name, v }) => ({ name, v })),
+      browUp: browUp.v, browDown: browDown.v, reports: [], stats,
+    };
+    this.track = track;
+    // the report describes what is shown: the cleaned pose at every frame
+    for (let i = 0; i < n; i++) {
+      this.poseAt(i);
+      this.finish();
+      const report: RetargetReport = { frame: i, tracking: tracking[i], retarget: [], err: {} };
+      this.measure(m.frames[i], m, report);
+      track.reports.push(report);
+    }
+    this.springFrame = null;
+    return track;
+  }
+
+  /** Set the normalized bones and expressions from the baked track at a fractional frame (no update). */
+  private poseAt(frame: number) {
+    const tr = this.track!;
+    const { k, w } = framePos(tr.n, frame);
+    const k1 = Math.min(tr.n - 1, k + 1);
+    const arr = (a: Float32Array) => a as unknown as number[];
+    this.vrm!.humanoid.resetNormalizedPose();
+    for (const b of tr.bones) {
+      _qa.fromArray(arr(b.q), 4 * k).slerp(_qb.fromArray(arr(b.q), 4 * k1), w);
+      if (b.twist) _qa.multiply(_qc.fromArray(arr(b.twist), 4 * k).slerp(_qb.fromArray(arr(b.twist), 4 * k1), w));
+      b.node.quaternion.copy(_qa);
+    }
+    const em = this.vrm!.expressionManager;
+    const lerp = (v: Float32Array) => v[k] + (v[k1] - v[k]) * w;
+    if (em) for (const e of tr.expressions) em.setValue(e.name, lerp(e.v));
+    this.browUp = lerp(tr.browUp);
+    this.browDown = lerp(tr.browDown);
+  }
+
+  /**
+   * Show the baked track at a fractional frame (playback between frames) and step the hair/cloth physics.
+   * Moving forward integrates the springs over the elapsed motion time; a jump back or a long jump forward
+   * (a seek, a loop) restarts them and lets them settle on the new pose. Deterministic for a given call sequence.
+   */
+  showAt(frame: number): void {
+    const vrm = this.vrm!, tr = this.track!;
+    const at = Math.max(0, Math.min(tr.n - 1, frame));
+    this.poseAt(at);
+    const sb = vrm.springBoneManager;
+    const stepS = this.springFrame === null ? -1 : (at - this.springFrame) / tr.fps;
+    if (sb && (stepS < 0 || stepS > SPRING_MAX_STEP_S)) {
+      vrm.update(0);
+      sb.reset();
+      for (let s = 0; s < Math.round(SPRING_SETTLE_S / SPRING_SUBSTEP_S); s++) vrm.update(SPRING_SUBSTEP_S);
+    } else if (stepS > 0) {
+      const steps = Math.max(1, Math.ceil(stepS / SPRING_SUBSTEP_S - 1e-9));
+      for (let s = 0; s < steps; s++) vrm.update(stepS / steps);
+    } else vrm.update(0);
+    this.springFrame = at;
+    this.applyBrowMorphs();
+    vrm.scene.updateMatrixWorld(true);
+  }
+
+  /** Show baked frame i exactly (the offline render) and return its report. */
+  showFrame(i: number): RetargetReport {
+    const tr = this.track!;
+    const k = Math.max(0, Math.min(tr.n - 1, Math.round(i)));
+    this.showAt(k);
+    return tr.reports[k];
+  }
+
+  private resetExpressions() {
+    const em = this.vrm!.expressionManager;
+    if (em) for (const n of EXPRESSIONS) em.setValue(n, 0);
+    this.browUp = 0; this.browDown = 0;
   }
 
   // ---------------------------------------------------------------- head and face
@@ -355,13 +599,18 @@ export class VrmPuppet {
       const hand = side === "left" ? f.leftHand : f.rightHand;
       const handW = side === "left" ? f.leftHandWorld : f.rightHandWorld;
       const H = handW ? (k: number) => v3(mpToThree(handW[k])) : hand ? (k: number) => v3(mpToThree([hand[k][0] * m.width, hand[k][1] * m.height, hand[k][2] * m.width])) : null;
-      if (!H || !hand) { this.aim(`${side}LowerArm`, `${side}Hand`, fore); continue; }
+      // forearm direction first; its roll (pronation/supination) comes from the hand below
+      this.aim(`${side}LowerArm`, `${side}Hand`, fore);
+      if (!H || !hand) continue;
       const palmN = v3(mpToThree(handW ? palmNormal(handW, side) : palmNormal(hand, side, [m.width, m.height, m.width])));
       const restPalm = this.restPalmNormal(side);
-      // forearm: direction + pronation/supination from the palm normal
-      this.aim(`${side}LowerArm`, `${side}Hand`, fore, restPalm, palmN, 1);
-      // hand: wrist -> middle knuckle, twisted by the palm normal
+      // hand: wrist -> middle knuckle, rolled by the palm normal. Always well defined: the palm normal is
+      // perpendicular to that direction (it could line up with the forearm when the wrist bends, which made
+      // the old forearm-first roll flip).
       this.aim(`${side}Hand`, `${side}MiddleProximal`, H(9).sub(H(0)), restPalm, palmN, 1);
+      // a wrist cannot roll: move the hand's roll about the forearm axis into the forearm.
+      // The hand's world orientation (and so every finger) is unchanged by this.
+      this.moveRollToForearm(side);
       // fingers: swing each joint toward the next landmark (keeps curl and spread)
       for (const fg of FINGER_BONES) {
         const lm = FINGER_LM[fg];
@@ -372,6 +621,16 @@ export class VrmPuppet {
         }
       }
     }
+  }
+
+  /** forearm.q *= roll, hand.q = roll^-1 * hand.q, with roll = the hand's twist about the forearm axis */
+  private moveRollToForearm(side: Side) {
+    const fore = this.node(`${side}LowerArm`), hand = this.node(`${side}Hand`);
+    if (!fore || !hand || hand.position.lengthSq() < 1e-12) return;
+    const roll = twistAbout(hand.quaternion, hand.position.clone().normalize());
+    fore.quaternion.multiply(roll);
+    hand.quaternion.premultiply(roll.invert());
+    fore.updateMatrixWorld(true);
   }
 
   /** world vector -> local frame of a bone's parent, assuming the bone itself is still at rest */

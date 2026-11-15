@@ -9,6 +9,7 @@
 //   mannequin=1         black top, skin-tone hands, dark wall
 //   labels=0|1          overlays (default 1, except view=vrm in render mode)
 //   model=<url>         VRM file (default /models/VRM1_Constraint_Twist_Sample.vrm)
+//   smooth=0            raw puppet: every frame as tracked (no clean-up, no in-between frames, no hair physics)
 //   render=1            offline mode for render.mjs: no controls, window.renderFrame(i) draws frame i
 //   srcframes=<tpl>     render mode: source frames as images, e.g. /__file/C:/tmp/src_%05d.png (1-based)
 import { duration, frameIndexAt, loadMotion, missingStats, type Motion } from "./motion";
@@ -17,8 +18,9 @@ import { VrmPuppet, type RetargetReport, type Solver } from "./vrm";
 
 declare global {
   interface Window {
-    puppetReady: Promise<{ frames: number; fps: number; width: number; height: number; warnings: string[] }>;
-    renderFrame: (i: number) => Promise<RetargetReport | null>;
+    puppetReady: Promise<{ frames: number; fps: number; width: number; height: number; warnings: string[]; smoothing: { glitch: number; bridged: number; eased: number } | null }>;
+    /** draw frame i; in smooth mode `at` (fractional frame, default i) poses the puppet between frames */
+    renderFrame: (i: number, at?: number) => Promise<RetargetReport | null>;
     /** render mode: the current frame as a base64 PNG of all panels */
     captureFrame: () => Promise<string>;
   }
@@ -33,6 +35,7 @@ let closeup = q.get("closeup") === "1";
 let solver = (q.get("solver") ?? "direct") as Solver;
 const MANNEQUIN = q.get("mannequin") === "1";
 const MODEL = q.get("model") ?? "/models/VRM1_Constraint_Twist_Sample.vrm";
+const SMOOTH = q.get("smooth") !== "0";
 
 /** local paths go through the dev server's /__file/ route (see vite.config.ts) */
 export function resolveUrl(p: string): string {
@@ -94,8 +97,16 @@ async function main() {
     vrmOverlay = canvas(p, "overlay").getContext("2d")!;
     puppet = new VrmPuppet(c, PW, PH, { solver, closeup, mannequin: MANNEQUIN });
     await puppet.load(MODEL);
+    if (SMOOTH) puppet.bake(motion);
     (window as any).puppet = puppet; // for poking at from devtools
   }
+  /** what the clean-up changed (bone-frames summed over all driven bones) */
+  const smoothing = () => {
+    if (!puppet?.track) return null;
+    const s = Object.values(puppet.track.stats);
+    const sum = (k: "spikeFrames" | "bridgedFrames" | "fadedFrames") => s.reduce((a, x) => a + x[k], 0);
+    return { glitch: sum("spikeFrames"), bridged: sum("bridgedFrames"), eased: sum("fadedFrames") };
+  };
 
   const stats = missingStats(motion);
   const srcImg = new Image();
@@ -117,12 +128,17 @@ async function main() {
     }
   }
 
-  function drawFrame(i: number): RetargetReport | null {
+  /** Draw frame i. In smooth mode the puppet is posed at `at` (a fractional frame); the other panels show frame i. */
+  function drawFrame(i: number, at: number = i): RetargetReport | null {
     const f = motion.frames[i] ?? null;
     let report: RetargetReport | null = null;
     if (puppet) {
       puppet.opts.solver = solver; puppet.opts.closeup = closeup;
-      report = puppet.applyFrame(f, motion);
+      if (SMOOTH) {
+        if (puppet.track?.solver !== solver) puppet.bake(motion);
+        puppet.showAt(at);
+        report = puppet.track!.reports[i] ?? null;
+      } else report = puppet.applyFrame(f, motion);
       const o = vrmOverlay!;
       o.clearRect(0, 0, PW, PH);
       puppet.render((rects) => {
@@ -134,18 +150,25 @@ async function main() {
       });
       if (LABELS) {
         let y = 22;
-        tag(o, `VRM puppet · ${solver}`, 8, y, "#e8e8e8", 15); y += 24;
-        for (const t of report.tracking) { tag(o, `not tracked: ${t}`, 8, y, "#9aa0aa", 13); y += 21; }
-        for (const t of report.retarget) { tag(o, `retarget: ${t}`, 8, y, "#ff6b6b", 13); y += 21; }
+        tag(o, `VRM puppet · ${solver} · ${SMOOTH ? "smooth" : "raw"}`, 8, y, "#e8e8e8", 15); y += 24;
+        for (const t of report?.tracking ?? []) { tag(o, `not tracked: ${t}`, 8, y, "#9aa0aa", 13); y += 21; }
+        for (const t of report?.retarget ?? []) { tag(o, `retarget: ${t}`, 8, y, "#ff6b6b", 13); y += 21; }
       }
     }
     if (skelCtx) drawSkeleton(skelCtx, f, motion, PW, PH, { closeup, labels: LABELS, title: LABELS ? "Landmarks (MediaPipe)" : undefined });
     return report;
   }
 
-  window.renderFrame = async (i: number) => {
+  /** Smooth mode, between two frames: re-pose and redraw only the puppet (labels and panels stay as drawn). */
+  function drawPuppetAt(at: number) {
+    if (!puppet?.track) return;
+    puppet.showAt(at);
+    puppet.render();
+  }
+
+  window.renderFrame = async (i: number, at?: number) => {
     await drawSource(i);
-    return drawFrame(i);
+    return drawFrame(i, at ?? i);
   };
   // render mode: composite all panel canvases into one image (faster and more exact than a page screenshot)
   const layers = [...panelsEl.querySelectorAll("canvas")] as HTMLCanvasElement[];
@@ -164,7 +187,7 @@ async function main() {
     return btoa(s);
   };
 
-  if (RENDER) return { motion, warnings };
+  if (RENDER) return { motion, warnings, smoothing: smoothing() };
 
   // ---- interactive controls
   $("controls").hidden = false;
@@ -173,11 +196,14 @@ async function main() {
   seek.max = String(motion.frames.length - 1);
   closeChk.checked = closeup; solverSel.value = solver;
   let cur = 0, playing = false, t = 0, last = 0;
-  const show = (i: number) => {
+  const sm = smoothing();
+  const show = (i: number, at?: number) => {
     cur = Math.max(0, Math.min(motion.frames.length - 1, i));
     seek.value = String(cur);
-    const r = drawFrame(cur);
+    const r = drawFrame(cur, at ?? cur);
     const lines = [`${motion.name} · ${motion.frames.length} frames @ ${motion.fps} fps · missing: pose ${stats.pose}, face ${stats.face}, L hand ${stats.leftHand}, R hand ${stats.rightHand}`];
+    const s = smoothing(); // after drawFrame: a solver change re-bakes there
+    lines.push(s ? `smooth: ${s.glitch} glitch, ${s.bridged} bridged, ${s.eased} eased bone-frames (smooth=0 for raw)` : "raw: every frame as tracked");
     if (r) {
       const errs = Object.entries(r.err).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${Math.round(v!)}°`).join(" · ");
       lines.push(`retarget error: ${errs}`);
@@ -211,13 +237,15 @@ async function main() {
       last = now;
       if (t >= duration(motion)) { t = 0; if (video) syncVideo(); }
       const i = frameIndexAt(motion, t);
-      if (i !== cur) show(i);
+      const at = (t - motion.frames[0].t) * motion.fps; // fractional frame: the puppet moves every screen refresh
+      if (i !== cur) show(i, at);
+      else if (SMOOTH) drawPuppetAt(at);
     }
     requestAnimationFrame(tick);
   };
   show(0); syncVideo();
   requestAnimationFrame(tick);
-  return { motion, warnings };
+  return { motion, warnings, smoothing: sm };
 }
 
 function tag(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, size: number) {
@@ -227,7 +255,8 @@ function tag(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, 
   ctx.fillStyle = color; ctx.fillText(text, x, y + 2);
 }
 
-window.puppetReady = main().then(({ motion, warnings }: { motion: Motion; warnings: string[] }) => ({
-  frames: motion.frames.length, fps: motion.fps, width: motion.width, height: motion.height, warnings,
+type Smoothing = { glitch: number; bridged: number; eased: number } | null;
+window.puppetReady = main().then(({ motion, warnings, smoothing }: { motion: Motion; warnings: string[]; smoothing: Smoothing }) => ({
+  frames: motion.frames.length, fps: motion.fps, width: motion.width, height: motion.height, warnings, smoothing,
 }));
 window.puppetReady.catch((e) => { errorEl.textContent = String(e?.stack ?? e); console.error(e); });
