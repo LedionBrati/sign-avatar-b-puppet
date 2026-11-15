@@ -36,7 +36,7 @@ import { MODELS } from "../e0/models.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const [cmd = "help", ...rest] = process.argv.slice(2);
-const BOOL = new Set(["dry-run", "execute", "cpu", "retry-failed", "rerank", "flush"]);
+const BOOL = new Set(["dry-run", "execute", "simulate", "cpu", "retry-failed", "rerank", "flush"]);
 const opt = {};
 for (let i = 0; i < rest.length; i++) {
   const k = rest[i].replace(/^--/, "");
@@ -70,7 +70,8 @@ const save = (p, data) => { mkdirSync(dirname(p), { recursive: true }); writeFil
 const statePath = join(C.out, "state.json");
 const rankedPath = join(C.out, "ranked.json");
 const loadState = () => existsSync(statePath) ? load(statePath) : { version: 1, signs: {}, batches: {}, chunks: 0 };
-const saveState = (s) => { s.updated = new Date().toISOString(); save(statePath, s); };
+// --simulate (free wiring test of the repaint stage): never writes state.json
+const saveState = (s) => { if (opt.simulate) return; s.updated = new Date().toISOString(); save(statePath, s); };
 const loadRanked = () => { if (!existsSync(rankedPath)) throw new Error("run `rank` first"); return load(rankedPath); };
 const usd = (x) => `$${x.toFixed(2)}`;
 const hms = (s) => s >= 3600 ? `${(s / 3600).toFixed(1)} h` : s >= 60 ? `${(s / 60).toFixed(1)} min` : `${Math.round(s)} s`;
@@ -398,6 +399,13 @@ async function repaint() {
   if (rows[0]) console.log(`\n  per batch it runs (example):\n  node pipeline/e0.mjs --puppet ${rows[0].b.render.mp4} --source ${rows[0].b.render.mp4} --model recast --resolution ${RESOLUTION} --run-dir ${join(C.runs, rows[0].name)} --execute --authorize-paid E0-PAID --max-usd ${Math.ceil(rows[0].reserve)}\n  then: frame check (generated == ${rows[0].b.frames}) and sign-clips.mjs cut --out-dir ${C.clips}`);
 
   if (opt["dry-run"]) return;
+  if (opt.simulate) {
+    // Free: the puppet render stands in for generated.mp4, to test frame check + cut + manifest + aliases.
+    if (!opt["clips-dir"]) throw new Error("--simulate needs an explicit --clips-dir (never the real clip set)");
+    C.runs = join(C.out, "simulate");
+    for (const r of rows.slice(0, Number(opt.limit ?? 2))) await repaintOne(state, r);
+    return;
+  }
   if (!opt.execute) { console.log("\nnothing spent: add --dry-run to only plan, or --execute --budget-usd X to run the paid step"); return; }
   if (budget == null || !(budget > 0)) throw new Error("--execute needs --budget-usd X (total across all runs recorded in state.json)");
   if (!env.FAL_KEY) throw new Error("--execute needs FAL_KEY in the environment");
@@ -416,6 +424,13 @@ async function repaint() {
   console.log(`repaint: done. recorded total reserve ${usd(after.reserve)}, listed ${usd(after.listed)} over ${after.calls} calls`);
 }
 
+function simulateRun(mp4, runDir) {
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(join(runDir, "generated.mp4"), readFileSync(mp4));
+  writeFileSync(join(runDir, "result.json"), JSON.stringify({ status: "generated_unreviewed", simulated: true, paid: null }));
+  return { code: 0 };
+}
+
 async function repaintOne(state, r) {
   const b = state.batches[r.name];
   b.repaint ??= { attempts: [] };
@@ -427,7 +442,7 @@ async function repaintOne(state, r) {
   b.repaint.status = "running";
   saveState(state);                                        // record the reserve BEFORE spending
   console.log(`  ${r.name}: repaint (${r.b.signs.length} signs, ${r.video_s.toFixed(2)} s, reserve ${usd(r.reserve)}, --max-usd ${maxUsd})`);
-  const { code } = await run(process.execPath, ["pipeline/e0.mjs", "--puppet", b.render.mp4, "--source", b.render.mp4, "--model", "recast",
+  const { code } = opt.simulate ? simulateRun(b.render.mp4, runDir) : await run(process.execPath, ["pipeline/e0.mjs", "--puppet", b.render.mp4, "--source", b.render.mp4, "--model", "recast",
     "--resolution", RESOLUTION, "--run-dir", runDir, "--execute", "--authorize-paid", "E0-PAID", "--max-usd", String(maxUsd)],
     { log: join(C.out, "logs", `repaint-${basename(runDir)}.log`), quiet: true });
   const result = existsSync(join(runDir, "result.json")) ? load(join(runDir, "result.json")) : null;
@@ -435,7 +450,7 @@ async function repaintOne(state, r) {
   attempt.status = result?.status ?? "no_result";
   attempt.request_id = result?.paid?.request_id ?? null;
   attempt.runtime_s = result?.paid?.runtime_seconds ?? null;
-  attempt.paid_call = result != null;                     // no result.json = the harness guard refused before any upload
+  attempt.paid_call = result != null && !opt.simulate;                     // no result.json = the harness guard refused before any upload
   const gen = join(runDir, "generated.mp4");
   if (attempt.status !== "generated_unreviewed" || !existsSync(gen)) {
     b.repaint.status = "failed"; saveState(state);
