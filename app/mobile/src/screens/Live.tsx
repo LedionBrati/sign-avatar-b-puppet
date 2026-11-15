@@ -28,12 +28,15 @@ interface Props {
 export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
   const client = useMemo(() => createSignClient(serverUrl), [serverUrl]);
   const [session, setSession] = useState<SignResponse>(emptySession);
+  const sessionRef = useRef<SignResponse>(emptySession());
+  const failedRef = useRef(false);
   const [playing, setPlaying] = useState(-1);
   const [runKey, setRunKey] = useState(0);
   const [pending, setPending] = useState(0);
   const [interim, setInterim] = useState("");
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCaption, setErrorCaption] = useState("");
   const stopRef = useRef<(() => void) | null>(null);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const alive = useRef(true);
@@ -42,13 +45,31 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
   const sign = useCallback((text: string) => {
     setPending((n) => n + 1);
     setError(null);
+    setErrorCaption("");
     const req = client.sign({ text });
     queue.current = queue.current.then(async () => {
       try {
         const res = await req;
-        if (alive.current) setSession((s) => appendResponse(s, res));
+        if (alive.current) {
+          const blocked = res.safety && res.safety.status !== "fully_supported";
+          const previousBlocked = failedRef.current || Boolean(sessionRef.current.safety && sessionRef.current.safety.status !== "fully_supported");
+          const next = blocked || previousBlocked ? res : appendResponse(sessionRef.current, res);
+          failedRef.current = false;
+          sessionRef.current = next;
+          setSession(next);
+          if (blocked || previousBlocked) { setPlaying(-1); setRunKey((k) => k + 1); }
+        }
       } catch (e) {
-        if (alive.current) setError(e instanceof Error && e.message ? `Can't reach the server (${e.message}).` : "Can't reach the server.");
+        if (alive.current) {
+          const fallback = { ...emptySession(), text, words: text.trim().split(/\s+/) };
+          sessionRef.current = fallback;
+          failedRef.current = true;
+          setSession(fallback);
+          setPlaying(-1);
+          setRunKey((k) => k + 1);
+          setErrorCaption(text);
+          setError(e instanceof Error && e.message ? `Can't reach the server (${e.message}).` : "Can't reach the server.");
+        }
       } finally {
         if (alive.current) setPending((n) => n - 1);
       }
@@ -77,7 +98,7 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
 
   const stopListening = () => { stopRef.current?.(); stopRef.current = null; setListening(false); };
   const stop = () => { tap("stop"); stopListening(); onExit(); };
-  const again = () => { tap("start"); setSession(emptySession()); setPlaying(-1); setRunKey((k) => k + 1); setInterim(""); setError(null); listen(); };
+  const again = () => { tap("start"); sessionRef.current = emptySession(); failedRef.current = false; setSession(sessionRef.current); setPlaying(-1); setRunKey((k) => k + 1); setInterim(""); setError(null); setErrorCaption(""); listen(); };
   const replay = () => { tap("light"); setPlaying(-1); setRunKey((k) => k + 1); };
 
   const n = session.playlist.length;
@@ -89,8 +110,10 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
   const showCard = hasWords;
   const cur = frame.current >= 0 ? session.playlist[frame.current] : undefined;
   const nowWord = cur && cur.word_index >= 0 ? session.words[cur.word_index]?.replace(/[.,:;!?]+$/, "") : undefined;
+  const blocked = Boolean(error) || Boolean(session.safety && session.safety.status !== "fully_supported");
+  const safetyTitle = error ? "Signing unavailable" : session.safety?.status === "needs_confirmation" ? "Meaning needs confirmation" : "Caption only";
 
-  const island = done ? "1 speaker · Done" : showCard ? "1 speaker" : listening ? "Listening" : canListen && !typed ? "Starting…" : "Type to sign";
+  const island = blocked ? safetyTitle : done ? "1 speaker · Done" : showCard ? "1 speaker" : listening ? "Listening" : canListen && !typed ? "Starting…" : "Type to sign";
   const heardLine = interim || (pending > 0 ? session.text || "…" : "");
 
   return (
@@ -112,8 +135,19 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
             {showCard ? (
               <SignerCard
                 speaking={!done && frame.current >= 0}
-                video={<PlaylistPlayer playlist={session.playlist} runKey={runKey} onIndex={setPlaying} />}
+                video={<PlaylistPlayer key={runKey} playlist={session.playlist} runKey={runKey} onIndex={setPlaying} />}
                 caption={<CaptionSheet words={session.words} states={frame.states} unsigned={unsigned} lines={2} />}
+                notice={error ? <>
+                  <Text style={s.safetyTitle}>Signing unavailable</Text>
+                  <Text style={s.safetyCaption}>{errorCaption}</Text>
+                  <Text style={s.safetyReason}>The sign server could not be reached. Check the server settings and try again.</Text>
+                </> : blocked && session.safety ? <>
+                  <Text style={s.safetyTitle}>{safetyTitle}</Text>
+                  <Text style={s.safetyCaption}>{session.safety.caption}</Text>
+                  {session.safety.reasons.map((reason, i) => <Text key={i} style={s.safetyReason}>
+                    {reason.tokens.length ? `${reason.tokens.join(", ")}: ` : ""}{reason.next_action}
+                  </Text>)}
+                </> : undefined}
               />
             ) : (
               <View style={s.listen}>
@@ -135,12 +169,12 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
             )}
             {done && (
               <>
-                <Text style={s.sum} testID="summary">
+                <Text style={s.sum} testID="summary">{blocked ? `${safetyTitle} · No signing for this message` : <>
                   <Text style={s.sumB}>Signed</Text> · {n} sign{n === 1 ? "" : "s"} · {Math.round(playlistSeconds(session))} s
                   {unsigned.size ? <Text style={{ opacity: 0.75 }}> · {unsigned.size} word{unsigned.size === 1 ? "" : "s"} without a sign yet</Text> : null}
-                </Text>
+                </>}</Text>
                 <View style={s.acts}>
-                  <Pill label="Replay" onPress={replay} testID="replay" />
+                  {!blocked ? <Pill label="Replay" onPress={replay} testID="replay" /> : null}
                   <Pill label="Listen again" onPress={again} on testID="again" />
                 </View>
               </>
@@ -178,5 +212,8 @@ const s = StyleSheet.create({
   err: { color: "#ffd9d9", fontSize: 13, fontFamily: font },
   hint: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontFamily: font, textAlign: "center" },
   credit: { color: "rgba(255,255,255,0.45)", fontSize: 10, fontFamily: font },
+  safetyTitle: { color: "#1f34b5", fontSize: 19, fontWeight: "600", fontFamily: fontMedium },
+  safetyCaption: { color: "#1f34b5", fontSize: 17, marginTop: 10, marginBottom: 12, fontFamily: fontMedium },
+  safetyReason: { color: "#1f34b5", fontSize: 12, lineHeight: 17, marginBottom: 7, fontFamily: font },
 });
 

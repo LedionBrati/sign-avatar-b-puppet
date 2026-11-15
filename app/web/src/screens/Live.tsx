@@ -59,6 +59,15 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
 
   const patch = (id: number, p: Partial<Phrase>) => setPhrases((ps) => ps.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
+  const clearPlayback = (id: number, update: Partial<Phrase>) => {
+    player.current?.clear();
+    setPlaying(-1);
+    setTotal(0);
+    // Keep the transcript, but detach earlier clips so an old word cannot light up during recovery.
+    setPhrases((ps) => ps.map((x) => x.id === id ? { ...x, ...update, offset: 0 }
+      : x.res ? { ...x, res: { ...x.res, playlist: [], markers: [] }, offset: -2 } : x));
+  };
+
   const submit = useCallback((text: string) => {
     const id = ++ids.current;
     setStopped(false);
@@ -71,12 +80,13 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         res = await req;
       } catch (e) {
         if (!alive.current) return;
-        patch(id, { error: (e as Error).message, offset: -2 });
+        clearPlayback(id, { error: (e as Error).message });
         setBanner(`Can't reach the sign server at ${apiLabel()}. Is it running? (${(e as Error).message})`);
         reveal();
         return;
       }
       if (!alive.current) return;
+      setBanner(null);
       res.playlist.forEach((x) => void prefetchClip(x.url)); // warm the clips while the card forms
       const wait = id === 1 && start.kind === "typed" ? Math.max(0, MIN_LISTEN_MS + splitWords(text).length * WORD_MS - (performance.now() - t0.current)) : 0;
       if (wait) await new Promise((r) => setTimeout(r, wait));
@@ -86,6 +96,10 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
       if (!alive.current) return;
       const p = player.current;
       const offset = p ? p.length : 0;
+      if (res.safety && res.safety.status !== "fully_supported") {
+        clearPlayback(id, { res });
+        return;
+      }
       patch(id, { res, offset });
       if (p && res.playlist.length) {
         p.append(res.playlist.map((x) => ({ url: x.url, duration_s: x.duration_s })));
@@ -150,13 +164,21 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   }, []);
 
   const view = useMemo(() => sessionView(phrases, playing, interim), [phrases, playing, interim]);
+  const safety = phrases.at(-1)?.res?.safety;
+  const latestUnsupported = phrases.at(-1)?.res?.unsupported ?? [];
+  const latestFingerspell = phrases.at(-1)?.res?.fingerspell ?? [];
+  const latestError = phrases.at(-1)?.error;
+  const blocked = safety && safety.status !== "fully_supported";
   const settled = phrases.length > 0 && phrases.every((p) => p.offset !== -1);
   const drained = total === 0 || playing >= total;
   const done = !micOn && settled && (drained || stopped) && revealed;
   const pending = phrases.some((p) => p.offset === -1);
   const secs = phrases.reduce((s, p) => s + (p.res?.playlist.reduce((a, x) => a + x.duration_s, 0) ?? 0), 0);
 
-  const island = !revealed ? (micOn ? "Listening" : start.kind === "typed" ? "Reading" : "Mic off") : done ? "1 speaker · Done" : "1 speaker";
+  const island = !revealed ? (micOn ? "Listening" : start.kind === "typed" ? "Reading" : "Mic off")
+    : latestError ? "Connection lost"
+    : blocked ? (safety.status === "needs_confirmation" ? "Meaning unclear" : "Caption only")
+    : done ? "1 speaker · Done" : "1 speaker";
 
   function stop() {
     if (!phrases.length) { stopMic(); onHome(); return; }
@@ -187,7 +209,8 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
 
       <div className="lanes">
         <Lane index={0} label="Speaker 1" mode={revealed ? (done ? "rest" : "lit") : "unseen"} arrive={arrive} speaking={view.now >= 0}
-          stage={<SignerStage onReady={onPlayer} on={revealed} label="Speaker 1, signed" />}
+          stage={<SignerStage onReady={onPlayer} on={revealed} label={blocked || latestError ? "Signing paused; caption shown" : "Speaker 1, signed"}
+            safety={safety} error={latestError ? { caption: phrases.at(-1)?.text ?? "", message: latestError } : undefined} />}
           caption={<Captions words={view.words} now={view.now} lines={2} />} />
         <div className={`listen${revealed ? " off" : ""}`} aria-live="polite">
           <Wave level={0.95} talking={!revealed && (micOn || start.kind === "typed")} />
@@ -202,10 +225,12 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
       <div className="foot">
         {done ? (
           <>
-            <p className="sumline"><span><b>Signed</b></span><span>1 voice</span><span>{total} sign{total === 1 ? "" : "s"}</span><span>{Math.round(secs)} s</span></p>
-            <Hints u={view.unsupported} f={view.fingerspell} />
+            {latestError ? <p className="sumline"><span><b>Signing unavailable</b></span><span>Server connection failed</span></p>
+              : blocked ? <p className="sumline"><span><b>{safety.status === "needs_confirmation" ? "Meaning needs confirmation" : "Caption only"}</b></span><span>No signing for this message</span></p>
+              : <p className="sumline"><span><b>Signed</b></span><span>1 voice</span><span>{total} sign{total === 1 ? "" : "s"}</span><span>{Math.round(secs)} s</span></p>}
+            <Hints u={latestUnsupported} f={latestFingerspell} />
             <div className="acts">
-              <button className="pill sm" onClick={() => player.current?.replay()} disabled={!total}>Replay</button>
+              {!blocked && !latestError ? <button className="pill sm" onClick={() => player.current?.replay()} disabled={!total}>Replay</button> : null}
               <button className="pill sm on" onClick={() => onRestart(speechSupported() ? { kind: "mic" } : { kind: "typed", text: "" })}>
                 {speechSupported() ? "Listen again" : "Type again"}
               </button>
@@ -218,7 +243,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
                 <>Signing <b>{view.nowGloss}</b>{view.nowWord ? <> <span className="for">for “{view.nowWord}”</span></> : null}</>
               ) : micOn ? "Listening…" : pending ? "Translating…" : ""}
             </p>
-            {revealed ? <Hints u={view.unsupported} f={view.fingerspell} /> : null}
+            {revealed ? <Hints u={latestUnsupported} f={latestFingerspell} /> : null}
           </>
         )}
         {typing ? <TypeBox onSubmit={submit} autoFocus placeholder="Type to sign" /> : null}

@@ -85,17 +85,21 @@ function renderStatus() {
   const cur = job?.res.playlist[idx];
   card.classList.toggle("signing", status === "signing");
   card.classList.toggle("err", status === "offline");
+  card.classList.toggle("blocked", status === "nosign");
   live.classList.toggle("off", status !== "signing");
   live.classList.toggle("err", status === "offline");
   const [st, sub] =
     status === "signing" ? ["Signing", cur?.gloss ?? ""]
     : status === "translating" ? ["Translating", SOURCE_SUB[lastSource]]
-    : status === "nosign" ? ["Can't sign yet", ""]
+    : status === "nosign" ? [shown?.res.safety?.status === "needs_confirmation" ? "Meaning unclear" : "Caption only", ""]
     : status === "offline" ? ["Offline", "API"]
     : ["Listening", SOURCE_SUB[lastSource]];
   chipState.textContent = st;
   chipSub.textContent = sub ? ` · ${sub}` : "";
-  idleEl.textContent = status === "offline" ? offlineMsg : IDLE_HINT[lastSource];
+  const safety = shown?.res.safety;
+  idleEl.textContent = status === "offline" ? offlineMsg
+    : status === "nosign" && safety ? `${safety.caption}\n${safety.reasons.map((r) => `${r.tokens.join(", ")}: ${r.next_action}`).join("\n")}`
+    : IDLE_HINT[lastSource];
   cc.dataset.empty = status === "offline" ? "Signer offline" : "Captions appear here";
 }
 
@@ -197,6 +201,23 @@ function enqueue(j: Job) {
   }
 }
 
+function clearQueuedVideo() {
+  jobs.length = 0;
+  job = null;
+  idx = -1;
+  front = 0;
+  vids.forEach((v) => { v.pause(); v.removeAttribute("src"); delete v.dataset.url; v.load(); v.classList.remove("on"); });
+}
+
+function showBlocked(j: Job) {
+  clearQueuedVideo();
+  shown = j;
+  heardText = "";
+  lastSource = j.source;
+  setStatus("nosign");
+  renderCaptions();
+}
+
 // ── Captions ──
 const CHUNK: Record<Size, number> = { s: 6, m: 9, l: 12 };
 let chunkKey = "";
@@ -265,15 +286,17 @@ function sign(text: string, source: Source) {
     try {
       const res = await client.sign({ text: clean });
       if (status === "offline") setStatus("listening");
-      enqueue({ res, source });
+      if (res.safety && res.safety.status !== "fully_supported") showBlocked({ res, source });
+      else enqueue({ res, source });
     } catch (e) {
-      offline(e);
+      clearQueuedVideo();
+      offline(e, clean);
     }
   });
 }
 
-function offline(e: unknown) {
-  offlineMsg = `Can't reach the SIGNLAYER API at ${s.apiUrl}. Start it, or set the URL in the extension menu`;
+function offline(e: unknown, caption = "") {
+  offlineMsg = `${caption ? `${caption}\n` : ""}Can't reach the SIGNLAYER API at ${s.apiUrl}. Start it, or set the URL in the extension menu`;
   console.warn("[signlayer]", e);
   setStatus("offline");
 }
@@ -290,7 +313,7 @@ async function checkHealth() {
 
 /** Show the signer in the shared neutral pose (first frame of any clip) while idle. */
 async function showNeutral() {
-  if (job || vids[front]!.dataset.url) return;
+  if (job || shown?.res.safety?.status && shown.res.safety.status !== "fully_supported" || vids[front]!.dataset.url) return;
   try {
     const { signs } = await client.vocab();
     const first = signs[0];

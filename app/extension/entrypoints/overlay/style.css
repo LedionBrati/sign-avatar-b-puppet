@@ -42,6 +42,9 @@ body { font-size: 12px; }
 .card.err .who { --spk: #c0353a; }
 .idle { position: absolute; inset: auto 10px 12px; z-index: 2; text-align: center; color: rgb(255 255 255 / .85); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; line-height: 1.45; text-shadow: 0 1px 8px rgb(0 0 0 / .5); transition: opacity .4s ease; }
 .card.signing .idle { opacity: 0; }
+.card.blocked .vid video, .card.err .vid video { opacity: 0; }
+.card.blocked .idle, .card.err .idle { inset: 38px 10px 10px; padding: 10px; display: block; overflow: auto; white-space: pre-wrap;
+  background: rgb(9 15 42 / .88); border-radius: 12px; text-align: left; font-size: 11px; letter-spacing: 0; text-transform: none; }
 
 /* Caption sheet under the signer: words light up as they are signed, one highlight glides to the word being signed */
 .cc { position: relative; isolation: isolate; margin: 0; min-height: calc(2 * 1.35em + 19px); max-height: calc(3 * 1.35em + 19px); overflow: hidden; padding: 9px 12px 10px; border-radius: 16px;
