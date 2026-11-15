@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lucy realtime test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg: #111317; --fg: #e8e8e8; --muted: #9aa0a6; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  figure { margin: 0; }
+  figcaption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  canvas, video { width: 270px; height: 480px; background: #000; display: block; }
+  #log { white-space: pre-wrap; font: 12px/1.35 ui-monospace, monospace; color: var(--muted); max-height: 40vh; overflow: auto; margin-top: 12px; }
+  button { margin: 8px 8px 0 0; }
+</style>
+</head>
+<body>
+  <div>
+    Params: <code>?model=lucy-2-6|lucy-2-5&amp;clip=judy|sentence&amp;loops=2&amp;warmup=2000&amp;tail=2500&amp;max=30&amp;expand=1&amp;auto=1</code>
+  </div>
+  <button id="start">Start</button><button id="stop">Stop</button><a id="dl" hidden>Download output</a>
+  <div class="row">
+    <figure><figcaption>Input (puppet, padded to 720x1280)</figcaption><canvas id="in"></canvas></figure>
+    <figure><figcaption>Lucy output</figcaption><video id="out" muted autoplay playsinline></video></figure>
+  </div>
+  <video id="src" muted playsinline crossorigin="anonymous" hidden></video>
+  <div id="log"></div>
+  <script src="/app.bundle.js"></script>
+</body>
+</html>

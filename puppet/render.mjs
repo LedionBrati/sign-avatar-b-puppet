@@ -5,11 +5,15 @@
 // Usage:
 //   node puppet/render.mjs --motion PATH --view skeleton|vrm|sidebyside --out out/puppet/x.mp4
 //        [--video SRC.mp4] [--size 540x720] [--fps 24] [--closeup] [--solver direct|kalidokit]
-//        [--mannequin] [--labels 0|1] [--model URL] [--frames N]
+//        [--mannequin] [--labels 0|1] [--model URL] [--frames N] [--raw]
+//
+// The puppet is smoothed by default (src/track.ts: tracker glitches out, dropouts bridged, light zero-phase
+// smoothing, hair/cloth physics); frame i of the video is still motion frame i, nothing lags.
+// --raw renders every frame exactly as tracked, as before.
 //
 // Paths are relative to the current directory. Writes <out>.json next to the mp4 with per-frame
-// tracking failures and retargeting errors (degrees). Chrome: set CHROME=/path/to/chrome if it is not
-// at the default location (same convention as pipeline/render-layers.mjs).
+// tracking failures and retargeting errors (degrees) of the pose that was rendered. Chrome: set
+// CHROME=/path/to/chrome if it is not at the default location (same convention as pipeline/render-layers.mjs).
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -40,6 +44,7 @@ const closeup = flag("closeup");
 const mannequin = flag("mannequin");
 const labels = arg("labels", null);
 const model = arg("model", null);
+const raw = flag("raw");
 if (!["skeleton", "vrm", "sidebyside"].includes(view)) { console.error(`--view must be skeleton, vrm or sidebyside`); process.exit(1); }
 
 const motion = JSON.parse(readFileSync(motionPath, "utf8"));
@@ -85,6 +90,7 @@ if (closeup) params.set("closeup", "1");
 if (mannequin) params.set("mannequin", "1");
 if (labels !== null) params.set("labels", String(labels));
 if (model) params.set("model", model);
+if (raw) params.set("smooth", "0");
 if (srcTpl) params.set("srcframes", srcTpl);
 const panels = view === "sidebyside" ? (srcTpl ? 3 : 2) : 1;
 const pageW = W * panels;
@@ -112,6 +118,8 @@ try {
     throw new Error(`page failed to start: ${e.message}\n${err}\n${logs.join("\n")}`);
   }
   if (info.warnings?.length) console.warn(`motion warnings: ${info.warnings.slice(0, 5).join("; ")}`);
+  if (info.smoothing) console.log(`smoothing: ${info.smoothing.glitch} glitch, ${info.smoothing.bridged} bridged, ${info.smoothing.eased} eased bone-frames (--raw to turn off)`);
+  else if (view !== "skeleton") console.log("smoothing: off (--raw)");
 
   mkdirSync(dirname(out), { recursive: true });
   ffmpeg = spawn("ffmpeg", ["-v", "error", "-y", "-f", "image2pipe", "-framerate", String(fps), "-c:v", "png", "-i", "-",
@@ -163,6 +171,7 @@ try {
     for (const r of reports) for (const t of r?.tracking ?? []) tracking[t] = (tracking[t] ?? 0) + 1;
     const rep = {
       motion: motionPath, view, solver, frames: N, fps,
+      smoothing: info.smoothing ?? null,
       tracking_failures_frames: tracking,
       retarget_threshold_deg: 30,
       retarget_error: summary,

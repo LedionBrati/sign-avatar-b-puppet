@@ -1,0 +1,17 @@
+{
+  "name": "lucy-realtime-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild app.js --bundle --format=iife --platform=browser --target=chrome120 --outfile=dist/app.bundle.js",
+    "serve": "node token-server.mjs",
+    "run": "node run.mjs"
+  },
+  "dependencies": {
+    "@fal-ai/client": "1.11.0",
+    "puppeteer-core": "^25.17.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
