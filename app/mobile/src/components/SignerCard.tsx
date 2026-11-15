@@ -18,17 +18,17 @@ export function SignerCard({ video, caption, speaking }: { video: ReactNode; cap
       <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBase }]} />
       <View style={s.stage} onLayout={onLayout}>
         {stage.h > 0 && (
-          <View style={{ position: "absolute", width: size, height: size, left: (stage.w - size) / 2, top: stage.h * 0.54 - size / 2 }}>
+          <View style={{ position: "absolute", width: size, height: size, left: (stage.w - size) / 2, top: stage.h * 0.54 - size / 2, overflow: "hidden" }}>
             {video}
-            <Svg style={StyleSheet.absoluteFill} width={size} height={size} pointerEvents="none">
+            <Svg style={{ position: "absolute", left: -3, top: -3 }} width={size + 6} height={size + 6} pointerEvents="none">
               <Defs>
                 <RadialGradient id="vig" cx="0.5" cy="0.48" rx="0.42" ry="0.46" fx="0.5" fy="0.48" gradientUnits="objectBoundingBox">
                   <Stop offset="0.6" stopColor={cardBase} stopOpacity={0} />
                   <Stop offset="0.84" stopColor={cardBase} stopOpacity={0.8} />
-                  <Stop offset="0.98" stopColor={cardBase} stopOpacity={1} />
+                  <Stop offset="0.95" stopColor={cardBase} stopOpacity={1} />
                 </RadialGradient>
               </Defs>
-              <Rect x={0} y={0} width={size} height={size} fill="url(#vig)" />
+              <Rect x={0} y={0} width={size + 6} height={size + 6} fill="url(#vig)" />
             </Svg>
           </View>
         )}

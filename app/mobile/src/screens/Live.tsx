@@ -113,7 +113,7 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
               <SignerCard
                 speaking={!done && frame.current >= 0}
                 video={<PlaylistPlayer playlist={session.playlist} runKey={runKey} onIndex={setPlaying} />}
-                caption={<CaptionSheet words={session.words} states={frame.states} unsigned={unsigned} lines={done ? 3 : 2} />}
+                caption={<CaptionSheet words={session.words} states={frame.states} unsigned={unsigned} lines={2} />}
               />
             ) : (
               <View style={s.listen}>
