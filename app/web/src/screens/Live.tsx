@@ -9,7 +9,7 @@ import { Lane } from "../components/Lane";
 import { SignerStage } from "../components/SignerStage";
 import { TypeBox } from "../components/TypeBox";
 import { Wave } from "../components/Wave";
-import type { GaplessPlayer } from "../lib/player";
+import { prefetchClip, type GaplessPlayer } from "../lib/player";
 import { sessionView, splitWords, type Phrase } from "../lib/session";
 import { createListener, speechSupported } from "../lib/speech";
 
@@ -29,6 +29,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   const [revealed, setRevealed] = useState(false);
   const [arrive, setArrive] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [micRetry, setMicRetry] = useState(false);
   const [typing, setTyping] = useState(false);
   const [stopped, setStopped] = useState(false);
   const [heardShown, setHeardShown] = useState(0);
@@ -76,6 +77,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         return;
       }
       if (!alive.current) return;
+      res.playlist.forEach((x) => void prefetchClip(x.url)); // warm the clips while the card forms
       const wait = id === 1 && start.kind === "typed" ? Math.max(0, MIN_LISTEN_MS + splitWords(text).length * WORD_MS - (performance.now() - t0.current)) : 0;
       if (wait) await new Promise((r) => setTimeout(r, wait));
       if (!alive.current) return;
@@ -96,6 +98,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   const startMic = useCallback(() => {
     if (!speechSupported()) { setTyping(true); return; }
     setBanner(null);
+    setMicRetry(false);
     const l = createListener({
       onInterim: (t) => alive.current && setInterim(t),
       onFinal: (t) => { if (alive.current) { setInterim(""); submit(t); } },
@@ -104,7 +107,8 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         if (kind === "other") return;
         setMicOn(false);
         setTyping(true);
-        setBanner(kind === "denied" ? "Microphone access is blocked. Allow it from the icon in the address bar (or site settings), then tap Listen again. You can type below meanwhile."
+        setMicRetry(true);
+        setBanner(kind === "denied" ? "Microphone access is blocked. Allow it from the icon in the address bar (or site settings) and tap Retry, or type below."
           : kind === "no-mic" ? "No microphone found. Plug one in, or type below."
           : "Speech recognition needs an internet connection in this browser. You can type below.");
       },
@@ -174,7 +178,12 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         <button className={`pill sm stopbtn${done ? " hide" : ""}`} onClick={stop}>Stop</button>
       </div>
 
-      {banner ? <p className="banner" role="alert">{banner}</p> : null}
+      {banner ? (
+        <div className="banner" role="alert">
+          {banner}
+          {micRetry ? <button className="pill sm on retry" onClick={startMic}>Retry</button> : null}
+        </div>
+      ) : null}
 
       <div className="lanes">
         <Lane index={0} label="Speaker 1" mode={revealed ? (done ? "rest" : "lit") : "unseen"} arrive={arrive} speaking={view.now >= 0}
@@ -207,7 +216,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
             <p className="nowline">
               {view.nowGloss ? (
                 <>Signing <b>{view.nowGloss}</b>{view.nowWord ? <> <span className="for">for “{view.nowWord}”</span></> : null}</>
-              ) : micOn ? "Listening…" : pending ? "Translating…" : revealed ? "" : "Listening…"}
+              ) : micOn ? "Listening…" : pending ? "Translating…" : ""}
             </p>
             {revealed ? <Hints u={view.unsupported} f={view.fingerspell} /> : null}
           </>
