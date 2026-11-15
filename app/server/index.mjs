@@ -13,7 +13,7 @@
 //   GET  /clips/<file>        clips from the manifests, with HTTP Range (206) for Safari / iOS / expo-video
 //   POST /api/transcribe      raw audio chunk (audio/webm, ...) -> {text, model, timings}; same OpenAI key (lib/transcribe.mjs)
 //   POST /api/recognize?mode=sign|spell   float32 landmarks + X-Frames, proxied to app/recognizer (RECOGNIZER_URL, default :8788)
-//   POST /api/compose         {signs: [{text, options?}], context?} -> {makes_sense, sentence, picked}: recognized signs ->
+//   POST /api/compose         {signs: [{text, options?, reject?}], context?: {said?, heard?, history?}} -> {makes_sense, sentence, picked}: recognized signs ->
 //                             spoken English (same OpenAI key; lib/compose.mjs; COMPOSE=off disables)
 //   POST /api/speak           {text, voice?} -> audio/mpeg, natural text-to-speech (same OpenAI key; lib/speak.mjs; SPEAK=off)
 //   GET  /app/*               the built web app (app/web/dist, WEB_DIST), SPA fallback to index.html

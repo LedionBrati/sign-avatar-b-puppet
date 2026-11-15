@@ -169,13 +169,19 @@ export interface RecognizeResponse {
   text?: string;
   frames: number;
   timings: { inference_ms: number; total_ms: number };
+  motion?: number;
+  reject?: boolean;
 }
 
 /** POST /api/compose. The signs read so far (1-8), each with the recognizer's guesses (best first, up to 5). */
 export interface ComposeRequest {
   signs: { text: string; options?: { text: string; confidence: number }[] }[];
   /** Optional conversation context: the last <= 2 sentences this screen spoke, the last thing the hearing person said. */
-  context?: { said?: string[]; heard?: string };
+  context?: {
+    said?: string[];
+    heard?: string;
+    history?: { who: "them" | "me"; text: string }[];
+  };
 }
 
 /** makes_sense: the signs already form a complete message. sentence: natural English (best effort even if not).

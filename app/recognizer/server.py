@@ -32,6 +32,9 @@ def make_handler(rec: Recognizer, info: dict):
             sys.stderr.write(f"{self.address_string()} {fmt % args}\n")
 
         def _json(self, status: int, body: dict):
+            if os.environ.get("RECOG_DEBUG") == "1" and isinstance(body, dict) and "options" in body:  # labels only, never landmarks
+                top = " | ".join(f"{o.get('text')} {o.get('confidence', 0):.2f}" for o in body["options"][:4])
+                sys.stderr.write(f"DEBUG frames={body.get('frames')} motion={body.get('motion')} reject={body.get('reject', False)} :: {top}" + chr(10))
             data = json.dumps(body).encode()
             self.send_response(status)
             self.send_header("content-type", "application/json; charset=utf-8")
