@@ -1,0 +1,53 @@
+# Hand-written domain sentences for translate/coverage.mjs (category<TAB>sentence). Ours, no licence issue.
+doctor	Where does it hurt?
+doctor	I have a headache and a fever.
+doctor	How long have you been feeling sick?
+doctor	Please sit down, the doctor will see you soon.
+doctor	Are you allergic to any medicine?
+doctor	Take one pill twice a day after food.
+doctor	My stomach hurts when I eat.
+doctor	Do you need an ambulance?
+doctor	I can't breathe very well.
+doctor	Show me your arm, please.
+doctor	You need to rest for three days.
+doctor	Is the pain sharp or dull?
+pharmacy	Do you have a prescription?
+pharmacy	This medicine may make you sleepy.
+pharmacy	Where is the nearest pharmacy?
+pharmacy	Do not drink alcohol with these pills.
+pharmacy	How much does it cost?
+travel	Where is the train station?
+travel	What time does the bus leave?
+travel	I would like a ticket to the airport, please.
+travel	Is this seat free?
+travel	I lost my passport.
+travel	Can you help me find my hotel?
+travel	Turn left at the corner.
+travel	How far is it from here?
+travel	My flight is delayed.
+travel	Where can I buy water?
+travel	I need a taxi.
+announce	The train to the city center is late.
+announce	Please wait here until your name is called.
+announce	The store will close in ten minutes.
+announce	The meeting starts at nine tomorrow morning.
+announce	Please turn off your phone.
+announce	The elevator is not working today.
+announce	Lunch is ready in the kitchen.
+announce	Everyone please leave the building now.
+announce	The school is closed because of snow.
+smalltalk	Hello, my name is Maria.
+smalltalk	Nice to meet you.
+smalltalk	How are you today?
+smalltalk	Thank you, see you later.
+smalltalk	What is your name?
+smalltalk	Where do you live?
+smalltalk	I am deaf.
+smalltalk	Can you sign more slowly?
+smalltalk	I don't understand, please repeat.
+smalltalk	The weather is nice today.
+smalltalk	Do you have any children?
+smalltalk	I work at the hospital.
+smalltalk	What do you want to eat?
+smalltalk	See you tomorrow.
+smalltalk	I'm sorry, I'm late.
