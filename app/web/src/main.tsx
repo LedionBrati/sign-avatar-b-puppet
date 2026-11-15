@@ -5,7 +5,6 @@ import { ARTIFACT } from "./config";
 import "./styles.css";
 
 applyTheme();
-matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
 
 createRoot(document.getElementById("root")!).render(<App />);
 
