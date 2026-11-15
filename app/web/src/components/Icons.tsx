@@ -31,6 +31,7 @@ const G = ({ children, w = 1.7 }: { children: ReactNode; w?: number }) => (
 export const MicIcon = () => <G><rect x="9" y="3" width="6" height="11.5" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></G>;
 export const CloseIcon = () => <G w={2}><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></G>;
 export const StopIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2.6" fill="currentColor" /></svg>;
+export const PauseIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5.5" width="3.8" height="13" rx="1.4" fill="currentColor" /><rect x="13.7" y="5.5" width="3.8" height="13" rx="1.4" fill="currentColor" /></svg>;
 export const KeyboardIcon = () => <G><rect x="2.8" y="6" width="18.4" height="12" rx="3" /><path d="M6.5 9.6h.01M10 9.6h.01M13.5 9.6h.01M17 9.6h.01M7.5 14.4h9" /></G>;
 export const ReplayIcon = () => <G><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" /><path d="M4.2 3.8v4h4" /></G>;
 export const CheckIcon = () => <G w={2.2}><path d="M5.5 12.5l4.2 4.2 8.8-9.4" /></G>;

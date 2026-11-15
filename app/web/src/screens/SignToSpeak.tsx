@@ -1,10 +1,13 @@
-// Sign -> speak: the front camera, MediaPipe Holistic landmarks, one sign per tap of "Sign", POST /api/recognize,
-// top-3 choices, a sentence composed without any model call (composeSentence), editable, then spoken out loud.
+// Sign -> speak, continuous: the front camera, MediaPipe Holistic landmarks, always reading while the camera is on
+// (no tap per sign): every segment (hands move -> rest/leave/still) goes to POST /api/recognize; top-1 is appended
+// (top-3 chips to correct it). The sentence (composeSentence, no model call) is spoken automatically once it has
+// 2 signs and the hands have rested ~1.2 s, or as soon as it has 3; then a fresh sentence starts. Pause/Resume stops
+// reading; Undo/Clear/edit + Speak stay available.
 // "#/sign?embed=1" is the same screen for the phone app's WebView: results also go to window.ReactNativeWebView.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SignApiError, composeSentence, createSignClient, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
-import { ClockIcon, CloseIcon, GridIcon, HandIcon, SpeakerIcon, UndoIcon } from "../components/Icons";
+import { ClockIcon, CloseIcon, GridIcon, HandIcon, PauseIcon, SpeakerIcon, UndoIcon } from "../components/Icons";
 import { Island, type IslandTone } from "../components/Island";
 import { Segmented } from "../components/Segmented";
 import { createTracker, drawOverlay, type Tracker } from "../lib/holistic";
@@ -15,7 +18,10 @@ type Option = RecognizeResponse["options"][number];
 interface Entry { label: string; options?: Option[]; sel?: number }
 type Cam = "starting" | "ready" | "denied" | "nocam" | "error";
 
-const LOW = 0.4;
+const LOW = 0.35; // below this the top-3 chips get a "not sure" hint
+const QUIET_MS = 1200; // hands rested/still this long after >= 2 signs -> speak
+const MAX_SIGNS = 3; // a sentence this long is spoken right away
+const END_LAG_MS = 400; // the segmenter needs ~this much stillness before it ends a segment
 const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 const wordOf = (l: string) => (l.startsWith("#") ? cap(l.slice(1).toLowerCase()) : labelText(l));
 
@@ -40,7 +46,11 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const [fps, setFps] = useState(0);
   const [hands, setHands] = useState(false);
   const [seg, setSeg] = useState<SegState>("idle");
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [speaking, setSpeaking] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [segEndAt, setSegEndAt] = useState(0);
   const [mode, setMode] = useState<RecognizeMode>("sign");
   const [items, setItems] = useState<Entry[]>([]);
   const [edit, setEdit] = useState<{ text: string; at: number } | null>(null);
@@ -50,28 +60,44 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const [sheet, setSheet] = useState<"signs" | "history" | null>(null);
   modeRef.current = mode;
 
-  // ── Recognize one segment ──
+  // ── Recognize segments: parallel requests, results appended in segment order; a Clear/Pause/spoken sentence
+  // makes the still-pending ones stale (epoch) so they never land in the next sentence. ──
+  const order = useRef({ seq: 0, next: 1, epoch: 0, done: new Map<number, { epoch: number; entry: Entry | null }>() });
+  const flush = useCallback(() => {
+    const o = order.current;
+    const add: Entry[] = [];
+    while (o.done.has(o.next)) {
+      const r = o.done.get(o.next)!;
+      o.done.delete(o.next++);
+      if (r.entry && r.epoch === o.epoch) add.push(r.entry);
+    }
+    if (add.length) setItems((xs) => [...xs, ...add]);
+  }, []);
+
   const onSegment = useCallback(async (s: SegmentDone) => {
-    if (!s.count) { setHint("That was too short. Tap Sign and sign again."); return; }
-    setBusy(true);
-    setHint(null);
+    setSegEndAt(performance.now());
+    if (!s.count) return; // a twitch: keep reading
+    const o = order.current;
+    const id = ++o.seq, epoch = o.epoch;
+    let entry: Entry | null = null;
+    setPending((n) => n + 1);
     const m = modeRef.current;
     const t0 = performance.now();
     try {
       const r = await client.recognize(m, s.frames);
       if (!alive.current) return;
-      window.__sl = { ...window.__sl, last: r, frames: s.count, segMs: Math.round(s.ms), reason: s.reason, rtMs: Math.round(performance.now() - t0) };
+      window.__sl = { ...window.__sl, last: r, frames: s.count, segMs: Math.round(s.ms), reason: s.reason, rtMs: Math.round(performance.now() - t0), recognized: ((window.__sl?.recognized as number) ?? 0) + 1 };
       setBanner(null);
       if (m === "spell") {
         const word = (r.text ?? "").replace(/[^A-Za-z' -]/g, "").trim();
-        if (!word) { setHint("No letters read. Spell a bit slower, facing the camera."); return; }
-        setItems((xs) => [...xs, { label: `#${word.toUpperCase()}` }]);
-        return;
+        if (word) entry = { label: `#${word.toUpperCase()}` };
+      } else {
+        const options = [...r.options].sort((a, b) => b.confidence - a.confidence);
+        if (options.length) {
+          entry = { label: options[0]!.label, options, sel: 0 };
+          if (epoch === o.epoch) setHint(options[0]!.confidence < LOW ? "Not sure about that one. Tap the right word below." : null);
+        }
       }
-      const options = [...r.options].sort((a, b) => b.confidence - a.confidence);
-      if (!options.length) { setHint("No sign recognized. Try again."); return; }
-      setItems((xs) => [...xs, { label: options[0]!.label, options, sel: 0 }]);
-      if (options[0]!.confidence < LOW) setHint("Not sure about this one. Tap the right word below, or sign it again.");
     } catch (e) {
       if (!alive.current) return;
       const err = e as Error;
@@ -80,9 +106,13 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
       else if (err instanceof SignApiError) setBanner(`The recognizer failed: ${err.message}`);
       else setBanner(`Can't reach the server at ${apiLabel()}. Is it running? (${err.message})`);
     } finally {
-      if (alive.current) setBusy(false);
+      if (alive.current) {
+        o.done.set(id, { epoch, entry });
+        flush();
+        setPending((n) => n - 1);
+      }
     }
-  }, [client]);
+  }, [client, flush]);
 
   const onSegmentRef = useRef(onSegment);
   onSegmentRef.current = onSegment;
@@ -156,6 +186,13 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     return () => { stop = true; if (rvfc) v.cancelVideoFrameCallback(handle); else cancelAnimationFrame(handle); };
   }, [cam, track]);
 
+  // ── Camera on => always reading (until Pause) ──
+  useEffect(() => {
+    const sg = segRef.current!;
+    if (cam === "ready" && track === "ready" && !paused) { if (sg.state === "idle") sg.arm(); }
+    else sg.cancel();
+  }, [cam, track, paused]);
+
   // ── Sentence ──
   const sentence = useMemo(() => {
     if (!edit) return composeSentence(items.map((x) => x.label));
@@ -181,10 +218,11 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     if (n < 0 || (edit && n < edit.at)) setEdit(null); // nothing signed since the edit: undo the edit
     if (n >= 0) setItems(items.slice(0, n));
   };
-  const clear = () => { setItems([]); setEdit(null); setHint(null); };
-  const speak = () => {
-    const text = sentence.trim();
-    if (!text) return;
+  const fresh = () => { order.current.epoch++; setItems([]); setEdit(null); setHint(null); };
+  const clear = fresh;
+  const lastSpoken = useRef("");
+  const speakTimer = useRef(0);
+  const speakText = useCallback((text: string) => {
     if (embed) post({ type: "speak", text });
     else if ("speechSynthesis" in window) {
       speechSynthesis.cancel();
@@ -192,16 +230,37 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
       u.lang = "en-US";
       const voice = speechSynthesis.getVoices().find((v) => v.lang === "en-US");
       if (voice) u.voice = voice;
+      u.onend = u.onerror = () => { if (alive.current) setSpeaking((x) => (x === text ? null : x)); };
       speechSynthesis.speak(u);
     }
+    setSpeaking(text);
+    clearTimeout(speakTimer.current);
+    speakTimer.current = window.setTimeout(() => alive.current && setSpeaking((x) => (x === text ? null : x)), 1500 + text.length * 70);
     setHistory((h) => [text, ...h.filter((x) => x !== text)].slice(0, 8));
+  }, [embed]);
+  /** Speak the sentence and start a fresh one. The same text twice in a row is not spoken again. */
+  const speak = () => {
+    const text = sentence.trim();
+    if (!text) return;
+    if (text !== lastSpoken.current) { lastSpoken.current = text; speakText(text); }
+    fresh();
   };
+  const speakRef = useRef(speak);
+  speakRef.current = speak;
+
+  // Auto-speak: 3 signs -> now; 2+ signs -> once the hands have rested QUIET_MS (and nothing is still being read).
+  useEffect(() => {
+    if (paused || editing || items.length < 2) return;
+    if (items.length >= MAX_SIGNS) { speakRef.current(); return; }
+    if (seg === "recording" || pending > 0) return;
+    const wait = Math.max(0, QUIET_MS - END_LAG_MS - (performance.now() - segEndAt));
+    const t = setTimeout(() => speakRef.current(), wait);
+    return () => clearTimeout(t);
+  }, [items, seg, pending, paused, editing, segEndAt]);
 
   const tap = () => {
-    const s = segRef.current!;
     setHint(null);
-    if (s.state === "idle") s.arm();
-    else s.stop();
+    setPaused((p) => !p);
   };
 
   useEffect(() => {
@@ -217,16 +276,17 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const last = items[items.length - 1];
   const cands = last?.options?.slice(0, 3) ?? [];
   const ready = cam === "ready" && track === "ready";
-  const tone: IslandTone = busy ? "busy" : seg === "recording" ? "rec" : seg === "armed" ? "live" : !ready ? (cam === "starting" || track === "loading" ? "busy" : "warn") : "idle";
-  const island = busy ? "Reading the sign" : seg === "recording" ? "Recording" : seg === "armed" ? (hands ? "Start signing" : "Show your hands") : !ready ? (cam === "starting" || track === "loading" ? "Starting camera" : "Camera off") : mode === "spell" ? "Ready to spell" : "Ready to sign";
-  const status = cam === "denied" || cam === "nocam" || cam === "error" ? "Camera unavailable" : cam === "starting" ? "Starting the camera…" : track === "loading" ? "Loading hand tracking…" : track === "error" ? "Hand tracking unavailable" : seg === "armed" ? (hands ? "Hands found. Sign now." : "Raise your hands into view") : seg === "recording" ? "Recording… hold still to finish" : busy ? "Reading…" : hands ? "Tracking your hands" : "Tap the button, then sign one word";
-  const btn = busy ? (mode === "spell" ? "Reading letters…" : "Reading…") : seg === "recording" ? "Done" : seg === "armed" ? "Cancel" : mode === "spell" ? "Spell" : "Sign";
-
+  const busy = pending > 0;
+  const camOff = !ready ? (cam === "starting" || track === "loading" ? "Starting camera" : "Camera off") : null;
+  const tone: IslandTone = speaking ? "sign" : camOff ? (cam === "starting" || track === "loading" ? "busy" : "warn") : paused ? "idle" : seg === "recording" ? "rec" : busy ? "busy" : "live";
+  const island = speaking ? "Speaking:" : camOff ?? (paused ? "Paused" : seg === "recording" ? "Signing…" : "Reading");
+  const status = cam === "denied" || cam === "nocam" || cam === "error" ? "Camera unavailable" : cam === "starting" ? "Starting the camera…" : track === "loading" ? "Loading hand tracking…" : track === "error" ? "Hand tracking unavailable" : paused ? "Paused. Tap Resume to keep reading." : seg === "recording" ? "Signing… rest your hands to finish a word" : busy ? "Reading…" : hands ? "Hands found. Sign a word." : "Raise your hands and sign";
+  const btn = paused ? "Resume" : "Pause";
   return (
     <div className={`screen signsp${embed ? " embed" : ""}`}>
       <header className="topbar">
         {embed ? <span /> : <button className="circbtn" aria-label="Close" title="Close" onClick={onHome}><CloseIcon /></button>}
-        <Island tone={tone} label={island} className={seg === "recording" ? "rec" : ""} />
+        <Island tone={tone} label={island} detail={speaking ?? undefined} className={seg === "recording" && !speaking ? "rec" : ""} />
         <button className="circbtn" aria-label="Signs I know" title={`${SIGN_VOCAB.length} signs I know`} onClick={() => setSheet("signs")}><GridIcon /></button>
       </header>
 
@@ -250,11 +310,11 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
               {o.text || labelText(o.label)}<em>{Math.round(o.confidence * 100)}%</em>
             </button>
           ))}
-          {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name, letter by letter." : `Sign one word at a time · ${SIGN_VOCAB.length} signs`}</p> : null}
+          {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name, letter by letter." : `Just sign: 2–3 words are spoken automatically · ${SIGN_VOCAB.length} signs`}</p> : null}
         </div>
         <div className="sentence">
           <textarea aria-label="Sentence to speak" rows={2} spellCheck={false} placeholder="Your sentence" value={sentence}
-            onChange={(e) => setEdit({ text: e.target.value, at: items.length })} />
+            onChange={(e) => setEdit({ text: e.target.value, at: items.length })} onFocus={() => setEditing(true)} onBlur={() => setEditing(false)} />
           <div className="caprow">
             <button className="capbtn" onClick={undo} disabled={!items.length && !edit}><UndoIcon />Undo</button>
             <button className="capbtn" onClick={clear} disabled={!items.length && !edit}>Clear</button>
@@ -266,8 +326,8 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
 
       <footer className="controls">
         <Segmented<RecognizeMode> label="Mode" value={mode} onChange={setMode} options={[{ value: "sign", label: "Sign" }, { value: "spell", label: "Spell" }]} />
-        <button id="signbtn" className={`shutter${seg !== "idle" ? " armed" : ""}`} onClick={tap} disabled={!ready || busy} aria-label={btn} title={`${btn} (Space)`}>
-          <span className="core">{busy ? <i className="spin" aria-hidden="true" /> : <HandIcon />}</span>
+        <button id="signbtn" className={`shutter${paused ? "" : " reading"}`} onClick={tap} disabled={!ready} aria-label={btn} aria-pressed={!paused} title={`${btn} (Space)`}>
+          <span className="core">{paused ? <HandIcon /> : <PauseIcon />}</span>
           <span className="sr-only">{btn}</span>
         </button>
         <button className="circbtn lg" aria-label={`Said${history.length ? ` (${history.length})` : ""}`} title="Said" onClick={() => setSheet("history")} disabled={!history.length}><ClockIcon /></button>
