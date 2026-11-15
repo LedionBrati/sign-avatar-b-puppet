@@ -26,14 +26,10 @@ export function usePrefs(): Prefs {
   return useSyncExternalStore((cb) => { subs.add(cb); return () => { subs.delete(cb); }; }, getPrefs);
 }
 
-/** "auto" follows prefers-color-scheme; light/dark pin it via <html data-theme>. Keeps the browser chrome in step. */
+/** The app is dark (deep ink + cobalt glass) unless "light" (a cobalt-mist glass variant) is picked. "auto" is kept for
+ *  saved prefs from older builds and means dark. Sets <html data-theme> and keeps the browser chrome in step. */
 export function applyTheme() {
-  const root = document.documentElement;
-  if (prefs.theme === "auto") delete root.dataset.theme;
-  else root.dataset.theme = prefs.theme;
-  const dark = prefs.theme === "dark" || (prefs.theme === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => {
-    if (prefs.theme === "auto") m.content = m.dataset.auto ?? m.content;
-    else m.content = dark ? "#050608" : "#f5f5f7";
-  });
+  const light = prefs.theme === "light";
+  document.documentElement.dataset.theme = light ? "light" : "dark";
+  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => { m.content = light ? "#c9d2f2" : "#04061a"; });
 }

@@ -1,11 +1,13 @@
-// Live screen: listen (or read typed text) under an audio-reactive glow -> the signer card springs up -> clips play
-// back to back while the captions light up word by word -> done (Replay / Listen again). The island narrates.
+// Live screen: one floating glass card. The voice wave rides on top, the signer sits in a soft cobalt halo, the
+// captions light up word by word underneath, and the header carries the status chip + the few controls (type,
+// stop / listen again, replay, size). Drag it anywhere on a desktop (lib/float.ts); on a phone it docks full width.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createSignClient, generatingLabel, type SignResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
 import { Captions } from "../components/Captions";
-import { CaptionsIcon, CloseIcon, KeyboardIcon, MicIcon, ReplayIcon, StopIcon } from "../components/Icons";
+import { CaptionsIcon, CloseIcon, KeyboardIcon, Mark, MicIcon, ReplayIcon, StopIcon, Wordmark } from "../components/Icons";
 import { Island, type IslandTone } from "../components/Island";
+import { Segmented } from "../components/Segmented";
 import { SignerStage } from "../components/SignerStage";
 import { TypeBox } from "../components/TypeBox";
 import { Wave } from "../components/Wave";
@@ -15,6 +17,7 @@ import { sessionView, splitWords, type Phrase } from "../lib/session";
 import { createListener, speechSupported } from "../lib/speech";
 import { captureSupported, createCapture, type CapturePhase } from "../lib/capture";
 import { useLevel, type LevelSource } from "../lib/useLevel";
+import { useFloat, type FloatSize } from "../lib/float";
 
 export type LiveStart = { kind: "mic" } | { kind: "typed"; text: string };
 
@@ -36,7 +39,8 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   const [stopped, setStopped] = useState(false);
   const [heardShown, setHeardShown] = useState(0);
   const root = useRef<HTMLDivElement>(null);
-  const [waveGone, setWaveGone] = useState(false); // unmount the wave once the card is up, so it stops drawing
+  const card = useRef<HTMLElement>(null);
+  const float = useFloat(card);
   const prefs = usePrefs();
   const listener = useRef<{ stop(): void } | null>(null);
   const [phase, setPhase] = useState<CapturePhase>("listening");
@@ -58,7 +62,6 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
     revealedRef.current = true;
     setRevealed(true);
     setTimeout(() => alive.current && gate.current!.open(), 520); // let the card spring up before signing
-    setTimeout(() => alive.current && setWaveGone(true), 900);
   }, []);
 
   const patch = (id: number, p: Partial<Phrase>) => setPhrases((ps) => ps.map((x) => (x.id === id ? { ...x, ...p } : x)));
@@ -244,14 +247,18 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   // words not yet "heard" hold their place invisibly, so the line never reflows as they fade in).
   const capWords = !revealed && start.kind === "typed" ? firstWords.map((text, i) => ({ text, state: i < heardShown ? ("heard" as const) : ("upcoming" as const) })) : view.words;
 
+  const signing = revealed && !done && !!view.nowGloss;
+
   return (
-    <div ref={root} className={`screen live${revealed ? "" : " listening"}${done ? " done" : ""}`}>
+    <div ref={root} className={`screen live${revealed ? "" : " listening"}${done ? " done" : ""}${float.docked ? " docked" : ""}`}>
       <header className="topbar">
-        <button className="circbtn" aria-label="Close" title="Close" onClick={onHome}><CloseIcon /></button>
-        <Island tone={tone} label={label} detail={detail} />
-        <button className={`circbtn${prefs.captions ? " on" : ""}`} aria-label="Captions" aria-pressed={prefs.captions} title="Captions" onClick={() => setPrefs({ captions: !prefs.captions })}>
-          <CaptionsIcon off={!prefs.captions} />
-        </button>
+        <span className="brand"><Mark /><Wordmark /></span>
+        <span className="topbar-end">
+          <button className={`circbtn${prefs.captions ? " on" : ""}`} aria-label="Captions" aria-pressed={prefs.captions} title="Captions" onClick={() => setPrefs({ captions: !prefs.captions })}>
+            <CaptionsIcon off={!prefs.captions} />
+          </button>
+          <button className="circbtn" aria-label="Close" title="Close" onClick={onHome}><CloseIcon /></button>
+        </span>
       </header>
 
       {banner ? (
@@ -261,49 +268,65 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         </div>
       ) : null}
 
-      <section className="stagewrap">
-        <div className="halo" data-level aria-hidden="true" />
-        <SignerStage onReady={onPlayer} on={revealed} label={blocked || latestError ? "Signing paused; caption shown" : "Signer"}
-          safety={safety} error={latestError ? { caption: phrases.at(-1)?.text ?? "", message: latestError } : undefined}>
-          {waveGone ? null : (
-            <div className="card-wave" aria-hidden="true">
-              <Wave level={0.9} talking={!revealed && (micOn || start.kind === "typed")} getLevel={micOn ? getLevel : undefined} />
-            </div>
+      {float.docked ? null : <p className="drag-hint" aria-hidden="true">Drag the card anywhere</p>}
+
+      <section ref={card} className={`fcard${done ? "" : " on"}${signing ? " signing" : ""}${float.dragging ? " dragging" : ""}`} data-size={float.size} aria-label="Signer">
+        <i className="fc-aura" data-level aria-hidden="true" />
+        <i className="fc-shine" aria-hidden="true" />
+        <div className="fc-head" onPointerDown={float.handle.onPointerDown} onPointerMove={float.handle.onPointerMove}
+          onPointerUp={float.handle.onPointerUp} onPointerCancel={float.handle.onPointerUp}>
+          {float.docked ? null : (
+            <span className="fc-grip" tabIndex={0} role="button" aria-label="Move the signer card (arrow keys)" title="Drag to move" onKeyDown={float.handle.onKeyDown}>
+              <i /><i /><i /><i /><i /><i />
+            </span>
           )}
-          {generating ? <span className="gen-chip" role="status">{generating}</span> : null}
-        </SignerStage>
-      </section>
+          <Island tone={tone} label={label} detail={detail} />
+          <span className="fc-sp" />
+          <button className={`fc-btn${typing ? " on" : ""}`} id="typebtn" aria-label="Type" aria-pressed={typing} title="Type" onClick={() => setTyping((t) => !t)}><KeyboardIcon /></button>
+          <button className="fc-btn later" id="replay" aria-label="Replay" title="Replay" onClick={() => player.current?.replay()} disabled={!done || !total || !!blocked || !!latestError}><ReplayIcon /></button>
+          {done ? (
+            <button className="fc-btn prime" id="again" aria-label={canSpeak ? "Listen again" : "Type again"} title={canSpeak ? "Listen again" : "Type again"} onClick={again}>
+              <span className="swap" key="again">{canSpeak ? <MicIcon /> : <KeyboardIcon />}</span>
+            </button>
+          ) : (
+            <button className="fc-btn prime" id="stop" aria-label="Stop" title="Stop" onClick={stop}><span className="swap" key="stop"><StopIcon /></span></button>
+          )}
+          {float.docked ? null : (
+            <Segmented<FloatSize> label="Signer size" value={float.size} onChange={float.setSize}
+              options={[{ value: "s", label: "S" }, { value: "m", label: "M" }, { value: "l", label: "L" }]} />
+          )}
+        </div>
 
-      <section className={`capzone${prefs.captions ? "" : " hidden-cap"}`} aria-label="Captions">
-        <Captions words={capWords} now={view.now} lines={2} placeholder={!revealed && micOn ? "Start speaking…" : undefined} />
-        {revealed ? <Hints u={latestUnsupported} f={latestFingerspell} /> : null}
-        {done ? (
-          <p className="sumline sr-only">
-            {latestError ? "Signing unavailable: server connection failed." : blocked ? "Caption only: no signing for this message." : `Signed: ${total} sign${total === 1 ? "" : "s"}, ${Math.round(secs)} seconds.`}
-          </p>
-        ) : null}
-      </section>
+        <div className="fc-wave" aria-hidden="true">
+          <Wave level={0.9} talking={!done} getLevel={getLevel} />
+        </div>
 
-      <footer className={`controls${typing ? " typing" : ""}`}>
+        <div className="fc-stage">
+          <div className="halo" data-level aria-hidden="true" />
+          <SignerStage onReady={onPlayer} on={revealed} label={blocked || latestError ? "Signing paused; caption shown" : "Signer"}
+            safety={safety} error={latestError ? { caption: phrases.at(-1)?.text ?? "", message: latestError } : undefined}>
+            {revealed ? null : <span className="fc-idle" aria-hidden="true"><i /><i /><i /></span>}
+            {generating ? <span className="gen-chip" role="status">{generating}</span> : null}
+          </SignerStage>
+        </div>
+
+        <div className={`capzone${prefs.captions ? "" : " hidden-cap"}`} aria-label="Captions">
+          <Captions words={capWords} now={view.now} lines={2} placeholder={!revealed && micOn ? "Start speaking…" : undefined} />
+          {revealed ? <Hints u={latestUnsupported} f={latestFingerspell} /> : null}
+          {done ? (
+            <p className="sumline sr-only">
+              {latestError ? "Signing unavailable: server connection failed." : blocked ? "Caption only: no signing for this message." : `Signed: ${total} sign${total === 1 ? "" : "s"}, ${Math.round(secs)} seconds.`}
+            </p>
+          ) : null}
+        </div>
+
         {typing ? (
           <div className="typerow">
-            <button className="circbtn" aria-label="Close keyboard" title="Close" onClick={() => setTyping(false)}><CloseIcon /></button>
+            <button className="fc-btn" aria-label="Close keyboard" title="Close" onClick={() => setTyping(false)}><CloseIcon /></button>
             <TypeBox onSubmit={submit} autoFocus placeholder="Type to sign" />
           </div>
-        ) : (
-          <>
-            <button className="circbtn lg" id="typebtn" aria-label="Type" title="Type" onClick={() => setTyping(true)}><KeyboardIcon /></button>
-            {done ? (
-              <button className="primebtn" id="again" aria-label={canSpeak ? "Listen again" : "Type again"} title={canSpeak ? "Listen again" : "Type again"} onClick={again}>
-                <span className="swap" key="again">{canSpeak ? <MicIcon /> : <KeyboardIcon />}</span>
-              </button>
-            ) : (
-              <button className="primebtn" id="stop" aria-label="Stop" title="Stop" onClick={stop}><span className="swap" key="stop"><StopIcon /></span></button>
-            )}
-            <button className="circbtn lg later" id="replay" aria-label="Replay" title="Replay" onClick={() => player.current?.replay()} disabled={!done || !total || !!blocked || !!latestError}><ReplayIcon /></button>
-          </>
-        )}
-      </footer>
+        ) : null}
+      </section>
     </div>
   );
 }
