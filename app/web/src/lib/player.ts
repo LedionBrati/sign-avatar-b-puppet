@@ -40,6 +40,7 @@ export class GaplessPlayer {
   private disposed = false;
   private readonly offs: (() => void)[] = [];
   private fadeTimer = 0;
+  private fading = false; // the previous clip is still visible under a crossfade
   private readonly seamMs: number;
 
   /** Called with the playlist index now on screen; items.length once the queue has drained. */
@@ -95,6 +96,7 @@ export class GaplessPlayer {
 
   stop() {
     this.pending = -1;
+    this.fading = false;
     clearTimeout(this.fadeTimer);
     this.vids.forEach((v) => v.pause());
   }
@@ -133,6 +135,7 @@ export class GaplessPlayer {
   }
 
   private preloadNext() {
+    if (this.fading) return; // called again when the fade completes
     const n = this.index + 1, back = 1 - this.front;
     if (n < this.items.length && this.loaded[back] !== n && this.pending < 0) this.load(back, n);
   }
@@ -144,7 +147,7 @@ export class GaplessPlayer {
   }
 
   /** Bring `v` up over `under`. `under` stays opaque (holding its last frame) until `v` fully covers it. */
-  private crossfade(v: HTMLVideoElement, under: HTMLVideoElement) {
+  private crossfade(v: HTMLVideoElement, under: HTMLVideoElement, then: () => void) {
     clearTimeout(this.fadeTimer);
     const covered = under.style.opacity === "1" && under.readyState >= 2;
     const ms = this.seamMs === 0 ? 0 : covered ? this.seamMs : REVEAL_MS;
@@ -157,7 +160,13 @@ export class GaplessPlayer {
       v.style.transition = `opacity ${ms}ms linear`;
       v.style.opacity = "1";
     }
-    this.fadeTimer = window.setTimeout(() => { if (this.vids[this.front] === v) under.pause(); }, ms + 60);
+    this.fading = true;
+    this.fadeTimer = window.setTimeout(() => {
+      this.fading = false;
+      if (this.disposed || this.vids[this.front] !== v) return;
+      under.pause();
+      then();
+    }, ms + 40);
   }
 
   /** Watch the clip on screen frame by frame; start the next one a crossfade before this one ends. */
@@ -195,11 +204,11 @@ export class GaplessPlayer {
       const other = this.vids[1 - slot]!;
       v.classList.add("front"); v.classList.remove("back");
       other.classList.remove("front"); other.classList.add("back");
-      this.crossfade(v, other);
       this.front = slot;
       this.index = i;
+      // The old clip is still on screen under the fade: only reuse its element for the next clip once covered.
+      this.crossfade(v, other, () => this.preloadNext());
       this.onIndex(i);
-      this.preloadNext();
       this.watch(slot, i);
     };
     const rvfc = (v as FrameVideo).requestVideoFrameCallback;

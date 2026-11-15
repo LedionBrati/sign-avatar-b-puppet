@@ -60,7 +60,7 @@ try {
         const tick = () => {
           const vs = [...document.querySelectorAll(".sl-signer video")];
           const front = vs.find((v) => v.classList.contains("front"));
-          const op = vs.map((v) => +getComputedStyle(v).opacity);
+          const op = vs.map((v) => (v.readyState >= 2 ? +getComputedStyle(v).opacity : 0)); // a video with no decoded frame shows nothing
           window.__trace.push({ t: performance.now(), src: front?.currentSrc.slice(-12) ?? "", ct: front?.currentTime ?? 0, paused: front?.paused ?? true, op, island: document.querySelector(".island")?.textContent ?? "" });
           if (!document.querySelector(".sumline")) requestAnimationFrame(tick);
         };
@@ -85,7 +85,7 @@ try {
       }
       const starts = trace.filter((x, i, arr) => x.src && x.src !== arr[i - 1]?.src).map((x) => `${x.src.replace(/^.*\//, "")}@${((x.t - trace[0].t) / 1000).toFixed(2)}`);
       console.log(`[${size}/${theme}] clips:`, starts.join(" → "));
-      console.log(`[${size}/${theme}] longest frozen stretch while playing: ${stall.toFixed(0)} ms · frames with no opaque video after start: ${see}`);
+      console.log(`[${size}/${theme}] longest frozen stretch while playing: ${stall.toFixed(0)} ms · frames with no opaque, decoded video after start (see-through): ${see}`);
       await page.click("#stop").catch(() => {});
     }
 
