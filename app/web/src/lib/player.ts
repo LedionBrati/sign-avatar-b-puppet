@@ -24,7 +24,7 @@ export function prefetchClip(url: string): Promise<string | null> {
 }
 
 /** Crossfade between clips (ms). Long enough to hide a seam, short enough to never read as a dissolve. */
-export const SEAM_MS = 110;
+export const SEAM_MS = 120;
 /** The very first clip fades up from the empty stage a little more slowly. */
 const REVEAL_MS = 360;
 

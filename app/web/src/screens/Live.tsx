@@ -35,6 +35,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
   const [stopped, setStopped] = useState(false);
   const [heardShown, setHeardShown] = useState(0);
   const root = useRef<HTMLDivElement>(null);
+  const [waveGone, setWaveGone] = useState(false); // unmount the wave once the card is up, so it stops drawing
   const prefs = usePrefs();
   const listener = useRef<ReturnType<typeof createListener> | null>(null);
   const chain = useRef<Promise<unknown>>(Promise.resolve());
@@ -55,6 +56,7 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
     revealedRef.current = true;
     setRevealed(true);
     setTimeout(() => alive.current && gate.current!.open(), 520); // let the card spring up before signing
+    setTimeout(() => alive.current && setWaveGone(true), 900);
   }, []);
 
   const patch = (id: number, p: Partial<Phrase>) => setPhrases((ps) => ps.map((x) => (x.id === id ? { ...x, ...p } : x)));
@@ -231,9 +233,11 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         <div className="halo" data-level aria-hidden="true" />
         <SignerStage onReady={onPlayer} on={revealed} label={blocked || latestError ? "Signing paused; caption shown" : "Signer"}
           safety={safety} error={latestError ? { caption: phrases.at(-1)?.text ?? "", message: latestError } : undefined}>
-          <div className="card-wave" aria-hidden="true">
-            <Wave level={0.9} talking={!revealed && (micOn || start.kind === "typed")} getLevel={micOn ? getLevel : undefined} />
-          </div>
+          {waveGone ? null : (
+            <div className="card-wave" aria-hidden="true">
+              <Wave level={0.9} talking={!revealed && (micOn || start.kind === "typed")} getLevel={micOn ? getLevel : undefined} />
+            </div>
+          )}
           {generating ? <span className="gen-chip" role="status">{generating}</span> : null}
         </SignerStage>
       </section>
