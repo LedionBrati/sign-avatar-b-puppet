@@ -35,7 +35,7 @@ export function SignFrame({ url, onMessage, onError, onReady }: Props) {
       overScrollMode="never"
       webviewDebuggingEnabled={__DEV__}
       injectedJavaScriptBeforeContentLoaded={INJECTED_BRIDGE}
-      onMessage={(e: WebViewMessageEvent) => { const m = parseBridge(e.nativeEvent.data); if (m) onMessage(m); }}
+      onMessage={(e: WebViewMessageEvent): void => { const m = parseBridge(e.nativeEvent.data); if (m) onMessage(m); }}
       onLoadEnd={onReady}
       onError={(e) => onError({ kind: "unreachable", detail: e.nativeEvent.description })}
       onHttpError={(e) => { if (e.nativeEvent.url.split("#")[0] === url.split("#")[0]) onError({ kind: "not-served", detail: `HTTP ${e.nativeEvent.statusCode}` }); }}

@@ -1,5 +1,6 @@
 // Home: grainy cobalt field, mark + wordmark, headline, the idle listening wave and one white
-// "Tap to listen" pill (like Siri / Voice Memos), and the browser extension as a single clean cell.
+// "Tap to listen" pill (like Siri / Voice Memos), a glass "Sign to speak" pill for the other direction,
+// and the browser extension as a single clean cell.
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
@@ -27,6 +28,15 @@ function ExtIcon() {
   );
 }
 
+function HandIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5V4a1.5 1.5 0 0 1 3 0v7.5M14 11.5V5.5a1.5 1.5 0 0 1 3 0V14" />
+      <Path d="M17 9.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.6-2.8L3.6 15.4a1.6 1.6 0 0 1 2.5-2L8 15.5" />
+    </Svg>
+  );
+}
+
 function Gear() {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={1.7} strokeLinecap="round">
@@ -37,7 +47,7 @@ function Gear() {
   );
 }
 
-export function Home({ onListen, onType, onSettings }: { onListen: () => void; onType: () => void; onSettings: () => void }) {
+export function Home({ onListen, onType, onSign, onSettings }: { onListen: () => void; onType: () => void; onSign: () => void; onSettings: () => void }) {
   return (
     <Field>
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom", "left", "right"]}>
@@ -58,6 +68,12 @@ export function Home({ onListen, onType, onSettings }: { onListen: () => void; o
           </Pressable>
           <Pressable onPress={onListen} accessibilityRole="button" testID="listen" style={({ pressed }) => [s.listen, shadow(18, 40, "rgba(5,15,90,0.55)"), { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
             <Text style={s.listenTxt}>{copy.listen}</Text>
+          </Pressable>
+          <Pressable onPress={onSign} accessibilityRole="button" accessibilityLabel="Sign to speak" testID="sign" style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.96 : 1 }], marginTop: -6 })}>
+            <Glass tint="rgba(255,255,255,0.16)" intensity={20} style={s.signBtn}>
+              <HandIcon />
+              <Text style={s.signTxt}>Sign to speak</Text>
+            </Glass>
           </Pressable>
           <Pressable onPress={onType} accessibilityRole="button" testID="type" hitSlop={8}>
             <Text style={s.typeLink}>{canListen ? "or type to sign" : "Type to sign · speech needs a dev build"}</Text>
@@ -86,6 +102,8 @@ const s = StyleSheet.create({
   orbwrap: { flex: 1, minHeight: 0, alignItems: "center", justifyContent: "center", gap: 22 },
   listen: { minHeight: 48, paddingHorizontal: 28, borderRadius: 999, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
   listenTxt: { color: colors.inkBlue, fontSize: 16, fontWeight: "500", letterSpacing: -0.16, fontFamily: fontMedium },
+  signBtn: { minHeight: 44, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  signTxt: { color: "#fff", fontSize: 15, fontWeight: "500", letterSpacing: -0.15, fontFamily: fontMedium },
   typeLink: { color: "rgba(255,255,255,0.75)", fontSize: 13.5, textDecorationLine: "underline", fontFamily: font, marginTop: -8 },
   any: { color: "rgba(255,255,255,0.58)", fontSize: 12.5, lineHeight: 17.5, textAlign: "center", maxWidth: 280, alignSelf: "center", fontFamily: font },
   ext: { flexDirection: "row", alignItems: "center", gap: 14, marginHorizontal: 16, marginTop: 22, marginBottom: 14, paddingVertical: 14, paddingHorizontal: 16 },
