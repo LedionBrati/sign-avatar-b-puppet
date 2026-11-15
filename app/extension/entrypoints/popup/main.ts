@@ -2,11 +2,11 @@ import "./style.css";
 import { browser } from "wxt/browser";
 import type { HealthResult, TabAudioStatus, ToBackground } from "@/lib/messages";
 import { getSettings, onSettings, setSettings, SOURCES, type Settings, type Size, type Source } from "@/lib/settings";
-import { $, esc, MARK, WORDMARK } from "@/lib/brand";
+import { $, esc, mark, WORDMARK } from "@/lib/brand";
 import { ICON, SOURCE_ICON } from "@/lib/icons";
 
-document.querySelectorAll(".brand").forEach((el) => (el.innerHTML = MARK + WORDMARK));
-document.querySelectorAll(".brand-mark").forEach((el) => (el.innerHTML = MARK));
+document.querySelectorAll(".brand").forEach((el) => (el.innerHTML = mark() + WORDMARK));
+document.querySelectorAll(".brand-mark").forEach((el) => (el.innerHTML = mark()));
 document.querySelectorAll<HTMLElement>("[data-icon]").forEach((el) => (el.innerHTML = SOURCE_ICON[el.dataset.icon as Source] ?? ""));
 const send = <T>(m: ToBackground) => browser.runtime.sendMessage(m) as Promise<T>;
 

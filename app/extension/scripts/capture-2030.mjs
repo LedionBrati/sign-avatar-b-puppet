@@ -41,7 +41,8 @@ try {
 
   const page = (await browser.pages())[0] ?? (await browser.newPage());
   await page.setViewport({ width: 1280, height: 800 });
-  if (dark) await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
+  const scheme = [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }];
+  await page.emulateMediaFeatures(scheme);
   page.on("console", (m) => /signlayer/i.test(m.text()) && log("[page]", m.text().slice(0, 160)));
 
   const frameOf = async (ms = 20000) => {
@@ -189,7 +190,7 @@ try {
     for (const [name, onboarded] of [["popup", true], ["onboarding", false]]) {
       await sw.evaluate((o) => chrome.storage.local.set({ onboarded: o }), onboarded);
       const p = await browser.newPage();
-      if (dark) await p.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
+      await p.emulateMediaFeatures(scheme);
       await p.setViewport({ width: 360, height: 600 });
       await p.goto(`chrome-extension://${extId}/popup.html`, { waitUntil: "load" });
       await sleep(1400);

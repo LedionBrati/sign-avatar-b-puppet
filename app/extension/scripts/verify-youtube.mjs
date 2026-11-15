@@ -312,7 +312,7 @@ try {
       log("saved", `${prefix}${name}.png`);
       if (name === "popup") {
         const status = await p.evaluate(() => document.getElementById("statusText")?.textContent);
-        check(/d+ signs/.test(status), `popup server status: ${status}`);
+        check(/\d+ signs/.test(status), `popup server status: ${status}`);
       }
       await p.close();
     }
