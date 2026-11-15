@@ -12,7 +12,7 @@ speech (on the device) ──► text ──► app/server ──► playlist of
 |---|---|---|
 | `core/` | API contract, client, caption word states, design tokens. Shared by everything | TypeScript, no dependencies |
 | `server/` | Local API: `POST /api/sign` (text → playlist), `GET /api/vocab`, `/clips/*` | Node, `translate/`, `pipeline/lib/clips.mjs` |
-| `web/` | Web app, installable as a PWA. Home ("Tap to listen") and the live screen | Vite + React, Web Speech API |
+| `web/` | Web app, installable as a PWA. Home ("Tap to listen"), the live screen, and Sign to speak (`#/sign`: camera → MediaPipe Holistic → `/api/recognize` → spoken sentence) | Vite + React, Web Speech API, MediaPipe tasks-vision |
 | `extension/` | Chrome extension: a draggable signer in the corner of any page, S/M/L, captions. Signs selected text or the mic | WXT (Manifest V3) |
 | `mobile/` | Phone app: same screens as the web app | Expo (React Native), `expo-speech-recognition`, `expo-video` |
 
