@@ -1,12 +1,13 @@
 import { browser } from "wxt/browser";
 import type { FromOverlay, ToBackground, ToContent } from "@/lib/messages";
 import { getSettings, onSettings, setSettings, WIDTHS, type Corner, type Settings } from "@/lib/settings";
+import { hasCaptionSource, startCaptionWatch } from "@/lib/captions";
 
-// Content script: owns the signer iframe (position, size, drag-to-corner) and watches page captions.
+// Content script: owns the signer iframe (position, size, drag-to-corner, fullscreen) and runs the caption watcher.
 // The signer itself (video, captions, API calls) lives in overlay.html, an extension page.
 export default defineContentScript({
   matches: ["<all_urls>"],
-  runAt: "document_idle",
+  runAt: "document_end",
   async main() {
     const w = window as unknown as { __signlayer?: boolean };
     if (w.__signlayer) return; // injected twice (manifest + scripting fallback)
@@ -16,13 +17,15 @@ export default defineContentScript({
     const MARGIN = 16;
     let host: HTMLElement | null = null;
     let frame: HTMLIFrameElement | null = null;
-    let height = 360;
+    let height = 380;
     let pos = { x: 0, y: 0 };
     let dragStart: { x: number; y: number } | null = null;
     let closedByUser = false;
     let shield: HTMLDivElement | null = null;
     let grab: { x: number; y: number } | null = null;
+    const send = (msg: ToBackground) => browser.runtime.sendMessage(msg).catch(() => {});
 
+    // ── Position, drag, snap ──
     function startDrag(g: { x: number; y: number } | null) {
       if (!frame || dragStart) return;
       dragStart = { ...pos };
@@ -45,18 +48,23 @@ export default defineContentScript({
       place(corner);
       setSettings({ corner });
     }
-
     function place(corner: Corner = s.corner) {
       if (!frame) return;
       const fw = WIDTHS[s.size];
-      const vw = document.documentElement.clientWidth || innerWidth;
+      const fs = document.fullscreenElement;
+      const vw = fs ? innerWidth : document.documentElement.clientWidth || innerWidth;
       const vh = innerHeight;
-      pos = { x: corner[1] === "l" ? MARGIN : vw - fw - MARGIN, y: corner[0] === "t" ? MARGIN : vh - height - MARGIN };
+      // Fullscreen video: stay clear of the player's control bar.
+      const bottom = fs ? 76 : MARGIN;
+      pos = { x: corner[1] === "l" ? MARGIN : vw - fw - MARGIN, y: corner[0] === "t" ? MARGIN : vh - height - bottom };
+      pos.y = Math.max(MARGIN, pos.y);
       frame.style.width = `${fw}px`;
       frame.style.height = `${height}px`;
+      frame.style.transformOrigin = `${corner[0] === "t" ? "top" : "bottom"} ${corner[1] === "l" ? "left" : "right"}`;
       frame.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
     }
 
+    // ── Mount / unmount (closed shadow root; the iframe carries the backdrop blur so the glass blurs the page) ──
     function mount() {
       if (host) return;
       host = document.createElement("signlayer-overlay");
@@ -66,18 +74,20 @@ export default defineContentScript({
         :host { all: initial; }
         iframe { position: fixed; left: 0; top: 0; z-index: 2147483647; border: 0; margin: 0; padding: 0; display: block;
           color-scheme: light; background: transparent; border-radius: 26px; overflow: hidden;
-          -webkit-backdrop-filter: blur(30px) saturate(190%) brightness(1.04); backdrop-filter: blur(30px) saturate(190%) brightness(1.04);
-          box-shadow: 0 18px 40px -12px rgb(10 20 60 / .32), 0 2px 8px rgb(10 20 60 / .1);
-          transition: transform .55s cubic-bezier(.2,.9,.25,1.05), width .45s cubic-bezier(.2,.8,.2,1), height .3s ease, opacity .3s ease; }
-        iframe.dragging { transition: width .45s ease, height .3s ease; }
-        iframe.gone { opacity: 0; pointer-events: none; }
-        .shield { position: fixed; inset: 0; z-index: 2147483647; cursor: grabbing; background: transparent; }`;
+          -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.04); backdrop-filter: blur(28px) saturate(180%) brightness(1.04);
+          box-shadow: 0 22px 48px -14px rgb(8 16 56 / .42), 0 2px 8px rgb(8 16 56 / .14);
+          transition: transform .55s cubic-bezier(.2,.9,.25,1.05), width .4s cubic-bezier(.2,.8,.2,1), height .3s ease, opacity .35s ease, scale .35s cubic-bezier(.2,.9,.25,1.1);
+          opacity: 1; scale: 1; }
+        iframe.enter { opacity: 0; scale: .9; }
+        iframe.dragging { transition: width .4s ease, height .3s ease, opacity .35s ease, scale .35s ease; }
+        .shield { position: fixed; inset: 0; z-index: 2147483647; cursor: grabbing; background: transparent; }
+        @media (prefers-reduced-motion: reduce) { iframe, iframe.dragging { transition: none; } }`;
       frame = document.createElement("iframe");
       frame.src = browser.runtime.getURL("/overlay.html");
       frame.title = "SIGNLAYER signer";
       frame.setAttribute("allowtransparency", "true");
       frame.setAttribute("allow", "autoplay");
-      frame.classList.add("dragging");
+      frame.classList.add("dragging", "enter");
       shield = document.createElement("div");
       shield.className = "shield";
       shield.hidden = true;
@@ -87,16 +97,36 @@ export default defineContentScript({
       });
       shield.addEventListener("pointerup", () => endDrag());
       root.append(style, frame, shield);
-      document.documentElement.appendChild(host);
+      (fullscreenHost() ?? document.documentElement).appendChild(host);
       place();
-      requestAnimationFrame(() => requestAnimationFrame(() => frame?.classList.remove("dragging")));
+      setTimeout(() => frame?.classList.remove("dragging", "enter"), 60);
     }
 
     function unmount() {
-      host?.remove();
+      const f = frame, h = host;
       host = frame = shield = null;
       dragStart = grab = null;
+      if (!f || !h) return;
+      f.classList.add("enter");
+      setTimeout(() => h.remove(), 360);
     }
+
+    // ── Fullscreen: move the signer into the fullscreen element (moveBefore keeps the iframe alive) ──
+    function fullscreenHost(): Element | null {
+      const fs = document.fullscreenElement;
+      return fs && !(fs instanceof HTMLVideoElement) && !(fs instanceof HTMLIFrameElement) ? fs : null;
+    }
+    document.addEventListener("fullscreenchange", () => {
+      if (!host) return;
+      const target = fullscreenHost() ?? document.documentElement;
+      if (host.parentNode !== target) {
+        const t = target as Element & { moveBefore?: (n: Node, ref: Node | null) => void };
+        if (typeof t.moveBefore === "function") {
+          try { t.moveBefore(host, null); } catch { target.appendChild(host); }
+        } else target.appendChild(host);
+      }
+      requestAnimationFrame(() => place());
+    });
 
     addEventListener("message", (e: MessageEvent) => {
       if (!frame || e.source !== frame.contentWindow) return;
@@ -105,92 +135,67 @@ export default defineContentScript({
       if (m.type === "height") {
         height = Math.ceil(m.h);
         place();
-      } else if (m.type === "dragstart") {
-        startDrag({ x: m.x, y: m.y });
-      } else if (m.type === "drag") {
+      } else if (m.type === "dragstart") startDrag({ x: m.x, y: m.y });
+      else if (m.type === "drag") {
         startDrag(null);
         if (dragStart) moveTo(dragStart.x + m.dx, dragStart.y + m.dy);
-      } else if (m.type === "dragend") {
-        endDrag();
-      } else if (m.type === "size") {
-        setSettings({ size: m.size });
-      } else if (m.type === "close") {
-        unmount();
+      } else if (m.type === "dragend") endDrag();
+      else if (m.type === "close") {
         closedByUser = true;
+        unmount();
       }
     });
     addEventListener("resize", () => place());
-
 
     browser.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
       const m = raw as ToContent;
       if (m?.type === "mount") {
         closedByUser = false;
         mount();
+      } else if (m?.type === "unmount") unmount();
+      else if (m?.type === "toggle") {
+        if (host) { closedByUser = true; unmount(); } else { closedByUser = false; mount(); }
       }
-      sendResponse({ ok: true });
+      sendResponse({ ok: true, mounted: !!host });
     });
+
+    // ── Caption watcher (source: captions) ──
+    let stopWatch: (() => void) | null = null;
+    function syncWatcher() {
+      const on = s.enabled && s.source === "captions";
+      if (on && !stopWatch) {
+        stopWatch = startCaptionWatch({
+          phrase: (text, origin, next) => {
+            if (closedByUser) return;
+            if (!host) mount();
+            send({ type: "sign", text, source: "captions", origin, next });
+          },
+          state: (state) => {
+            if (state.kind !== "idle" && !host && !closedByUser) mount();
+            send({ type: "source-state", state });
+          },
+          reset: () => send({ type: "reset" }),
+        });
+      } else if (!on && stopWatch) {
+        stopWatch();
+        stopWatch = null;
+      }
+    }
 
     onSettings((patch) => {
       s = { ...s, ...patch };
-      if ("enabled" in patch && !s.enabled) unmount();
+      if ("enabled" in patch) {
+        if (!s.enabled) unmount();
+        else if (s.source === "captions" && hasCaptionSource()) { closedByUser = false; mount(); }
+      }
+      if ("source" in patch && s.enabled && s.source === "captions" && hasCaptionSource() && !closedByUser) mount();
       if ("size" in patch || "corner" in patch) place();
-      syncWatchers();
+      syncWatcher();
     });
 
-    // ── Page captions (YouTube's caption renderer, or any page using the same markup) ──
-    const send = (msg: ToBackground) => browser.runtime.sendMessage(msg).catch(() => {});
-    const norm = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, " ").replace(/\s+/g, " ").trim();
-    let seen = "", lastSent = "", lastFlush = 0, debounce = 0;
-    const recent: string[] = [];
-
-    /** Longest k where the last k words of `prev` equal the first k words of `next` (rolling captions). */
-    function overlap(prev: string[], next: string[]) {
-      for (let k = Math.min(prev.length, next.length); k > 0; k--) {
-        let ok = true;
-        for (let i = 0; i < k; i++) if (prev[prev.length - k + i] !== next[i]) { ok = false; break; }
-        if (ok) return k;
-      }
-      return 0;
-    }
-
-    function flush(text: string) {
-      clearTimeout(debounce);
-      lastFlush = Date.now();
-      const words = text.split(/\s+/);
-      const k = overlap(norm(lastSent).split(" ").filter(Boolean), words.map(norm));
-      lastSent = text;
-      const fresh = words.slice(k).join(" ").trim();
-      const key = norm(fresh);
-      if (!key || recent.includes(key)) return;
-      recent.push(key);
-      if (recent.length > 8) recent.shift();
-      if (closedByUser) return;
-      send({ type: "sign", text: fresh, source: "captions" });
-    }
-
-    function pollCaptions() {
-      const segs = document.querySelectorAll<HTMLElement>(".ytp-caption-segment");
-      if (!segs.length) return;
-      const text = Array.from(segs, (el) => el.textContent ?? "").join(" ").replace(/\s+/g, " ").trim();
-      if (!text || text === seen) return;
-      seen = text;
-      clearTimeout(debounce);
-      // Auto-captions grow word by word: wait for a pause, but never hold a line longer than 1.6 s.
-      if (Date.now() - lastFlush > 1600 && lastFlush) flush(text);
-      else debounce = window.setTimeout(() => flush(seen), 650);
-      if (!lastFlush) lastFlush = Date.now();
-    }
-
-    let captionTimer = 0;
-    function syncWatchers() {
-      const on = s.enabled && s.source === "captions";
-      if (on && !captionTimer) captionTimer = window.setInterval(pollCaptions, 250);
-      if (!on && captionTimer) {
-        clearInterval(captionTimer);
-        captionTimer = 0;
-      }
-    }
-    syncWatchers();
+    syncWatcher();
+    const want = s.enabled && s.source === "captions" && hasCaptionSource();
+    if (want) mount();
+    send({ type: "hello", wantOverlay: want });
   },
 });

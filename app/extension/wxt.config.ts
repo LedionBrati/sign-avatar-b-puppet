@@ -10,14 +10,20 @@ export default defineConfig({
     description: "Hear anything, see it signed. A signer in the corner of any video, call or lecture.",
     // Pinned key: the unpacked extension always gets the same ID, so the API can allow it by origin (CORS).
     key: pinned.key,
-    permissions: ["storage", "contextMenus", "activeTab", "scripting", "sidePanel", "tabs"],
-    host_permissions: ["http://localhost/*", "http://127.0.0.1/*", "http://*/*"],
+    // tabCapture + offscreen: the "Tab audio" source (stream id from the popup click, recorded in an offscreen document).
+    permissions: ["storage", "contextMenus", "activeTab", "scripting", "sidePanel", "tabs", "tabCapture", "offscreen"],
+    // https: so the background can inject the content script into tabs opened before install (YouTube etc.).
+    host_permissions: ["http://*/*", "https://*/*"],
     action: { default_title: "SIGNLAYER" },
     side_panel: { default_path: "sidepanel.html" },
     commands: {
       "sign-selection": {
         suggested_key: { default: "Alt+Shift+S", mac: "Alt+Shift+S" },
         description: "Sign the selected text",
+      },
+      "toggle-signer": {
+        suggested_key: { default: "Alt+Shift+K", mac: "Alt+Shift+K" },
+        description: "Show or hide the signer (starts tab audio when that is the source)",
       },
     },
     // The signer runs as an extension page inside an iframe, so a page's CSP never blocks our <video> or API calls.
