@@ -7,6 +7,7 @@ import { HandIcon } from "./SignToSpeak";
 
 export function Home({ canListen, onListen, onType, onSettings, onSign }: { canListen: boolean; onListen(): void; onType(text: string): void; onSettings(): void; onSign(): void }) {
   const [typing, setTyping] = useState(!canListen);
+  const engineeringPreview = import.meta.env.VITE_ENGINEERING_PREVIEW === "1";
   return (
     <div className="screen home field">
       <div className="g live" />
@@ -16,8 +17,8 @@ export function Home({ canListen, onListen, onType, onSettings, onSign }: { canL
         <button className="iconbtn" aria-label="Settings" onClick={onSettings}><GearIcon /></button>
       </div>
       <div className="headline">
-        <h1>Hear anything.<br />See it signed.</h1>
-        <p>{copy.sub}</p>
+        <h1>{engineeringPreview ? <>Engineering<br />preview.</> : <>Hear anything.<br />See it signed.</>}</h1>
+        <p>{engineeringPreview ? "Web interface only. Signing and sign-to-voice need an online API and authorized clips." : copy.sub}</p>
       </div>
       <div className="orbwrap">
         <div className="orbbox" aria-hidden="true" onClick={() => (canListen ? onListen() : setTyping(true))}>
@@ -35,12 +36,12 @@ export function Home({ canListen, onListen, onType, onSettings, onSign }: { canL
         )}
         <a className="pill sm signentry" id="sign" href="#/sign" onClick={(e) => { e.preventDefault(); onSign(); }}><HandIcon />Sign to speak</a>
       </div>
-      <p className="any">{copy.any}</p>
-      <div className="extcard">
+      <p className="any">{engineeringPreview ? "Use Settings to connect the sign server when it is available." : copy.any}</p>
+      {!engineeringPreview && <div className="extcard">
         <span className="exticon"><ExtIcon /></span>
         <span className="exttxt"><b>{copy.extTitle}</b><span>{copy.extSub}</span></span>
         <span className="extgo" aria-hidden="true">›</span>
-      </div>
+      </div>}
     </div>
   );
 }
