@@ -212,8 +212,6 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
 
   const view = useMemo(() => sessionView(phrases, playing, interim), [phrases, playing, interim]);
   const safety = phrases.at(-1)?.res?.safety;
-  const latestUnsupported = phrases.at(-1)?.res?.unsupported ?? [];
-  const latestFingerspell = phrases.at(-1)?.res?.fingerspell ?? [];
   const latestError = phrases.at(-1)?.error;
   const generating = generatingLabel(phrases.at(-1)?.res);   // "Generating SICK… ~2 min": the server is making the missing clip
   const blocked = safety && safety.status !== "fully_supported";
@@ -340,15 +338,5 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         {float.docked ? <div className="fc-dock">{controls}</div> : null}
       </section>
     </div>
-  );
-}
-
-function Hints({ u, f }: { u: string[]; f: string[] }) {
-  if (!u.length && !f.length) return null;
-  return (
-    <p className="hint">
-      {u.length ? <>Can't sign yet: <b>{u.join(", ")}</b>. </> : null}
-      {f.length ? <>Fingerspelling not available yet: <b>{f.map((x) => x[0] + x.slice(1).toLowerCase()).join(", ")}</b>.</> : null}
-    </p>
   );
 }
