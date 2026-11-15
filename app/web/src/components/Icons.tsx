@@ -1,16 +1,18 @@
-// The SIGNLAYER mark (same geometry as MARK_SVG in @signlayer/core): cobalt tile, white bars.
+// The Flux mark: pastel gradient tile with a serif italic f (Newsreader, the app's serif).
 // Glyphs are drawn on a 24-pt grid with a 1.7 stroke, SF Symbols style.
 import type { ReactNode } from "react";
 
 export function Mark({ className = "mark" }: { className?: string }) {
   return (
     <span className={className}>
-      <svg viewBox="0 0 32 32" role="img" aria-label="SIGNLAYER">
-        <rect width="32" height="32" rx="7.4" fill="currentColor" />
-        <g style={{ fill: "var(--mark-bars, #fff)" }}>
-          <rect x="12.65" y="11.8" width="12.3" height="3" rx="1.5" transform="rotate(-6.5 18.8 13.3)" />
-          <rect x="7" y="16.7" width="14.4" height="3" rx="1.5" transform="rotate(-6.5 14.2 18.2)" />
-        </g>
+      <svg viewBox="0 0 32 32" role="img" aria-label="Flux">
+        <defs>
+          <linearGradient id="fluxg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#ff9ad5" /><stop offset=".5" stopColor="#8b7cff" /><stop offset="1" stopColor="#5ee7ff" />
+          </linearGradient>
+        </defs>
+        <rect width="32" height="32" rx="9" fill="url(#fluxg)" />
+        <text x="16.5" y="23.5" textAnchor="middle" fill="#fff" style={{ font: "italic 500 22px Newsreader, Georgia, serif" }}>f</text>
       </svg>
     </span>
   );
@@ -18,8 +20,8 @@ export function Mark({ className = "mark" }: { className?: string }) {
 
 export function Wordmark() {
   return (
-    <span className="wm" role="img" aria-label="signlayer">
-      <span aria-hidden="true">s<span className="wm-i">ı</span>gnlayer</span>
+    <span className="wm" role="img" aria-label="Flux">
+      <span aria-hidden="true">flux</span>
     </span>
   );
 }

@@ -206,7 +206,7 @@ svg { display: block; }
 /* ───────────────────────── Brand ───────────────────────── */
 .mark { display: inline-block; width: 28px; height: 28px; line-height: 0; color: var(--cobalt); --mark-bars: #fff; filter: drop-shadow(0 4px 12px rgb(20 30 120 / .4)); }
 .mark svg { width: 100%; height: 100%; }
-.wm { display: inline-block; font: 500 21px/1 "Inter", var(--font); letter-spacing: -.03em; color: var(--label); white-space: nowrap; }
+.wm { display: inline-block; font: italic 500 26px/1 var(--font-serif); letter-spacing: -.02em; color: var(--label); white-space: nowrap; }
 .wm .wm-i { position: relative; }
 .wm .wm-i::after { content: ""; position: absolute; left: calc(50% - .0125em); top: .11em; width: .21em; height: .21em; border-radius: 50%; background: var(--wm-dot); transform: translateX(-50%); box-shadow: 0 0 10px var(--wm-dot); }
 
