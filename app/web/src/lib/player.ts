@@ -5,6 +5,22 @@
 
 export interface PlayerItem { url: string; duration_s: number }
 
+// Clips are small (~0.5 MB). Fetching each once into a blob: URL makes the swap instant and avoids media
+// elements holding HTTP connections open (which stalled the next clip for seconds in testing).
+const blobs = new Map<string, Promise<string | null>>();
+const ready = new Map<string, string>();
+export function prefetchClip(url: string): Promise<string | null> {
+  let p = blobs.get(url);
+  if (!p) {
+    p = fetch(url)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((b) => { const u = URL.createObjectURL(b); ready.set(url, u); return u; })
+      .catch(() => { blobs.delete(url); return null; });
+    blobs.set(url, p);
+  }
+  return p;
+}
+
 export class GaplessPlayer {
   private items: PlayerItem[] = [];
   private loaded: [number, number] = [-1, -1];
@@ -43,6 +59,7 @@ export class GaplessPlayer {
   append(items: PlayerItem[]) {
     if (this.disposed || !items.length) return;
     this.items.push(...items);
+    items.forEach((x) => void prefetchClip(x.url));
     if (this.index < 0 && this.pending < 0) this.playAt(0);
     else if (this.draining) this.playAt(this.items.length - items.length);
     else this.preloadNext();
@@ -76,9 +93,16 @@ export class GaplessPlayer {
 
   private load(slot: number, i: number) {
     const v = this.vids[slot]!;
-    v.src = this.items[i]!.url;
+    const url = this.items[i]!.url;
+    v.src = ready.get(url) ?? url;
     v.load();
     this.loaded[slot] = i;
+    if (!ready.has(url)) {
+      // Not fetched yet: switch to the blob as soon as it lands, if this slot is still only preloading it.
+      void prefetchClip(url).then((u) => {
+        if (u && this.loaded[slot] === i && slot !== this.front && this.pending !== i && v.src === url) { v.src = u; v.load(); }
+      });
+    }
   }
 
   private preloadNext() {

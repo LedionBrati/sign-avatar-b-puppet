@@ -42,10 +42,14 @@ export function sessionView(phrases: Phrase[], playing: number, interim: string)
     const covered = new Set(r.playlist.map((x) => x.word_index));
     r.unsupported.forEach((w) => unsupported.push(w));
     r.fingerspell.forEach((w) => fingerspell.push(w));
+    // Words with no sign of their own ("you," in "thank you,") go solid once signing has passed them, as in the prototype.
+    let reached = -1;
+    f.states.forEach((st, i) => { if (st === "signed" || st === "now") reached = i; });
     r.words.forEach((text, i) => {
       const n = norm(text);
       const nosign = covered.has(i) ? undefined : fs.has(n) ? "fingerspell" : uns.has(n) ? "unsupported" : undefined;
-      const state = f.states[i] ?? "heard";
+      let state = f.states[i] ?? "heard";
+      if (state === "heard" && !covered.has(i) && !nosign && i < reached) state = "signed";
       if (state === "now") {
         now = words.length;
         const cur = r.playlist[f.current];
