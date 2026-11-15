@@ -16,7 +16,7 @@ cd app/recognizer
 uv sync                                  # ai-edge-litert + numpy (Python 3.13, Windows wheels OK)
 uv run python fetch_models.py            # ~52 MB into models/ (gitignored); reads only 2 members of the 192 MB zip via HTTP Range
 uv run python server.py                  # http://127.0.0.1:8788, loads + warms both models (~2 s)
-uv run pytest -q                         # 17 tests
+uv run pytest -q                         # 20 tests
 ```
 
 `RECOGNIZER_PORT` / `RECOGNIZER_HOST` (default `127.0.0.1`), `RECOGNIZER_MODELS` (models folder). `fetch_models.py --from DIR` copies files you already have (`gislr.tflite`/`islr.tflite`, `map.json`, `fs.tflite`, `fs_args.json`).
@@ -36,6 +36,36 @@ Everything at once from the repo root: `node app/start.mjs` (this service + the 
 - Errors: `{error: {code, message}}` with `bad_frames`, `bad_body_size`, `too_many_frames` (413), `bad_mode`, `not_found`, `internal`.
 
 **Privacy:** landmark bodies contain face points (biometric). The service never logs or stores them; the access log has method, path and status only.
+
+## Template matching (words GISLR lacks)
+
+GISLR knows 250 kid-vocabulary signs, so most demo words (HOW, GOOD, EVENING, COMPANY, JUDGE, COFFEE, NICE, MEET, ...) are
+missing. `templates.py` adds a **nearest-template** recognizer over the WLASL motion we already extracted (no new videos,
+no training): **332 glosses / 363 templates** (every sign the avatar can sign from the realtime clip manifests + the demo
+words, where motion exists; extra instances such as `all-a1/a3`, `have-a1..a3`, `nice-a1/a2`, `lucky-b1` are extra templates).
+
+- Features per frame, per hand: wrist position in a shoulder frame (origin = shoulder midpoint, x / shoulder width,
+  y / nose-to-shoulder height, so aspect ratio and distance cancel), 20 hand points relative to the wrist / hand size,
+  wrist velocity. Rest frames at the start/end (both hands low) are trimmed; resampled to 32 frames. Templates are
+  stored right-dominant; a left-handed query is mirrored (dominant hand = the one raised and moving more).
+- Banded DTW (band 4) against every template, all vectorized in numpy: **~20-40 ms** for the whole bank on this laptop.
+- Confidence: softmax over the 5 nearest glosses (the margin is what tells right from wrong) times a gate on the best
+  distance. Merged with GISLR into one top-5 keyed by display text; GISLR confidences are scaled by 0.8 first because
+  its softmax is overconfident outside its vocabulary. Template labels are glosses with underscores (`THANK_YOU`,
+  text `thank you`), so `labelText` in app/core already reads them. Response format unchanged.
+- `TEMPLATES=off` disables it (GISLR only). `/health` shows `gislr (250 signs) + wlasl templates (332 signs)`.
+
+```bash
+.venv/Scripts/python build_templates.py            # rebuild models/templates.npz (~1.4 MB, gitignored, ~10 s)
+.venv/Scripts/python build_templates.py --eval-only --gislr   # leave-one-out check, also merged with GISLR
+```
+
+Leave-one-out on the 13 glosses with 2+ extracted instances (44 queries, each matched against the bank without
+itself, from the raw json converted to the 543 x 3 layout the server receives; different signers): templates
+**top-1 48% / top-5 64%**; merged with GISLR **52% / 61%**. The specific held-out alternates: `all-a1` rank 2
+(merged rank 1), `have-a1` and `have-a3` rank 1, `nice-a2` missed. This is one WLASL example per sign, so expect
+it to work best for distinctive signs and to need the confirm chips otherwise. Glosses without extracted motion
+(BELIEF, CAREFUL, COP, DURING, EXPECT, HOST, LOCAL, MEANING, PAST, POTENTIAL, REALIZE, SHARE, SIMILAR, TALE, TRUE) are not in the bank.
 
 ## Evaluate
 
