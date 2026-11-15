@@ -82,20 +82,21 @@ test("Where does it hurt? -> HURT WHERE + question_wh marker over both", async (
   assert.deepEqual(body.markers, [{ type: "question_wh", from: 0, to: 1 }]);
 });
 
-test("names -> fingerspell (skipped, no letter clips); markers re-indexed onto the playlist", async () => {
+test("names without letter clips block the entire playlist", async () => {
   const { body } = await sign({ text: "Hello, my name is Maria. Do you see?" });
-  assert.equal(ids(body), "HELLO MY NAME YOU SEE");
+  assert.equal(ids(body), "");
   assert.deepEqual(body.fingerspell, ["MARIA"]);
-  // Plan items: HELLO MY NAME fs:MARIA YOU SEE -> the y/n marker over plan items 4-5 lands on playlist 3-4.
-  assert.deepEqual(body.markers, [{ type: "question_yn", from: 3, to: 4 }]);
-  assert.deepEqual(body.playlist.map((p) => p.word_index), [0, 1, 2, 6, 7]);
+  assert.deepEqual(body.markers, []);
+  assert.equal(body.safety.status, "caption_only");
+  assert.ok(body.safety.reasons.some((r) => r.code === "missing_fingerspelling"));
 });
 
 test("unknown words -> unsupported, never invented; nothing signable -> empty playlist", async () => {
   let { status, body } = await sign({ text: "I see the giraffe later" });
   assert.equal(status, 200);
-  assert.equal(ids(body), "SEE LATER");
+  assert.equal(ids(body), "");
   assert.deepEqual(body.unsupported, ["I", "giraffe"]);
+  assert.equal(body.safety.status, "caption_only");
   ({ body } = await sign({ text: "Xylophone." }));
   assert.deepEqual(body.playlist, []);
   assert.deepEqual(body.unsupported, ["Xylophone"]);
@@ -190,11 +191,12 @@ test("semantic layer (local model): pain -> HURT once ready; rules-only until th
   const s = createApp({ clipsDirs: [dirA], log: () => {} });
   assert.equal(s.state.semantic, "loading");
   const early = await s.sign({ text: "Where is the pain?" });
-  assert.equal(ids(early), "WHERE");                                     // rules only while loading
+  assert.equal(ids(early), "");                                     // unsupported pain blocks the prefix
   if (!(await s.ready)) return t.skip("semantic model unavailable offline");
   assert.equal(s.state.semantic, "ready");
   const warm = await s.sign({ text: "Where is the pain?" });
-  assert.equal(ids(warm), "HURT WHERE");
-  assert.equal(warm.words[warm.playlist[0].word_index], "pain?");
-  assert.equal(ids(await s.sign({ text: "Where is the pain?", semantic: false })), "WHERE");
+  assert.equal(ids(warm), "");
+  assert.equal(warm.safety.status, "needs_confirmation");
+  assert.ok(warm.safety.reasons.some((r) => r.code === "semantic_uncertainty"));
+  assert.equal(ids(await s.sign({ text: "Where is the pain?", semantic: false })), "");
 });

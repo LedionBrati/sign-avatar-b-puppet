@@ -40,7 +40,14 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
     /** Translate text and get the playlist. Clip URLs are made absolute. */
     async sign(req: SignRequest, signal?: AbortSignal): Promise<SignResponse> {
       const res = await request<SignResponse>(ROUTES.sign, { method: "POST", body: JSON.stringify(req), signal });
-      return { ...res, playlist: res.playlist.map((p) => ({ ...p, url: abs(p.url) })) };
+      const safety = res.safety ?? {
+        status: "caption_only" as const, caption: req.text,
+        reasons: [{ code: "missing_safety_decision", tokens: [], next_action: "Update the sign server before signing this message." }],
+        next_actions: ["Update the sign server before signing this message."],
+      };
+      // An older or inconsistent server must never make a partial playlist playable.
+      const playlist = safety.status === "fully_supported" ? res.playlist.map((p) => ({ ...p, url: abs(p.url) })) : [];
+      return { ...res, safety, playlist, markers: playlist.length ? res.markers : [] };
     },
     /** Sign -> voice: send one segment of packed landmark frames (landmarks.ts packSegment). */
     recognize(mode: RecognizeMode, frames: Float32Array, signal?: AbortSignal): Promise<RecognizeResponse> {

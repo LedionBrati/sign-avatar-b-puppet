@@ -18,12 +18,33 @@ export interface SignRequest {
   semantic?: boolean;
 }
 
+/** Engineering playback decision; it does not certify linguistic ASL correctness. */
+export interface SigningSafety {
+  status: "fully_supported" | "needs_confirmation" | "caption_only";
+  /** Exact request text, including original whitespace and punctuation. */
+  caption: string;
+  reasons: {
+    code: string;
+    tokens: string[];
+    next_action: string;
+    item_index?: number;
+    motion_id?: string;
+    proposed_gloss?: string;
+    score?: number;
+    missing_letters?: string[];
+    detail?: string;
+  }[];
+  next_actions: string[];
+}
+
 /** POST /api/sign response. */
 export interface SignResponse {
   text: string;
+  /** Always present from the local server; optional for older clients and the mock API. */
+  safety?: SigningSafety;
   /** The input split into display words, in spoken order (captions). */
   words: string[];
-  /** Signs in signing order (ASL order can differ from `words`). Empty if nothing could be signed. */
+  /** Signs in signing order (ASL order can differ from `words`). Empty unless safety is fully_supported. */
   playlist: PlaylistItem[];
   /** Words we could not sign (shown in captions, never invented). */
   unsupported: string[];

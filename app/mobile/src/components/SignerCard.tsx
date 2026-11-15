@@ -8,7 +8,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { cardBase, shadow, spk, fontMedium } from "../theme";
 import { Grain } from "./Field";
 
-export function SignerCard({ video, caption, speaking }: { video: ReactNode; caption: ReactNode; speaking: boolean }) {
+export function SignerCard({ video, caption, speaking, notice }: { video: ReactNode; caption: ReactNode; speaking: boolean; notice?: ReactNode }) {
   const [stage, setStage] = useState({ w: 0, h: 0 });
   const onLayout = (e: LayoutChangeEvent) => setStage({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height });
   // Prototype: a square 128% of the stage height (capped); also capped by width so the whole vignette stays on the card.
@@ -17,7 +17,7 @@ export function SignerCard({ video, caption, speaking }: { video: ReactNode; cap
     <View style={[s.card, shadow(30, 70, spk.glow, 0.55)]}>
       <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBase }]} />
       <View style={s.stage} onLayout={onLayout}>
-        {stage.h > 0 && (
+        {notice ? <View style={s.notice}>{notice}</View> : stage.h > 0 && (
           <View style={{ position: "absolute", width: size, height: size, left: (stage.w - size) / 2, top: stage.h * 0.54 - size / 2, overflow: "hidden" }}>
             {video}
             <Svg style={{ position: "absolute", left: -3, top: -3 }} width={size + 6} height={size + 6} pointerEvents="none">
@@ -50,6 +50,8 @@ export function SignerCard({ video, caption, speaking }: { video: ReactNode; cap
 const s = StyleSheet.create({
   card: { flex: 1, borderRadius: 32, overflow: "hidden", backgroundColor: cardBase },
   stage: { flex: 1, overflow: "hidden" },
+  notice: { flex: 1, marginTop: 52, marginHorizontal: 22, marginBottom: 12, padding: 16, borderRadius: 20,
+    backgroundColor: "rgba(246,247,251,0.94)" },
   chip: { position: "absolute", top: 12, left: 12, height: 28, borderRadius: 999, paddingLeft: 10, paddingRight: 12, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(47,85,255,0.82)" },
   dot: { width: 7, height: 7, borderRadius: 7, backgroundColor: "#fff" },
   chipTxt: { color: "#fff", fontSize: 12, fontWeight: "500", fontFamily: fontMedium },

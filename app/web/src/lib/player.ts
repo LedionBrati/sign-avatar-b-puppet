@@ -84,6 +84,18 @@ export class GaplessPlayer {
     this.vids.forEach((v) => v.pause());
   }
 
+  /** Discard a previous message when safety blocks playback or the API fails. */
+  clear() {
+    this.stop();
+    this.items = [];
+    this.loaded = [-1, -1];
+    this.index = -1;
+    this.front = 0;
+    this.draining = false;
+    this.vids.forEach((v) => { v.removeAttribute("src"); v.load(); v.classList.remove("front", "back"); });
+    this.onIndex(-1);
+  }
+
   dispose() {
     this.disposed = true;
     this.stop();
