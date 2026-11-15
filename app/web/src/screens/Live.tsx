@@ -119,6 +119,13 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
       onError: (kind) => {
         if (!alive.current) return;
         if (kind === "other") return;
+        if (kind === "paused") {
+          // The browser stopped restarting the mic on its own (iOS Safari). One tap restarts it.
+          setMicOn(false);
+          setMicRetry(true);
+          setBanner("Tap Retry to keep listening (this browser pauses the mic between phrases).");
+          return;
+        }
         setMicOn(false);
         setTyping(true);
         setMicRetry(true);
