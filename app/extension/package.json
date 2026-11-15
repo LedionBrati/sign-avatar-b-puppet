@@ -3,15 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SIGNLAYER Chrome extension: a draggable signer in the corner of any page.",
+  "description": "SIGNLAYER Chrome extension: one side panel that signs your mic or a tab's audio.",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
     "zip": "wxt zip",
     "typecheck": "tsc --noEmit",
-    "mock": "node scripts/mock-server.mjs",
     "verify": "node scripts/verify.mjs",
-    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {

@@ -1,4 +1,4 @@
-/* SIGNLAYER tokens (app/core/src/tokens.ts) + the 2030 material system (docs/DESIGN.md). */
+/* SIGNLAYER tokens (app/core/src/tokens.ts) + the 2030 motion system. */
 :root {
   color-scheme: light;
   /* Springs sampled into linear() (stiffness/damping, mass 1). smooth 170/26 ~0.7 s, bounce 210/20, snappy 380/34 ~0.45 s. */
@@ -30,36 +30,3 @@ button { font: inherit; color: inherit; }
 .wm .wm-i::after { content: ""; position: absolute; left: calc(50% - 0.0125em); top: 0.11em; width: 0.21em; height: 0.21em; border-radius: 50%; background: var(--wm-dot, #1f3fd6); transform: translateX(-50%); }
 .mark { display: inline-block; width: 18px; height: 18px; line-height: 0; flex: none; }
 .mark svg { width: 100%; height: 100%; }
-
-/* Live pill */
-.live { display: inline-flex; gap: 6px; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap;
-  color: var(--ink); background: rgb(255 255 255 / .5); border: 1px solid rgb(255 255 255 / .75); box-shadow: inset 0 1px 0 #fff; }
-.live i { width: 6px; height: 6px; border-radius: 50%; background: #2fd39f; box-shadow: 0 0 8px #2fd39f; animation: breathe 1.2s ease-in-out infinite; }
-.live.off i { background: rgb(21 25 58 / .3); box-shadow: none; animation: none; }
-.live.err i { background: #e5484d; box-shadow: 0 0 8px #e5484d; animation: none; }
-
-/* Segmented control + switch (extension menu) */
-.seg { display: flex; gap: 3px; flex-wrap: wrap; padding: 3px; border-radius: 999px; background: rgb(21 25 58 / .06); border: 1px solid rgb(21 25 58 / .08); }
-.seg button { padding: 6px 12px; border-radius: 999px; border: 0; background: transparent; font-size: 12px; color: rgb(21 25 58 / .7); cursor: pointer; transition: background-color .25s ease, color .25s ease; }
-.seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgb(10 20 60 / .15); }
-.seg button:disabled { cursor: not-allowed; opacity: .45; }
-.seg button small { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; opacity: .8; margin-left: 4px; }
-.switch { width: 46px; height: 28px; border-radius: 999px; border: 0; padding: 0; position: relative; flex: none; cursor: pointer; background: rgb(21 25 58 / .15); transition: background .3s ease; }
-.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(10 20 60 / .25); transition: transform .3s cubic-bezier(.2,.9,.25,1.2); }
-.switch[aria-checked="true"] { background: linear-gradient(90deg, #3a6cff, #a46bff); box-shadow: 0 0 16px rgb(58 108 255 / .45); }
-.switch[aria-checked="true"]::after { transform: translateX(18px); }
-.cap-label { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: rgb(21 25 58 / .6); }
-
-/* Grainy cobalt page background (popup, side panel, mic page) */
-.g-live { background:
-  radial-gradient(60% 38% at 50% 34%, rgb(120 150 255 / .55) 0%, rgb(120 150 255 / 0) 70%),
-  radial-gradient(70% 40% at 20% 100%, var(--cobalt-deep) 0%, rgb(12 34 143 / 0) 70%),
-  linear-gradient(180deg, #1530c4 0%, var(--cobalt) 38%, #3352e4 70%, #8fa2ee 100%); }
-.g-paper { background: radial-gradient(50% 60% at 70% 30%, #6f86ea 0%, rgb(111 134 234 / 0) 70%), linear-gradient(160deg, #eeeff1 0%, #c5cdec 35%, #2b4be0 75%, #1631bd 100%); }
-.grain { position: relative; isolation: isolate; }
-.grain::before { content: ""; position: absolute; inset: 0; z-index: -1; background-image: var(--grain); background-size: 220px; mix-blend-mode: soft-light; opacity: .35; pointer-events: none; }
-
-/* Liquid glass panel */
-.glass { position: relative; border-radius: 22px; background: linear-gradient(180deg, rgb(255 255 255 / .62), rgb(255 255 255 / .44));
-  -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%);
-  box-shadow: inset 0 1px 1px rgb(255 255 255 / .9), inset 0 -1px 1px rgb(255 255 255 / .35), 0 18px 40px -12px rgb(10 20 60 / .28); }

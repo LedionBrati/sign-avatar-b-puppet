@@ -1,56 +1,19 @@
 import { browser } from "wxt/browser";
 import { DEFAULT_PORT } from "@signlayer/core";
 
-/** What the signer listens to. Selected text (context menu / Alt+Shift+S) works on top of any source. */
-export type Source = "captions" | "tab" | "mic" | "selection";
-export type Size = "s" | "m" | "l";
-export type Corner = "tl" | "tr" | "bl" | "br";
+/** What the side panel listens to. */
+export type Source = "mic" | "tab";
 
 export interface Settings {
-  /** Signer on/off (popup switch). Explicit actions (context menu, shortcut) work either way. */
-  enabled: boolean;
   source: Source;
-  size: Size;
-  /** Caption sheet under the signer. */
-  captions: boolean;
-  corner: Corner;
   apiUrl: string;
-  /** First-run screen in the popup has been seen. */
-  onboarded: boolean;
 }
 
-export const DEFAULTS: Settings = {
-  enabled: true,
-  source: "captions",
-  size: "m",
-  captions: true,
-  corner: "br",
-  apiUrl: `http://localhost:${DEFAULT_PORT}`,
-  onboarded: false,
-};
-
-/** Card width per size, px. */
-export const WIDTHS: Record<Size, number> = { s: 196, m: 256, l: 344 };
-
-export const SOURCES: Source[] = ["captions", "tab", "mic", "selection"];
-export const SOURCE_LABEL: Record<Source, string> = { captions: "Captions", tab: "Tab audio", mic: "Microphone", selection: "Selected text" };
+export const DEFAULTS: Settings = { source: "mic", apiUrl: `http://localhost:${DEFAULT_PORT}` };
 
 export async function getSettings(): Promise<Settings> {
-  const s = await browser.storage.local.get(Object.keys(DEFAULTS));
-  const out: Settings = { ...DEFAULTS, ...(s as Partial<Settings>) };
-  if (!SOURCES.includes(out.source)) out.source = DEFAULTS.source;
-  return out;
+  const s = (await browser.storage.local.get(["source", "apiUrl"])) as Partial<Settings>;
+  return { source: s.source === "tab" ? "tab" : "mic", apiUrl: typeof s.apiUrl === "string" && s.apiUrl ? s.apiUrl : DEFAULTS.apiUrl };
 }
 
 export const setSettings = (patch: Partial<Settings>) => browser.storage.local.set(patch);
-
-export function onSettings(cb: (patch: Partial<Settings>) => void) {
-  const fn = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-    if (area !== "local") return;
-    const patch: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(changes)) if (k in DEFAULTS) patch[k] = v.newValue ?? DEFAULTS[k as keyof Settings];
-    if (Object.keys(patch).length) cb(patch as Partial<Settings>);
-  };
-  browser.storage.onChanged.addListener(fn);
-  return () => browser.storage.onChanged.removeListener(fn);
-}

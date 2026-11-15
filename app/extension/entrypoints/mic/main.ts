@@ -1,17 +1,29 @@
 import "@/lib/base.css";
+import { browser } from "wxt/browser";
 import { $, MARK, WORDMARK } from "@/lib/brand";
 
-// One-time permission page: side panels can't show Chrome's permission prompt, a normal extension tab can.
-$("brand").innerHTML = `<span style="display:inline-flex;gap:8px;align-items:center">${MARK}${WORDMARK}</span>`;
-const msg = $("msg");
+// One-time permission tab: side panels can't show Chrome's permission prompt, a normal extension tab can.
+// Asks at once, tells the side panel, closes itself.
+$("brand").innerHTML = MARK + WORDMARK;
+const msg = $("msg"), btn = $("go");
 
-$("go").addEventListener("click", async () => {
+async function ask() {
+  btn.hidden = true;
+  msg.textContent = "";
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((t) => t.stop());
-    msg.innerHTML = `<span class="ok">Microphone enabled.</span> Go back to the side panel and tap <b>Tap to listen</b>. You can close this tab.`;
-    setTimeout(() => window.close(), 2500);
+    msg.innerHTML = `<span class="ok">Microphone allowed.</span> Back to the side panel…`;
+    await browser.runtime.sendMessage({ type: "mic-granted" }).catch(() => {});
+    setTimeout(async () => {
+      const t = await browser.tabs.getCurrent().catch(() => undefined);
+      if (t?.id != null) browser.tabs.remove(t.id).catch(() => window.close());
+      else window.close();
+    }, 900);
   } catch (e) {
     msg.innerHTML = `<span class="bad">Not allowed (${e instanceof Error ? e.name : e}).</span> Click the icon at the right of the address bar to allow the microphone, then try again.`;
+    btn.hidden = false;
   }
-});
+}
+btn.addEventListener("click", ask);
+ask();
