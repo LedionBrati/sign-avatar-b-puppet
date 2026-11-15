@@ -9,7 +9,7 @@ export const SEG = {
   stillMs: 500, // hands still this long (after moving) -> stop
   maxMs: 4000, // hard cap per sign
   preRoll: 8, // frames kept from before the motion starts
-  minFrames: 6, // shorter segments are dropped
+  minFrames: 4, // shorter segments are dropped
   moveThresh: 0.006, // mean normalized displacement per frame counted as motion
 };
 

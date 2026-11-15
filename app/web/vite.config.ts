@@ -11,6 +11,8 @@ const mpVersion: string = JSON.parse(fs.readFileSync(path.join(here, "node_modul
 
 // `vite --mode mock`: the dev server also plays the API (same origin), so no app/server is needed.
 export default defineConfig(({ mode }) => ({
+  // Relative base: the same build runs at / and at /app/ (app/server serves dist there for the phone WebView).
+  base: "./",
   plugins: [react(), ...(mode === "mock" ? [mockApi()] : [])],
   resolve: { alias: { "@signlayer/core": path.resolve(here, "../core/src/index.ts") } },
   define: { __MP_VERSION__: JSON.stringify(mpVersion), ...(mode === "mock" ? { "import.meta.env.VITE_API_URL": JSON.stringify("same-origin") } : {}) },

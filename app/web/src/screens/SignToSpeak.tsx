@@ -217,7 +217,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const ready = cam === "ready" && track === "ready";
   const island = busy ? "Reading the sign" : seg === "recording" ? "Recording" : seg === "armed" ? (hands ? "Start signing" : "Show your hands") : !ready ? (cam === "starting" || track === "loading" ? "Starting camera" : "Camera off") : mode === "spell" ? "Spell mode" : "Ready to sign";
   const status = cam === "denied" || cam === "nocam" || cam === "error" ? "Camera unavailable" : cam === "starting" ? "Starting the camera…" : track === "loading" ? "Loading hand tracking…" : track === "error" ? "Hand tracking unavailable" : seg === "armed" ? (hands ? "Hands found. Sign now." : "Raise your hands into view") : seg === "recording" ? "Recording… hold still to finish" : busy ? "Reading…" : hands ? "Tracking your hands" : "Tap Sign, then sign one word";
-  const btn = busy ? "Reading…" : seg === "recording" ? "Done" : seg === "armed" ? "Cancel" : mode === "spell" ? "Spell" : "Sign";
+  const btn = busy ? (mode === "spell" ? "Reading letters…" : "Reading…") : seg === "recording" ? "Done" : seg === "armed" ? "Cancel" : mode === "spell" ? "Spell" : "Sign";
 
   return (
     <div className={`screen signsp field${embed ? " embed" : ""}`}>
@@ -268,7 +268,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
             <button role="radio" aria-checked={mode === "spell"} className={mode === "spell" ? "on" : ""} onClick={() => setMode("spell")}>Spell</button>
           </div>
           <button id="signbtn" className={`listenbtn signbtn${seg !== "idle" ? " armed" : ""}`} onClick={tap} disabled={!ready || busy}>
-            <HandIcon />{btn}
+            {busy ? <i className="spin" aria-hidden="true" /> : <HandIcon />}{btn}
           </button>
         </div>
         <div className="footrow">
