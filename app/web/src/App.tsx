@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
 import { Home } from "./screens/Home";
 import { Live, type LiveStart } from "./screens/Live";
+import { SignToSpeak } from "./screens/SignToSpeak";
+import { navigate, useRoute } from "./lib/route";
 import { Settings } from "./components/Settings";
 import { speechSupported } from "./lib/speech";
 
@@ -13,13 +15,25 @@ export function App() {
     setLive({ start, key: Date.now() });
   }, []);
   const home = useCallback(() => setLive(null), []);
+  const route = useRoute();
+  const embed = route.params.get("embed") === "1";
+  if (route.path === "/sign") {
+    return (
+      <div className={`app${embed ? " embed" : ""}`}>
+        <main className="device">
+          <SignToSpeak embed={embed} onHome={() => navigate("/")} />
+          {settings ? <Settings onClose={() => setSettings(false)} /> : null}
+        </main>
+      </div>
+    );
+  }
   return (
     <div className="app">
       <main className="device" aria-live="polite">
         {live ? (
           <Live key={live.key} start={live.start} onHome={home} onRestart={go} />
         ) : (
-          <Home canListen={canListen} onListen={() => go({ kind: "mic" })} onType={(text) => go({ kind: "typed", text })} onSettings={() => setSettings(true)} />
+          <Home canListen={canListen} onListen={() => go({ kind: "mic" })} onType={(text) => go({ kind: "typed", text })} onSettings={() => setSettings(true)} onSign={() => navigate("/sign")} />
         )}
         {settings ? <Settings onClose={() => setSettings(false)} /> : null}
       </main>
