@@ -61,3 +61,31 @@
 3. **Faster offline render:** record the WebGL canvas in real time (WebCodecs or MediaRecorder) instead of a screenshot per frame. That takes about 60 s down to about 5 s, but it only matters while repaint stays per sentence.
 4. **Live repaint (experimental, README 6.8):** a realtime video-to-video model such as `decart/lucy-2-6/realtime` over WebRTC, restyling the live puppet stream. Finger accuracy is unknown, so it needs its own test.
 5. **Smaller wins:** stream the gloss call (low effort), use binary motion files instead of 3 MB JSON, stream speech-to-text.
+
+## Update: real time, built (same day)
+
+**Idea:** repaint each **sign** once, not each sentence. Then any sentence is just joining saved realistic clips.
+
+**How:**
+1. Every sign goes through the puppet starting and ending in **one shared neutral pose**. That's `out/realtime/neutral.clean.json`: a still frame with the arms down, 0.54 s.
+2. Signs are batched into one motion each: `NEUTRAL HELLO NEUTRAL MY NAME …`, built with `puppet/compose.mjs`. Batch A is HELLO MY NAME THANK-YOU SEE (8.96 s); batch B is YOU LATER WHERE HURT (6.83 s). That keeps each call within H3 Max's 5 s minimum and 15 s single-shot limit.
+3. Each batch gets one H3 Max Recast call. Timing stays frame-exact, so `pipeline/sign-clips.mjs cut` slices the result at the middle of every neutral pause, giving one realistic clip per sign that starts and ends in the same pose.
+4. At runtime, `pipeline/sign-clips.mjs say THANK_YOU SEE YOU LATER` joins the clips with stream copy: no fal, no render, no re-encode. Unknown signs return `{"ok": false, "unsupported": [...]}`. Nothing is invented.
+
+**Numbers**
+
+| | Batch A | Batch B |
+|---|---|---|
+| H3 Max time | 97 s | 107 s |
+| Frames in → out | 216 → 216 | 165 → 165 |
+| Reserve (conservative) | $4.50 | $3.44 |
+
+- **One-time cost per sign:** about 11 s of fal time and about $0.88 reserve. The listed Recast price is much lower; check the fal dashboard.
+- **Building a sentence at runtime:** **159–186 ms** for 3–4 signs (4.8–6.4 s of video).
+- **Video:** [`assets/demo/sentences/three-sentences-realtime.mp4`](../assets/demo/sentences/three-sentences-realtime.mp4), all three sentences, built in real time, with captions.
+
+**Joins:** every clip starts and ends in the neutral pose; H3 Max drew it as hands loosely clasped. Joins inside a batch are seamless. A join across two fal calls (SEE from A → YOU from B) shows only a tiny difference in hand overlap and lighting.
+
+**Trade-off vs per-sentence repaint:** the signer returns to neutral between signs, so it's slower and less fluid than real co-articulation, but instant. Per-sentence repaint (about 2.5 min) stays available for pre-made content.
+
+**Next:** run the whole dictionary (or a demo vocabulary) through batches. About 11 s of fal time per sign, all offline. Shorten the neutral pause, and fix hand location in the puppet (a better puppet means better clips).
