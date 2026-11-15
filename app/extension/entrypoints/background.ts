@@ -37,7 +37,7 @@ export default defineBackground(() => {
       await browser.tabs.sendMessage(tabId, { type: "mount" });
     } catch {
       try {
-        await browser.scripting.executeScript({ target: { tabId }, files: ["content-scripts/content.js"] });
+        await browser.scripting.executeScript({ target: { tabId }, files: ["/content-scripts/content.js"] });
         await browser.tabs.sendMessage(tabId, { type: "mount" });
       } catch (e) {
         console.warn("[signlayer] cannot reach tab", tabId, e);

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="color-scheme" content="light" />
+  <title>SIGNLAYER</title>
+</head>
+<body class="g-paper grain">
+  <div class="popup glass" role="dialog" aria-label="SIGNLAYER settings">
+    <div class="row"><span class="word" id="brand"></span><span class="live off" id="plive"><i></i><span id="pliveText">Checking</span></span></div>
+    <div class="row"><span>Signer on</span><button class="switch" id="sw" role="switch" aria-checked="true" aria-label="Signer on"></button></div>
+    <hr />
+    <div class="col"><span class="cap-label">Listen to</span>
+      <div class="seg" data-seg="source">
+        <button data-v="captions">Captions</button><button data-v="mic">Microphone</button><button data-v="selection">Selected text</button><button data-v="tab" disabled title="Tab audio needs cloud speech-to-text. Coming soon">Tab audio<small>soon</small></button>
+      </div>
+      <p class="hint" id="hint"></p>
+      <button class="btn" id="micBtn" hidden>Open the mic panel</button>
+    </div>
+    <div class="col"><span class="cap-label">Signer size</span>
+      <div class="seg" data-seg="size"><button data-v="s">S</button><button data-v="m">M</button><button data-v="l">L</button></div>
+    </div>
+    <div class="col"><span class="cap-label">Captions</span>
+      <div class="seg" data-seg="captions"><button data-v="on">Under signer</button><button data-v="off">Off</button></div>
+    </div>
+    <hr />
+    <div class="col"><span class="cap-label">Sign API</span>
+      <form class="api" id="apiForm"><input id="apiUrl" type="url" spellcheck="false" aria-label="API URL" /><button class="btn sm" type="submit">Save</button></form>
+      <p class="hint" id="apiStatus"></p>
+    </div>
+    <span class="cap-label foot">Real signer recordings · no cartoon avatars</span>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
