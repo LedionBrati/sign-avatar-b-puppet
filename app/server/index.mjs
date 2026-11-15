@@ -101,11 +101,14 @@ export function createApp(o = {}) {
     }
   })();
 
-  /** One playlist builder + safety gate for every translator: a blocked plan never returns a playable prefix. */
+  /** One playlist builder + safety gate for every translator: a blocked plan never returns a playable prefix
+   *  (strict mode). SIGNING_MODE=relaxed keeps whatever valid signs a plan has: partial sentences sign what they can
+   *  and agent paraphrases play without confirmation. A malformed plan stays blocked in both modes. */
   function finish(text, plan) {
     const out = planToPlaylist(plan, planClips);
     const safety = assessSigning(text, plan, planClips);
-    if (safety.status !== "fully_supported") {
+    const invalid = safety.reasons?.some((r) => r.code === "invalid_plan");
+    if (safety.status !== "fully_supported" && !(RELAXED && !invalid && out.playlist.length)) {
       out.playlist = [];
       out.markers = [];
     }
@@ -140,7 +143,7 @@ export function createApp(o = {}) {
       agent_ms = ms(performance.now() - t2);
       if (r.ok) {
         const proposed = finish(text, r.plan);
-        const wins = mode === "always" || better(proposed, local);
+        const wins = mode === "always" || (RELAXED ? signsMore(proposed, local) : better(proposed, local));
         trace = { used: wins, status: proposed.safety.status, local_status: local.safety.status, paraphrase: r.paraphrase, notes: r.notes,
           model: r.model, cached: Boolean(r.cached), latency_ms: r.latency_ms, usage: r.usage ?? null, rejected: r.rejected ?? [] };
         if (wins) trace.local_plan = summarize(local.plan); else trace.plan = summarize(proposed.plan);
@@ -152,8 +155,14 @@ export function createApp(o = {}) {
         log(`agent failed (${r.code}): ${redact(r.error ?? "")}`);
       }
     }
+    // Relaxed: anything with signs plays. Clients only play "fully_supported", so report that, and keep the strict
+    // verdict + reasons (skipped words stay in the captions via `unsupported`).
+    let safety = chosen.safety;
+    if (RELAXED && chosen.out.playlist.length && safety.status !== "fully_supported") {
+      safety = { ...safety, status: "fully_supported", strict_status: safety.status, mode: "relaxed" };
+    }
     return {
-      text, ...chosen.out, safety: chosen.safety, plan: chosen.plan, translator,
+      text, ...chosen.out, safety, plan: chosen.plan, translator,
       ...(translator === "agent" ? { paraphrase: trace.paraphrase } : {}),
       ...(trace ? { agent: trace } : {}),
       ...(warnings.length ? { warnings } : {}),
@@ -293,6 +302,14 @@ export function createApp(o = {}) {
 
 const AGENT_MODES = ["auto", "always", "off"];
 const RANK = { caption_only: 0, needs_confirmation: 1, fully_supported: 2 };
+const RELAXED = (process.env.SIGNING_MODE ?? "strict").toLowerCase() === "relaxed";
+
+/** Relaxed mode: the agent wins if the gate rates it better, or equal but it signs more of the message. */
+function signsMore(a, b) {
+  const ra = RANK[a.safety.status], rb = RANK[b.safety.status];
+  if (ra !== rb) return ra > rb;
+  return a.out.playlist.length > b.out.playlist.length;
+}
 
 /** Agent result beats local only if the gate rates it strictly better; ties go to the local translator. */
 export function better(a, b) {
