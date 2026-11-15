@@ -4,7 +4,7 @@
 //   2. hover controls, size L, fullscreen (the signer moves into the fullscreen player);
 //   3. tab audio: popup click -> tabCapture -> offscreen recorder -> POST /api/transcribe -> text in the signer;
 //   4. caption-only / confirm states, popup, onboarding.
-// Screenshots go to docs/v2-*.png (QA_SHOTS_DIR to override).
+// Screenshots go to docs/2030-*.png (QA_SHOTS_DIR / SHOT_PREFIX to override).
 //
 //   npm run build && node scripts/verify-youtube.mjs
 //   env: SIGNLAYER_API (default http://localhost:8787), VIDEO (default arj7oStGLkU, a TED talk with a transcript),
@@ -20,6 +20,7 @@ const chrome = process.env.CHROME ?? "C:/Program Files/Google/Chrome/Application
 const api = process.env.SIGNLAYER_API ?? "http://localhost:8787";
 const video = process.env.VIDEO ?? "arj7oStGLkU";
 const shots = process.env.QA_SHOTS_DIR ?? resolve(root, "docs");
+const prefix = process.env.SHOT_PREFIX ?? "2030-";
 const only = (process.env.ONLY ?? "captions,controls,fullscreen,tab,states,popup").split(",");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -64,14 +65,15 @@ try {
   };
   const snap = (f) => f.evaluate(() => ({
     state: document.getElementById("card")?.dataset.state,
-    pill: document.getElementById("pill")?.textContent?.trim(),
-    cc: document.getElementById("cc")?.textContent?.replace(/\s+/g, " ").trim(),
-    note: [document.getElementById("noteTitle")?.textContent, document.getElementById("noteText")?.textContent].filter(Boolean).join(" | "),
+    pill: document.getElementById("pill")?.textContent?.replace(/\s+/g, " ").trim(),
+    // Captions live in the sheet; a phrase the signer can't sign is shown large on the stage instead.
+    cc: (document.getElementById("cc")?.textContent || document.getElementById("focusText")?.textContent || "").replace(/\s+/g, " ").trim(),
+    note: document.getElementById("noteText")?.textContent ?? "",
     playing: [...document.querySelectorAll("video")].some((v) => v.classList.contains("on") && !v.paused && v.currentTime > 0),
   }));
   const shot = async (name) => {
-    await page.screenshot({ path: resolve(shots, `v2-${name}.png`) });
-    log("saved", `docs/v2-${name}.png`);
+    await page.screenshot({ path: resolve(shots, `${prefix}${name}.png`) });
+    log("saved", `${prefix}${name}.png`);
   };
   const ytVideo = () => page.evaluate(() => {
     const v = document.querySelector("#movie_player video");
@@ -130,7 +132,7 @@ try {
     const states = new Set([...seen.values()].map((s) => s.state));
     check([...states].every((st) => ["listening", "signing", "caption_only", "confirm", "paused"].includes(st)), `states seen: ${[...states].join(", ")}`);
     const pill = (await snap(f)).pill;
-    check(/Transcript|Captions|Signing|Captions only|Confirm/i.test(pill), `status pill: "${pill}"`);
+    check(/Listening|Transcript|Captions|Signing|Can't sign yet|Confirm/i.test(pill), `status pill: "${pill}"`);
     await shot("overlay-m");
   }
 
@@ -147,7 +149,8 @@ try {
     check(await f.evaluate(() => !document.getElementById("srcMenu").hidden), "source menu opens");
     await shot("source-menu");
     await f.click("#srcBtn");
-    await f.evaluate(() => document.querySelector('[data-size="l"]').click());
+    // The size button cycles S -> M -> L.
+    for (let i = 0; i < 3 && (await f.evaluate(() => document.body.dataset.size)) !== "l"; i++) { await f.click("#sizeBtn"); await sleep(250); }
     await page.mouse.move(400, 300);
     await sleep(1500);
     const w = (await el.boundingBox()).width;
@@ -300,8 +303,8 @@ try {
       check(ch <= 600, `${name} fits a Chrome popup (${ch} px tall)`);
       await p.setViewport({ width: 356, height: ch });
       await sleep(300);
-      await p.screenshot({ path: resolve(shots, `v2-${name}.png`) });
-      log("saved", `docs/v2-${name}.png`);
+      await p.screenshot({ path: resolve(shots, `${prefix}${name}.png`) });
+      log("saved", `${prefix}${name}.png`);
       if (name === "popup") {
         const status = await p.evaluate(() => document.getElementById("statusText")?.textContent);
         check(/Ready/.test(status), `popup server status: ${status}`);

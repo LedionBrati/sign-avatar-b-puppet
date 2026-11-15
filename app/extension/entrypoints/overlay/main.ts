@@ -1,69 +1,94 @@
 import "./style.css";
 import { browser } from "wxt/browser";
-import { captionFrame, createSignClient, ROUTES, waveColors, type PlaylistItem, type SignResponse } from "@signlayer/core";
-import type { FromOverlay, Origin, SourceState, TabAudioState, ToBackground, ToOverlay } from "@/lib/messages";
+import { captionFrame, createSignClient, ROUTES, type PlaylistItem, type SignResponse } from "@signlayer/core";
+import type { FromOverlay, Origin, SourceState, TabAudioState, ToBackground, ToFrame, ToOverlay } from "@/lib/messages";
 import { getSettings, onSettings, setSettings, SOURCE_LABEL, SOURCES, type Settings, type Size, type Source } from "@/lib/settings";
-import { $, esc, MARK } from "@/lib/brand";
+import { $, esc } from "@/lib/brand";
 import { ICON, SOURCE_ICON } from "@/lib/icons";
 
-// The signer: an extension page inside an iframe the content script injects.
-//  - Gapless playlist player: two stacked <video>s, the hidden one preloads the next clip, swap on "ended".
+// The signer: an extension page inside an iframe the content script injects. One glass card:
+//  - Stage: two stacked <video>s. The next clip preloads in the hidden one and crossfades in on top (100 ms) on its
+//    first painted frame, so there is never a black frame. Behind both sits a still of the neutral pose.
+//  - Island: the status capsule; its width springs to each label.
+//  - Sheet: live captions, fixed two-line height; words blur in, the word being signed is softly highlighted.
 //  - Requests start as soon as a phrase arrives (and the next transcript line is fetched ahead); results are applied
 //    in order, and live sources skip results that were overtaken, so the signer stays near real time.
-//  - Safety gate (docs/semantic-safety.md): caption_only / needs_confirmation stop and clear the player at once and show
-//    the exact caption plus the reason. needs_confirmation can be played only after an explicit "Show signs" click.
+//  - Safety gate (docs/semantic-safety.md): caption_only / needs_confirmation stop and clear the player at once; the
+//    still blurs back and the exact caption comes forward, with the reason underneath. needs_confirmation plays only
+//    after an explicit "Show signs" click.
 
 type Job = { res: SignResponse; source: Source; confirmed?: boolean };
 type View = "listening" | "signing" | "caption_only" | "confirm" | "offline" | "paused" | "ad" | "need-cc" | "tab-error";
+type Tone = "live" | "sign" | "warn" | "off" | "idle";
+/** Views where the signer can't sign right now. */
+const BLOCKED = new Set<View>(["caption_only", "confirm", "offline", "tab-error"]);
 
-const card = $("card"), stage = $("stage"), cc = $("cc");
-const note = $("note"), noteIc = $("noteIc"), noteTitle = $("noteTitle"), noteText = $("noteText"), noteActions = $("noteActions");
+const card = $("card"), cc = $("cc"), island = $("pill"), islandIn = $("islandIn"), dot = $("dot");
+const focusText = $("focusText"), noteText = $("noteText"), noteActions = $("noteActions");
 const pillState = $("pillState"), pillSub = $("pillSub");
-const srcBtn = $("srcBtn"), srcMenu = $("srcMenu"), ccBtn = $("ccBtn");
+const srcBtn = $("srcBtn"), srcMenu = $("srcMenu"), ccBtn = $("ccBtn"), sizeBtn = $("sizeBtn");
 const vids = [$("v0") as HTMLVideoElement, $("v1") as HTMLVideoElement];
-$("brand").innerHTML = `${MARK}<span class="wm" aria-hidden="true">s<span class="wm-i">ı</span>gnlayer</span>`;
+const still = $("still") as HTMLCanvasElement;
 ccBtn.innerHTML = ICON.subtitles;
+sizeBtn.innerHTML = ICON.size;
 $("closeBtn").innerHTML = ICON.close;
 
 const post = (m: FromOverlay) => parent.postMessage(m, "*");
 const send = (m: ToBackground) => browser.runtime.sendMessage(m).catch(() => undefined);
 let s: Settings = await getSettings();
 let client = createSignClient(s.apiUrl, { timeoutMs: 12_000 });
-let origin: Origin = s.source === "tab" ? "tab" : s.source === "mic" ? "mic" : s.source === "selection" ? "selection" : "captions";
+const originOf = (src: Source): Origin => (src === "tab" ? "tab" : src === "mic" ? "mic" : src === "selection" ? "selection" : "captions");
+let origin: Origin = originOf(s.source);
 let srcState: SourceState = { kind: "idle" };
 let tabState: TabAudioState = "off";
 let tabDetail = "";
 let offlineMsg = "";
 let isOffline = false;
 let phrases = 0; // phrases received since load (hides the first-run hint)
+let mediaRate = 1; // the page video's playbackRate (YouTube 1.25x / 1.5x ...)
+
+// ── Theme: the content script reads the page's own background and tells us (light / dark, fullscreen) ──
+addEventListener("message", (e: MessageEvent) => {
+  if (e.source !== parent) return;
+  const m = e.data as ToFrame;
+  if (m?.sl !== 1 || m.type !== "theme") return;
+  document.body.dataset.theme = m.dark ? "dark" : "light";
+  document.body.classList.toggle("fs", !!m.fs);
+});
 
 // ── Settings + controls ──
+const SIZES: Size[] = ["s", "m", "l"];
+const SIZE_NAME: Record<Size, string> = { s: "Small", m: "Medium", l: "Large" };
+const nextSize = (z: Size): Size => SIZES[(SIZES.indexOf(z) + 1) % SIZES.length]!;
 function applySettings() {
   document.body.dataset.size = s.size;
-  document.querySelectorAll<HTMLButtonElement>("button[data-size]").forEach((b) => b.classList.toggle("on", b.dataset.size === s.size));
+  sizeBtn.dataset.size = s.size;
+  sizeBtn.setAttribute("aria-label", `Size: ${SIZE_NAME[s.size]}. Switch to ${SIZE_NAME[nextSize(s.size)]}`);
+  sizeBtn.title = `Size: ${SIZE_NAME[s.size]}`;
   card.classList.toggle("nocc", !s.captions);
   ccBtn.setAttribute("aria-pressed", String(s.captions));
+  ccBtn.title = s.captions ? "Hide captions" : "Show captions";
   srcBtn.innerHTML = SOURCE_ICON[s.source];
   srcBtn.title = `Listening to: ${SOURCE_LABEL[s.source]}`;
   client = createSignClient(s.apiUrl, { timeoutMs: 12_000 });
+  chunkKey = "";
   render();
+  renderCaptions();
 }
 onSettings((patch) => {
   s = { ...s, ...patch };
   if (patch.source) {
-    origin = patch.source === "tab" ? "tab" : patch.source === "mic" ? "mic" : patch.source === "selection" ? "selection" : "captions";
+    origin = originOf(patch.source);
     if (patch.source !== "captions") srcState = { kind: "idle" };
   }
   applySettings();
   if ("apiUrl" in patch) checkHealth();
 });
-document.querySelectorAll<HTMLButtonElement>("button[data-size]").forEach((b) =>
-  b.addEventListener("click", () => setSettings({ size: b.dataset.size as Size })),
-);
+sizeBtn.addEventListener("click", () => setSettings({ size: nextSize(s.size) }));
 ccBtn.addEventListener("click", () => setSettings({ captions: !s.captions }));
 $("closeBtn").addEventListener("click", () => post({ sl: 1, type: "close" }));
 
-// Source switch (menu)
+// Source menu
 srcMenu.innerHTML = SOURCES.map((src) =>
   `<button role="menuitemradio" data-src="${src}">${SOURCE_ICON[src]}<span class="lbl">${SOURCE_LABEL[src]}</span><span class="chk">${ICON.check}</span></button>`).join("");
 function toggleMenu(open: boolean = srcMenu.hidden === true) {
@@ -83,7 +108,14 @@ srcMenu.addEventListener("click", async (e) => {
   if (src === "tab") send({ type: "tab-audio", on: true });
   if (src === "mic") openMicPanel();
 });
-addEventListener("keydown", (e) => { if (e.key === "Escape" && !srcMenu.hidden) toggleMenu(false); });
+srcMenu.addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  e.preventDefault();
+  const items = [...srcMenu.querySelectorAll<HTMLButtonElement>("[data-src]")];
+  const i = items.indexOf(document.activeElement as HTMLButtonElement);
+  items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+});
+addEventListener("keydown", (e) => { if (e.key === "Escape" && !srcMenu.hidden) { toggleMenu(false); srcBtn.focus(); } });
 document.addEventListener("pointerdown", (e) => { if (!srcMenu.hidden && !(e.target as HTMLElement).closest("#srcMenu, #srcBtn")) toggleMenu(false); });
 
 async function openMicPanel() {
@@ -98,36 +130,37 @@ async function openMicPanel() {
 // ── Height -> content script (the iframe follows the card) ──
 new ResizeObserver(() => post({ sl: 1, type: "height", h: card.offsetHeight })).observe(card);
 
-// ── Drag to any corner (screen coordinates: the iframe moves under the pointer). Starts after 4 px, so clicks stay clicks. ──
+// ── Drag (screen coordinates: the iframe moves under the pointer; the content script adds momentum + corner snap).
+//    Starts after 4 px, so clicks stay clicks. The whole card is the handle. ──
 let drag: { x: number; y: number; cx: number; cy: number; on: boolean } | null = null;
-stage.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0 || (e.target as HTMLElement).closest("button, .menu, .note-actions")) return;
+card.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || (e.target as HTMLElement).closest("button, .menu, .focus-actions")) return;
   drag = { x: e.screenX, y: e.screenY, cx: e.clientX, cy: e.clientY, on: false };
-  stage.setPointerCapture(e.pointerId);
+  card.setPointerCapture(e.pointerId);
 });
-stage.addEventListener("pointermove", (e) => {
+card.addEventListener("pointermove", (e) => {
   if (!drag) return;
   const dx = e.screenX - drag.x, dy = e.screenY - drag.y;
   if (!drag.on) {
     if (Math.hypot(dx, dy) < 4) return;
     drag.on = true;
-    stage.classList.add("dragging");
+    card.classList.add("dragging");
     post({ sl: 1, type: "dragstart", x: drag.cx, y: drag.cy });
   }
   post({ sl: 1, type: "drag", dx, dy });
 });
 const endDrag = () => {
   if (drag?.on) {
-    stage.classList.remove("dragging");
+    card.classList.remove("dragging");
     post({ sl: 1, type: "dragend" });
   }
   drag = null;
 };
-stage.addEventListener("pointerup", endDrag);
-stage.addEventListener("pointercancel", endDrag);
+card.addEventListener("pointerup", endDrag);
+card.addEventListener("pointercancel", endDrag);
 // Touch / pen: a tap shows the controls for a few seconds.
 let barTimer = 0;
-stage.addEventListener("pointerup", (e) => {
+card.addEventListener("pointerup", (e) => {
   if (e.pointerType === "mouse") return;
   card.classList.add("bar-on");
   clearTimeout(barTimer);
@@ -148,7 +181,7 @@ const blocked = (j: Job | null) => !!j && !j.confirmed && !!j.res.safety && j.re
 function view(): View {
   if (isOffline) return "offline";
   if (s.source === "tab" && tabState === "error") return "tab-error";
-  if (job) return "signing";
+  if (job) return srcState.kind === "paused" && job.source === "captions" ? "paused" : "signing";
   if (blocked(shown)) return shown!.res.safety!.status === "needs_confirmation" ? "confirm" : "caption_only";
   if (srcState.kind === "ad") return "ad";
   if (srcState.kind === "paused") return "paused";
@@ -157,7 +190,6 @@ function view(): View {
 }
 
 const ORIGIN_LABEL: Record<Origin, string> = { transcript: "Transcript", captions: "Captions", texttrack: "Captions", tab: "Tab audio", mic: "Mic", selection: "Text" };
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const quoteList = (xs: string[]) => {
   const u = [...new Set(xs.map((x) => x.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}']+$/gu, "")).filter(Boolean))];
   const head = u.slice(0, 3).map((x) => `<q>${esc(x)}</q>`).join(", ");
@@ -177,62 +209,96 @@ function reasonLine(res: SignResponse) {
   return esc(res.safety!.next_actions[0] ?? "This phrase can't be signed yet");
 }
 
+// ── Island: the status capsule morphs (width springs, label blurs in) ──
+let islandKey = "";
+function setIsland(tone: Tone, state: string, sub = "", subGloss = false) {
+  const key = `${tone}|${state}|${sub}`;
+  if (key === islandKey) return;
+  const first = !islandKey;
+  islandKey = key;
+  island.dataset.tone = tone;
+  const from = island.getBoundingClientRect().width;
+  pillState.textContent = state;
+  pillSub.textContent = sub ? ` · ${sub}` : "";
+  pillSub.className = subGloss ? "gl" : "";
+  pillSub.hidden = !sub;
+  // Natural width of the new label, then spring from the old width to it.
+  island.style.width = "auto";
+  const to = islandIn.getBoundingClientRect().width;
+  if (!first && from > 0) {
+    island.style.width = `${from}px`;
+    void island.offsetWidth;
+  }
+  island.style.width = `${Math.ceil(to)}px`;
+  if (!first) {
+    islandIn.classList.remove("morph");
+    void islandIn.offsetWidth;
+    islandIn.classList.add("morph");
+  }
+}
+
 function render() {
   const v = view();
   card.dataset.state = v;
+  card.classList.toggle("blocked", BLOCKED.has(v));
   const cur = job?.res.playlist[idx];
-  const [st, sub] =
-    v === "signing" ? ["Signing", cur?.gloss ?? ""]
-    : v === "caption_only" ? ["Captions only", origin === "tab" || origin === "mic" ? ORIGIN_LABEL[origin] : ""]
-    : v === "confirm" ? ["Confirm signs?", ""]
-    : v === "offline" ? ["Offline", ""]
-    : v === "tab-error" ? ["Tab audio off", ""]
-    : v === "paused" ? ["Paused", ""]
-    : v === "ad" ? ["Ad playing", ""]
-    : v === "need-cc" ? ["Turn on CC", ""]
-    : ["Listening", ORIGIN_LABEL[origin]];
-  pillState.textContent = st;
-  pillSub.textContent = sub ? ` · ${sub}` : "";
-  card.classList.toggle("forcecc", v === "caption_only" || v === "confirm");
-  renderNote(v);
-  cc.dataset.empty = v === "offline" ? "Signer offline" : "Captions appear here";
-  wave.active = v === "listening" || v === "caption_only" || v === "confirm";
+  if (v === "signing") setIsland("sign", "Signing", cur?.gloss ?? "", true);
+  else if (v === "caption_only") setIsland("warn", "Can't sign yet", origin === "tab" || origin === "mic" ? ORIGIN_LABEL[origin] : "");
+  else if (v === "confirm") setIsland("warn", "Confirm signs?");
+  else if (v === "offline") setIsland("off", "Offline");
+  else if (v === "tab-error") setIsland("off", "Tab audio off");
+  else if (v === "paused") setIsland("idle", "Paused");
+  else if (v === "ad") setIsland("idle", "Ad playing");
+  else if (v === "need-cc") setIsland("idle", "Turn on CC");
+  else setIsland("live", "Listening", ORIGIN_LABEL[origin]);
+  renderFocus(v);
+  syncPlayback();
   if (v === "listening" || v === "paused" || v === "ad" || v === "need-cc") showNeutral();
 }
 
-function setNote(kind: "" | "center" | "hint", ic = "", title = "", text = "", actions = "") {
-  note.className = `note${kind === "hint" ? " hint" : ""}${kind ? " show" : ""}`;
-  noteIc.innerHTML = ic;
-  noteTitle.textContent = title;
-  noteTitle.hidden = !title;
-  noteText.innerHTML = text;
-  noteActions.innerHTML = actions;
+/** The large caption over the blurred still, plus the reason (sheet) and actions. */
+let focusKey = "";
+function setFocus(html: string, note = "", actions = "", len = 0) {
+  const key = `${html}|${actions}`;
+  if (key !== focusKey) {
+    focusKey = key;
+    focusText.innerHTML = html;
+    focusText.dataset.len = len > 22 ? "l" : len > 11 ? "m" : "s";
+    noteActions.innerHTML = actions;
+  }
+  noteText.innerHTML = note;
 }
+const words = (text: string, bad?: Set<string>) =>
+  text.split(/\s+/).filter(Boolean).map((w, k) => `<span class="w${bad?.has(bare(w)) ? " nosign" : ""}" style="--k:${k}">${esc(w)}</span>`).join(" ");
 
-function renderNote(v: View) {
+function renderFocus(v: View) {
   const res = shown?.res;
-  if (v === "caption_only" && res) return setNote("center", ICON.captions, "Can't sign this yet", reasonLine(res));
+  if (v === "caption_only" && res) {
+    const caption = res.safety!.caption;
+    const bad = new Set([...res.unsupported, ...(res.fingerspell ?? []), ...res.safety!.reasons.flatMap((r) => r.tokens)].map(bare));
+    return setFocus(words(caption, bad), reasonLine(res), "", caption.split(/\s+/).length);
+  }
   if (v === "confirm" && res) {
     const amb = res.safety!.reasons.filter((r) => r.code === "ambiguous_sense").flatMap((r) => r.tokens);
-    const glosses = confirmPlaylist(res)?.map((p) => p.gloss).join(" ");
-    const why = amb.length ? `${quoteList(amb)} could mean more than one thing` : "These signs are a paraphrase";
-    const text = `${why}${glosses ? `. Signs: <span class="gl">${esc(glosses)}</span>` : ""}`;
+    const glosses = confirmPlaylist(res)?.map((p) => p.gloss).join(" · ");
+    const why = amb.length ? `${quoteList(amb)} could mean more than one thing` : "These signs are a paraphrase. Show them?";
+    const caption = res.safety!.caption;
     const actions = (glosses ? `<button class="primary" data-act="confirm">${ICON.play}Show signs</button>` : "") + `<button data-act="skip">Skip</button>`;
-    return setNote("center", ICON.question, "Confirm signs?", text, actions);
+    return setFocus(words(caption) + (glosses ? `<span class="gl">${esc(glosses)}</span>` : ""), why, actions, caption.split(/\s+/).length + 4);
   }
-  if (v === "offline") return setNote("center", ICON.offline, "Signer offline", offlineMsg, `<button data-act="retry">Try again</button>`);
-  if (v === "tab-error") return setNote("center", ICON.tab, "Tab audio is off", esc(tabDetail || "Choose Tab audio in the SIGNLAYER menu"));
-  if (v === "ad") return setNote("hint", "", "", "Ad playing · signing resumes after it");
-  if (v === "need-cc") return setNote("hint", "", "", "Turn on CC in the player");
-  if (v === "listening" && !phrases && !job && !heardText) {
-    const hint =
-      s.source === "tab" ? (tabState === "listening" || tabState === "starting" ? "Listening to this tab" : "Choose Tab audio in the SIGNLAYER menu")
-      : s.source === "mic" ? (tabDetail || "Open the mic panel from the SIGNLAYER menu")
-      : s.source === "selection" ? "Select text · right-click · Sign with SIGNLAYER"
-      : origin === "transcript" ? "Transcript ready · press play" : "Play the video · signing follows the captions";
-    return setNote("hint", "", "", hint);
-  }
-  setNote("");
+  if (v === "offline") return setFocus(`<span class="ic">${ICON.offline}</span><br/>Signer offline`, offlineMsg, `<button data-act="retry">Try again</button>`);
+  if (v === "tab-error") return setFocus(`<span class="ic">${ICON.tab}</span><br/>Tab audio is off`, esc(tabDetail || "Choose Tab audio in the SIGNLAYER menu"));
+  setFocus("", "");
+  // Hints live in the sheet, as quiet secondary text.
+  cc.dataset.empty =
+    v === "ad" ? "Ad playing · signing resumes after it"
+    : v === "need-cc" ? "Turn on CC in the player"
+    : v === "paused" ? "Paused"
+    : phrases ? ""
+    : s.source === "tab" ? (tabState === "listening" || tabState === "starting" ? "Listening to this tab…" : "Choose Tab audio in the SIGNLAYER menu")
+    : s.source === "mic" ? (tabDetail || "Open the mic panel from the SIGNLAYER menu")
+    : s.source === "selection" ? "Select text, then right-click › Sign with SIGNLAYER"
+    : origin === "transcript" ? "Press play. Signs follow the transcript." : "Play the video. Signs follow the captions.";
 }
 
 noteActions.addEventListener("click", (e) => {
@@ -250,7 +316,7 @@ noteActions.addEventListener("click", (e) => {
   }
 });
 
-// ── Gapless playlist player ──
+// ── Gapless playlist player with a crossfade ──
 function load(v: HTMLVideoElement, url: string) {
   if (v.dataset.url === url) return;
   v.dataset.url = url;
@@ -270,8 +336,15 @@ function backlog() {
   jobs.forEach((j) => j.res.playlist.forEach((p) => (t += p.duration_s)));
   return t;
 }
-const rate = () => (backlog() > 6 ? 1.3 : backlog() > 3 ? 1.15 : 1);
+/** Clip speed: follows the video's own rate, plus catch-up when behind. */
+const rate = () => {
+  const b = backlog();
+  const catchUp = b > 6 ? 1.3 : b > 3 ? 1.15 : 1;
+  const media = job?.source === "captions" ? mediaRate : 1;
+  return Math.min(2.5, Math.max(0.5, catchUp * media));
+};
 
+let swapToken = 0;
 function advance() {
   if (job && idx + 1 < job.res.playlist.length) idx++;
   else {
@@ -300,18 +373,25 @@ function advance() {
   if (back.currentTime > 0.01) back.currentTime = 0;
   back.playbackRate = rate();
   let swapped = false;
+  const token = ++swapToken;
+  // On the incoming clip's first painted frame: fade it in on top; the outgoing clip stays visible underneath
+  // until the fade is done, then steps back and preloads whatever comes next.
   const swap = () => {
     if (swapped) return;
     swapped = true;
-    back.classList.add("on");
-    cur.classList.remove("on");
-    cur.pause();
+    cur.classList.remove("top");
+    back.classList.add("top", "on");
     front = 1 - front;
-    const next = peek();
-    if (next) load(cur, next.url);
+    setTimeout(() => {
+      if (token !== swapToken) return;
+      cur.classList.remove("on");
+      cur.pause();
+      const next = peek();
+      if (next) load(cur, next.url);
+    }, 140);
   };
-  back.requestVideoFrameCallback?.(swap);
-  back.addEventListener("playing", () => setTimeout(swap, 30), { once: true });
+  back.requestVideoFrameCallback?.(() => swap());
+  back.addEventListener("playing", () => setTimeout(swap, 40), { once: true });
   back.play().catch((e) => {
     console.warn("[signlayer] play failed", item.url, e);
     swap();
@@ -324,9 +404,20 @@ function advance() {
 vids.forEach((v) => {
   v.addEventListener("ended", () => v === vids[front] && job && advance());
   v.addEventListener("error", () => {
-    if (v === vids[front] && job) { console.warn("[signlayer] clip failed", v.src); advance(); }
+    if (v === vids[front] && job && v.getAttribute("src")) { console.warn("[signlayer] clip failed", v.src); advance(); }
   });
 });
+
+/** Follow the page video: pause the signer when it pauses, resume when it plays, match its speed. */
+function syncPlayback() {
+  const v = vids[front]!;
+  if (!job) return;
+  const hold = srcState.kind === "paused" && job.source === "captions";
+  if (hold && !v.paused) v.pause();
+  else if (!hold && v.paused && !v.ended && v.getAttribute("src")) v.play().catch(() => {});
+  const r = rate();
+  if (Math.abs(v.playbackRate - r) > 0.01) v.playbackRate = r;
+}
 
 function enqueue(j: Job) {
   if (j.source !== "selection") {
@@ -346,7 +437,8 @@ function clearQueuedVideo() {
   job = null;
   idx = -1;
   front = 0;
-  vids.forEach((v) => { v.pause(); v.removeAttribute("src"); delete v.dataset.url; v.load(); v.classList.remove("on"); });
+  swapToken++;
+  vids.forEach((v) => { v.pause(); v.removeAttribute("src"); delete v.dataset.url; v.load(); v.classList.remove("on", "top"); });
 }
 
 function showBlocked(j: Job) {
@@ -373,43 +465,30 @@ function confirmPlaylist(res: SignResponse): PlaylistItem[] | null {
   return out;
 }
 
-// ── Captions ──
-const CHUNK: Record<Size, number> = { s: 7, m: 10, l: 13 };
+// ── Captions (sheet) ──
+const CHUNK: Record<Size, number> = { s: 6, m: 8, l: 10 };
 let chunkKey = "";
 const bare = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, "");
 
 function renderCaptions() {
   cc.classList.toggle("pending", pending && !job && !!heardText);
   if (heardText && !job) {
-    const words = heardText.split(/\s+/).filter(Boolean).slice(-CHUNK[s.size] - 4);
-    const key = `heard|${heardText}`;
+    const ws = heardText.split(/\s+/).filter(Boolean).slice(-CHUNK[s.size] - 2);
+    const key = `heard|${heardText}|${s.size}`;
     if (key !== chunkKey) {
       chunkKey = key;
-      cc.innerHTML = `<i class="hl"></i>${words.map((w) => `<span class="w heard">${esc(w)}</span>`).join(" ")}`;
+      cc.innerHTML = `<i class="hl"></i>${ws.map((w, k) => `<span class="w heard" style="--k:${k}">${esc(w)}</span>`).join(" ")}`;
     }
     return;
   }
   const j = job ?? shown;
-  if (!j) {
-    cc.innerHTML = "";
+  if (!j || blocked(j)) {
+    // Blocked phrases are shown large on the stage (renderFocus); the sheet carries the reason.
+    if (cc.innerHTML) cc.innerHTML = "";
     chunkKey = "";
     return;
   }
   const res = j.res;
-  const isBlocked = blocked(j);
-  // Blocked: the exact caption (safety.caption), every word solid; words the signer can't do are marked.
-  if (isBlocked) {
-    const caption = res.safety!.caption;
-    const key = `blocked|${caption}`;
-    if (key !== chunkKey) {
-      chunkKey = key;
-      const bad = new Set([...res.unsupported, ...(res.fingerspell ?? []), ...res.safety!.reasons.flatMap((r) => r.tokens)].map(bare));
-      const words = caption.split(/\s+/).filter(Boolean);
-      // The whole caption, never trimmed (the sheet grows to 5 lines, then scrolls).
-      cc.innerHTML = `<i class="hl"></i>${words.map((w) => `<span class="w caption${bad.has(bare(w)) ? " nosign" : ""}">${esc(w)}</span>`).join(" ")}`;
-    }
-    return;
-  }
   const playing = job ? idx : res.playlist.length;
   const frame = res.playlist.length ? captionFrame(res, res.words.length, playing) : null;
   const states = frame?.states ?? res.words.map(() => "heard" as const);
@@ -423,7 +502,7 @@ function renderCaptions() {
     chunkKey = key;
     cc.innerHTML = `<i class="hl"></i>` + res.words.slice(start, start + n).map((w, k) => {
       const ns = unsupported.has(bare(w));
-      return `<span class="w${ns ? " nosign" : ""}" data-i="${start + k}"${ns ? ' title="No sign yet"' : ""}>${esc(w)}</span>`;
+      return `<span class="w${ns ? " nosign" : ""}" data-i="${start + k}" style="--k:${k}"${ns ? ' title="No sign yet"' : ""}>${esc(w)}</span>`;
     }).join(" ");
   }
   let now: HTMLElement | null = null;
@@ -437,9 +516,10 @@ function renderCaptions() {
   const hl = cc.querySelector<HTMLElement>(".hl")!;
   const target = now as HTMLElement | null;
   if (target) {
-    hl.style.transform = `translate(${target.offsetLeft - 3}px, ${target.offsetTop - 1}px)`;
-    hl.style.width = `${target.offsetWidth + 6}px`;
-    hl.style.height = `${target.offsetHeight + 2}px`;
+    // offsetLeft/Top are layout positions (the words' entry transform doesn't move them), so this is exact at once.
+    hl.style.transform = `translate(${target.offsetLeft - 4}px, ${target.offsetTop}px)`;
+    hl.style.width = `${target.offsetWidth + 8}px`;
+    hl.style.height = `${target.offsetHeight}px`;
     hl.classList.add("show");
   } else hl.classList.remove("show");
 }
@@ -470,7 +550,6 @@ function sign(text: string, source: Source, from?: Origin, next?: string) {
   const ep = epoch;
   const p = fetchSign(t);
   if (next && clean(next)) setTimeout(() => fetchSign(clean(next)).catch(() => {}), 40);
-  wave.pulse();
   if (!job) {
     heardText = t;
     pending = true;
@@ -499,7 +578,7 @@ function sign(text: string, source: Source, from?: Origin, next?: string) {
 function offline(e: unknown, caption = "") {
   let host = s.apiUrl;
   try { host = new URL(s.apiUrl).host; } catch { /* keep */ }
-  offlineMsg = `Can't reach the SIGNLAYER API at ${esc(host)}${caption ? `.<br/>Caption: <q>${esc(caption)}</q>` : ""}`;
+  offlineMsg = `Can't reach the SIGNLAYER API at ${esc(host)}${caption ? `. Caption: <q>${esc(caption)}</q>` : ""}`;
   console.warn("[signlayer]", e);
   isOffline = true;
   render();
@@ -516,8 +595,10 @@ async function checkHealth() {
   }
 }
 
-/** Idle: the signer waits in the shared neutral pose (first frame of a clip). Never during a blocked phrase. */
+/** Idle: the signer waits in the shared neutral pose (first frame of a clip). Never during a blocked phrase.
+ *  That frame is also painted into the still behind the videos, so a cleared player never shows an empty tile. */
 let neutralId: string | null = null;
+let stillDone = false;
 async function showNeutral() {
   if (job || blocked(shown) || vids[front]!.dataset.url) return;
   try {
@@ -525,56 +606,26 @@ async function showNeutral() {
     if (!neutralId || job || blocked(shown) || vids[front]!.dataset.url) return;
     const v = vids[front]!;
     load(v, `${client.base}${ROUTES.clips}${neutralId}.mp4`);
-    v.addEventListener("loadeddata", () => !job && !blocked(shown) && v.classList.add("on"), { once: true });
+    v.addEventListener("loadeddata", () => {
+      paintStill(v);
+      if (!job && !blocked(shown)) v.classList.add("on");
+    }, { once: true });
   } catch {
     /* idle tile stays dark */
   }
 }
-
-// ── Listening wave (the app's SignWave): calm while idle, lifts on each phrase / with tab audio level ──
-const wave = (() => {
-  const c = $("wave") as HTMLCanvasElement;
-  const g = c.getContext("2d")!;
-  let level = 0.12, target = 0.12, raf = 0, active = true;
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  function draw(t: number) {
-    raf = 0;
-    if (!active || document.hidden || reduce) return;
-    const dpr = Math.min(2, devicePixelRatio || 1);
-    const w = c.clientWidth, h = c.clientHeight;
-    if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, w, h);
-    level += (target - level) * 0.08;
-    target += (0.12 - target) * 0.02;
-    const lines = 4;
-    for (let k = 0; k < lines; k++) {
-      const col = waveColors[(k + 1) % waveColors.length];
-      g.beginPath();
-      for (let x = 0; x <= w; x += 3) {
-        const u = x / w;
-        const env = Math.sin(Math.PI * u) ** 1.6;
-        const y = h * 0.62 + Math.sin(u * (7 + k * 1.7) + t / (520 - k * 70) + k) * env * h * 0.42 * level * (1 - k * 0.15);
-        if (x === 0) g.moveTo(x, y); else g.lineTo(x, y);
-      }
-      g.strokeStyle = `rgba(${col}, ${0.85 - k * 0.16})`;
-      g.lineWidth = 1.6 - k * 0.2;
-      g.shadowColor = `rgba(${col}, .8)`;
-      g.shadowBlur = 6;
-      g.stroke();
-    }
-    raf = requestAnimationFrame(draw);
-  }
-  const kick = () => { if (!raf && active && !reduce) raf = requestAnimationFrame(draw); };
-  document.addEventListener("visibilitychange", kick);
-  return {
-    set active(on: boolean) { active = on; if (on) kick(); },
-    pulse(x = 0.85) { target = Math.max(target, x); kick(); },
-    level(x: number) { target = Math.max(0.12, Math.min(1, x)); kick(); },
-  };
-})();
+function paintStill(v: HTMLVideoElement) {
+  if (stillDone || !v.videoWidth) return;
+  still.width = v.videoWidth >> 1;
+  still.height = v.videoHeight >> 1;
+  try {
+    still.getContext("2d")!.drawImage(v, 0, 0, still.width, still.height);
+    stillDone = true;
+  } catch { /* cross-origin without CORS: the tile keeps its dark backdrop */ }
+}
 
 // ── Messages from the background ──
+let lvlRaf = 0, lvl = 0;
 const port = browser.runtime.connect({ name: "overlay" });
 port.onMessage.addListener((m: ToOverlay) => {
   if (m.type === "sign") sign(m.text, m.source, m.origin, m.next);
@@ -584,9 +635,14 @@ port.onMessage.addListener((m: ToOverlay) => {
   } else if (m.type === "source-state") {
     srcState = m.state;
     if (m.state.kind === "listening" || m.state.kind === "paused") origin = m.state.origin;
+    if (m.state.kind === "listening") mediaRate = m.state.rate ?? 1;
     render();
   } else if (m.type === "tab-audio-state") {
-    if (m.level != null) wave.level(m.level);
+    if (m.level != null) {
+      // The island's dot breathes with the tab's audio level.
+      lvl = Math.max(0, Math.min(1, m.level));
+      if (!lvlRaf) lvlRaf = requestAnimationFrame(() => { lvlRaf = 0; dot.style.scale = String(1 + lvl * 0.9); });
+    }
     if (m.state !== tabState || m.detail !== undefined) {
       tabState = m.state;
       tabDetail = m.detail ?? "";

@@ -4,6 +4,7 @@
 //   background ──tabs.sendMessage──► content script (mount / unmount / toggle the iframe)
 //   background ──runtime.sendMessage({target: "offscreen"})──► offscreen document (tab audio capture)
 //   overlay iframe ──window.parent.postMessage──► content script (drag, height, close)
+//   content script ──frame.contentWindow.postMessage──► overlay iframe (theme: light / dark, fullscreen)
 import type { Source } from "./settings";
 
 /** Where a phrase came from, finer than Source (shown in the status pill). */
@@ -14,7 +15,7 @@ export type TabAudioState = "off" | "starting" | "listening" | "error";
 /** Caption watcher state (content script), for the overlay's status pill. */
 export type SourceState =
   | { kind: "idle" }
-  | { kind: "listening"; origin: Origin }
+  | { kind: "listening"; origin: Origin; rate?: number }
   | { kind: "paused"; origin: Origin }
   | { kind: "ad" }
   | { kind: "need-cc" };
@@ -56,6 +57,9 @@ export type FromOverlay =
   | { sl: 1; type: "dragend" }
   | { sl: 1; type: "height"; h: number }
   | { sl: 1; type: "close" };
+
+/** Content script -> its overlay iframe (postMessage): the page's look, so the glass matches it. */
+export type ToFrame = { sl: 1; type: "theme"; dark: boolean; fs: boolean };
 
 export type HealthResult =
   | { ok: true; signs: number; semantic: string; agent?: string; transcribe?: string; url: string }

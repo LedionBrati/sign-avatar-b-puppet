@@ -203,7 +203,7 @@ export function startCaptionWatch(sink: CaptionSink): () => void {
     if (adShowing()) return state({ kind: "ad" });
     if (cues) {
       if (v.paused) return state({ kind: "paused", origin: "transcript" });
-      state({ kind: "listening", origin: "transcript" });
+      state({ kind: "listening", origin: "transcript", rate: v.playbackRate });
       const t = v.currentTime;
       const i = cueAt(cues, t + LEAD_S);
       const seeked = t < lastT - 1 || t > lastT + 3;
@@ -222,7 +222,7 @@ export function startCaptionWatch(sink: CaptionSink): () => void {
       const cc = document.querySelector(".ytp-subtitles-button")?.getAttribute("aria-pressed");
       if (cc === "false") state({ kind: "need-cc" });
       else if (v.paused) state({ kind: "paused", origin: "captions" });
-      else state({ kind: "listening", origin: "captions" });
+      else state({ kind: "listening", origin: "captions", rate: v.playbackRate });
     }
   }
 
