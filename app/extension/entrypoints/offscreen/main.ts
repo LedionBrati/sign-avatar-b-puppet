@@ -53,7 +53,9 @@ async function start(m: Extract<ToOffscreen, { type: "start" }>): Promise<StartR
     onError: (text) => { if (cur?.chunker === chunker) cur = null; send({ target: "overlay", tabId, type: "error", text }); },
   }, {
     monitor: m.kind === "tab",
-    silentHint: m.kind === "tab" ? "No sound from this tab yet. Press play on the video or call." : "Nothing heard yet. Speak near your computer.",
+    silentHint: m.kind === "tab" ? "No sound from this tab yet. Press play, or unmute the video or call." : "Nothing heard yet. Speak near your computer.",
+    // A browser extension can't hear desktop apps (the Zoom / Teams app): only browser tabs, or the microphone.
+    silentHint2: m.kind === "tab" ? "Still silent. In a Zoom app call? Join from the browser, or use Mic." : undefined,
   });
   cur = { tabId, kind: m.kind, chunker };
   await chunker.start();

@@ -15,6 +15,15 @@ A small floating glass card on top of any page. Click the SIGNLAYER icon: the ca
 The first Mic use opens a small tab that asks for the microphone once (an iframe or offscreen document can't show Chrome's prompt); it closes itself and listening starts.
 Chrome's own pages (chrome://, the Web Store) can't host the card: the icon shows a "!" badge with the reason.
 
+If the card says **Can't reach the server**, the URL in ⚙ doesn't answer (the default `http://localhost:8787` only works on the laptop running the API). Press **Set server** and enter the right one (another machine's `http://<ip>:8787`, or an https tunnel URL). It retries by itself every 10 s.
+
+## Where it works
+
+- **YouTube** (and other video sites): Tab mode. The video stays audible while captured (the offscreen document plays the captured audio back). The card stays through YouTube's in-app navigation (no reload) and ads are signed like the rest. In **fullscreen** the card is lifted into the top layer, so it stays on top of the player; after exiting it is where it was.
+- **Google Meet, Zoom web client** (`app.zoom.us/wc/...`), Teams web: Tab mode signs the other people's voices; the call keeps its own microphone and audio. On these sites the card starts top-left and never covers the bottom control bar. Listening goes on when you switch to another tab (signs catch up with the newest phrase when you come back). Headphones avoid any chance of the others hearing an echo.
+- **Mic** mode signs whatever your microphone hears (your own voice, a speaker in the room), at the same time as a call uses the mic.
+- **Zoom / Teams desktop apps**: a browser extension can't hear another app. Join the call from the browser instead ("Join from your browser" on the Zoom invite page), or use **Mic** with the call on your speakers. If a tab stays silent, the card says so.
+
 ## The card
 
 - **Header** (drag handle): wordmark, status chip (Ready · Listening · Signing · Can't sign yet · Offline · Off), S/M/L, gear, ×.
@@ -49,8 +58,9 @@ card          ─► POST /api/sign ─► playlist ─► signer + captions
 | `tabCapture` | Get the tab's audio stream id. |
 | `offscreen` | The audio capture + speech-to-text document. |
 | `storage` | Source, server URL, size, card position. |
+| host `http://localhost/*`, `http://127.0.0.1/*` | The default local server. Not strictly needed: extension pages count as loopback for Chrome's Local Network Access rules (no prompt even from an https page), and the server answers CORS `*` plus the Private Network Access preflight, which is also all an https tunnel URL needs. |
 
-`overlay.html` is a web-accessible resource so it can be framed on any page.
+`overlay.html` is a web-accessible resource so it can be framed on any page. Chrome lets extension frames past a page's CSP `frame-src` (Zoom's, for one, doesn't list `chrome-extension:`), and the in-page script builds its frame with DOM calls only, so Trusted Types pages (YouTube, Meet) don't block it.
 
 ## Files
 
@@ -72,5 +82,4 @@ Real Chrome (headless, `--disable-audio-output`: nothing is audible, the tab sti
 ## Not covered yet
 
 - Mic was not driven by automation (no microphone in the test Chrome; the permission prompt can't be clicked). It uses the same offscreen chunker as Tab audio.
-- Pages in fullscreen hide the card (only the fullscreen element is shown).
-- Not yet tried on Meet/Zoom web or long sessions, or against a public https page calling a localhost server (Chrome's local-network rules).
+- Meet / Zoom web, YouTube fullscreen and long sessions were reviewed in code, not yet driven in a real browser.

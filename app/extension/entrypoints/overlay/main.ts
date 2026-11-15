@@ -134,10 +134,13 @@ const setForm = (open: boolean) => {
   $("gear").setAttribute("aria-expanded", String(open));
   fitStage();
 };
-$("gear").addEventListener("click", () => {
-  setForm(form.hidden === true);
-  if (!form.hidden) { urlIn.value = s.apiUrl; urlIn.focus(); urlIn.select(); }
-});
+function openServerForm() {
+  setForm(true);
+  urlIn.value = s.apiUrl;
+  urlIn.focus();
+  urlIn.select();
+}
+$("gear").addEventListener("click", () => (form.hidden ? openServerForm() : setForm(false)));
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const v = urlIn.value.trim().replace(/\/+$/, "");
@@ -369,7 +372,8 @@ function renderFocus(v: View) {
     const acts = (glosses ? `<button class="primary" data-act="confirm">${ICON.play}Show signs</button>` : "") + `<button data-act="skip">Skip</button>`;
     return setFocus(words(caption) + (glosses ? `<span class="gl">${esc(glosses)}</span>` : ""), why, acts, caption.split(/\s+/).length + 4);
   }
-  if (v === "offline") return setFocus(`<span class="ic">${ICON.offline}</span><br/>Signer offline`, offlineMsg, `<button data-act="retry">Try again</button>`);
+  if (v === "offline") return setFocus(`<span class="ic">${ICON.offline}</span><br/>Can't reach the server`, offlineMsg,
+    `<button class="primary" data-act="server">${ICON.gear}Set server</button><button data-act="retry">Try again</button>`);
   if (v === "error") return setFocus(`<span class="ic">${s.source === "tab" ? ICON.tab : ICON.mic}</span><br/>${s.source === "tab" ? "Tab audio is off" : "Mic is off"}`, esc(errorText));
   setFocus("", "");
   cc.dataset.empty = hint ? hint
@@ -382,6 +386,7 @@ function renderFocus(v: View) {
 actions.addEventListener("click", (e) => {
   const act = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-act]")?.dataset.act;
   if (act === "retry") checkHealth();
+  if (act === "server") openServerForm();
   if (act === "skip") { shown = null; heardText = ""; renderCaptions(); render(); }
   if (act === "confirm" && shown) {
     const list = confirmPlaylist(shown.res);
@@ -481,6 +486,12 @@ function advance() {
   renderCaptions();
 }
 
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (job) { const rest = jobs.slice(); clearVideo(); jobs.push(...rest.slice(-1)); renderCaptions(); render(); }
+  } else if (!job && !holdTimer && jobs.length) advance();
+});
+
 vids.forEach((v) => {
   v.addEventListener("ended", () => v === vids[front] && job && advance());
   v.addEventListener("error", () => {
@@ -489,6 +500,9 @@ vids.forEach((v) => {
 });
 
 function enqueue(j: Job) {
+  // In a background tab (the user switched away from the call; listening goes on) Chrome may pause muted video:
+  // keep just the newest phrase and sign it when the tab is visible again.
+  if (document.hidden) { jobs.length = 0; jobs.push(j); return; }
   // Live speech: never fall far behind. Drop whole not-yet-started phrases beyond ~8 s of backlog.
   while (jobs.length && backlog() > 8) jobs.shift();
   jobs.push(j);
@@ -628,11 +642,14 @@ function sign(text: string) {
 function offline(e: unknown, caption = "") {
   let host = s.apiUrl;
   try { host = new URL(s.apiUrl).host; } catch { /* keep */ }
-  offlineMsg = `Can't reach the SIGNLAYER server at ${esc(host)}${caption ? `. Caption: <q>${esc(caption)}</q>` : ""}`;
+  offlineMsg = caption ? `Caption: <q>${esc(caption)}</q>` : `${esc(host)} doesn't answer. Set your SIGNLAYER server in ⚙.`;
   console.warn("[signlayer]", e);
   isOffline = true;
   render();
 }
+
+// While offline, keep checking quietly: the card comes back by itself once the server is up.
+setInterval(() => { if (isOffline && !document.hidden) checkHealth(); }, 10_000);
 
 async function checkHealth() {
   try {
