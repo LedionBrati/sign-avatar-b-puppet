@@ -281,26 +281,34 @@ export function buildPlan(input, words, proposal, byId, vocab, { englishWords, m
     if (!entry && byId.has(toMotionId(raw.id))) entry = byId.get(toMotionId(raw.id));     // "THANK YOU" for THANK_YOU: a spelling slip
     if (!entry) { rejected.push({ reason: "not_in_vocab", id: raw.id, source }); lose(); continue; }
 
-    // Re-derive the match: would the local rules give exactly this sign for exactly these (non-dropped) words?
+    // Re-derive the match: would the local rules give exactly this sign for exactly the core words it covers?
+    // Core = covered content words minus meaning-light extras ("so much" in "thank you so much").
     const content = covers.filter((i) => !dropOnly(words[i]));
+    const extras = content.filter((i) => i !== raw.source && absorbable(words[i], Math.abs(i - raw.source)));
+    const core = content.filter((i) => !extras.includes(i));
     let match = { method: "semantic", score: Math.round(confidence * 1000) / 1000, by: "agent" };
+    let renders = [raw.source];                // words this sign actually renders
     // Literal candidates: one run of words (droppable words may sit inside it, as in "thank you" / "see you later").
-    const contiguous = content.length > 0 &&
-      words.slice(content[0], content.at(-1) + 1).every((w, k) => content.includes(content[0] + k) || dropOnly(w));
-    if (contiguous && content.includes(raw.source)) {
-      const span = words.slice(content[0], content.at(-1) + 1).map(clean).join(" ");
+    const contiguous = core.length > 0 &&
+      words.slice(core[0], core.at(-1) + 1).every((w, k) => core.includes(core[0] + k) || dropOnly(w));
+    if (contiguous && core.includes(raw.source)) {
+      const span = words.slice(core[0], core.at(-1) + 1).map(clean).join(" ");
       const check = translateRules(span, vocab, rulesOpts);
       const only = check.items.length === 1 && !check.unsupported_tokens.length ? check.items[0] : null;
       if (only?.type === "sign" && only.motion_id === entry.motion_id && VERIFIED.has(only.match.method)) {
-        match = { method: only.match.method, by: "agent", verified: "rules" };
-        if (only.match.lemma) match.lemma = only.match.lemma;
-        content.forEach((i) => literal.add(i));
+        renders = core;
+        core.forEach((i) => literal.add(i));
+        // Absorbed extras still change the message a little: the item stays "semantic" (needs confirmation).
+        if (!extras.length) {
+          match = { method: only.match.method, by: "agent", verified: "rules" };
+          if (only.match.lemma) match.lemma = only.match.lemma;
+        } else match.literal = only.match.method;
       }
     }
-    // A paraphrased sign renders its source word; it may only absorb meaning-light extras ("a lot", "so", "there" in
-    // "hey there"). Any other content word it claims ("stomach" under HURT) is not rendered -> unsupported.
+    // A sign claims the words it renders, droppable words and meaning-light extras. Any other content word it claims
+    // ("stomach" under HURT) is not rendered -> unsupported.
     for (const i of covers) {
-      if (match.method !== "semantic" || i === raw.source || dropOnly(words[i]) || absorbable(words[i], Math.abs(i - raw.source))) claimed.add(i);
+      if (renders.includes(i) || dropOnly(words[i]) || extras.includes(i)) claimed.add(i);
       else rejected.push({ reason: "overclaimed_cover", id: entry.motion_id, source, word: clean(words[i]) });
     }
     keptIndex[pi] = items.length;

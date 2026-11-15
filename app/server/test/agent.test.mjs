@@ -271,3 +271,14 @@ test("buildPlan never fingerspells a pronoun or function word", () => {
   assert.deepEqual(rejected.map((r) => r.reason), ["fingerspell_function_word"]);
   assert.deepEqual(plan.unsupported_tokens, ["I", "lost"]);
 });
+
+test("buildPlan: literal core + absorbed intensifier keeps every word claimed but still needs confirmation", () => {
+  const vocab = IDS.map((id) => ({ motion_id: id, gloss: id.replaceAll("_", " ") }));
+  const v = describeVocab(vocab);
+  const words = ["Thank", "you", "so", "much!"];
+  const { plan, rejected } = buildPlan("Thank you so much!", words, proposal([sign("THANK_YOU", 0, [0, 1, 2, 3])]), v.byId, vocab);
+  assert.deepEqual(rejected, []);
+  assert.deepEqual(plan.unsupported_tokens, []);
+  assert.equal(plan.items[0].match.method, "semantic");
+  assert.equal(plan.items[0].match.literal, "phrase");
+});
