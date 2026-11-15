@@ -1,6 +1,6 @@
 {
-  "name": "SIGNLAYER",
-  "short_name": "SIGNLAYER",
+  "name": "Flux",
+  "short_name": "Flux",
   "description": "Hear anything. See it signed.",
   "start_url": "./",
   "scope": "./",
