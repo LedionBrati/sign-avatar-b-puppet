@@ -15,6 +15,9 @@ const MIN_MS = 2000, MAX_MS = 5000, SILENCE_MS = 280, OVERLAP_MS = 400, MIN_VOIC
 const send = (m: ToBackground) => browser.runtime.sendMessage(m).catch(() => {});
 
 let run: Session | null = null;
+/** Diagnostics read by scripts/verify-youtube.mjs: per-chunk length, size, round-trip latency, text (no audio unless keep). */
+const dbg = { chunks: [] as { ms: number; bytes: number; latency_ms: number; text: string }[], keep: false, blobs: [] as { ms: number; bytes: number; b64: string }[] };
+(globalThis as { __slTabAudio?: typeof dbg }).__slTabAudio = dbg;
 
 browser.runtime.onMessage.addListener((raw: unknown, _sender: unknown, sendResponse: (r: unknown) => void) => {
   const m = raw as Start | Stop;
@@ -130,10 +133,11 @@ class Session {
     const id = ++this.seq;
     const blob = new Blob(seg.parts, { type: "audio/webm" });
     const t0 = performance.now();
+    if (dbg.keep) blob.arrayBuffer().then((b) => dbg.blobs.push({ ms: Math.round(ms), bytes: b.byteLength, b64: btoa(String.fromCharCode(...new Uint8Array(b))) }));
     let text = "";
     try {
-      const prev = encodeURIComponent(this.prevText.split(" ").slice(-24).join(" "));
-      const res = await fetch(`${this.o.apiUrl.replace(/\/$/, "")}${ROUTES.transcribe}?lang=en${prev ? `&prev=${prev}` : ""}`, {
+      // No "prev" prompt: on a chunk that is mostly overlap or silence the models echo the prompt back.
+      const res = await fetch(`${this.o.apiUrl.replace(/\/$/, "")}${ROUTES.transcribe}?lang=en`, {
         method: "POST", body: blob, headers: { "content-type": "audio/webm", "x-audio-ms": String(Math.min(30000, Math.round(ms))) },
       });
       const body = (await res.json().catch(() => null)) as (TranscribeResponse & { error?: { code: string; message: string } }) | null;
@@ -148,6 +152,8 @@ class Session {
     }
     this.done.set(id, text);
     const latency = Math.round(performance.now() - t0);
+    dbg.chunks.push({ ms: Math.round(ms), bytes: blob.size, latency_ms: latency, text });
+    if (dbg.chunks.length > 50) dbg.chunks.shift();
     // Emit in order, dropping words the overlap repeated.
     while (this.done.has(this.emitted + 1)) {
       const t = dedupe(this.prevText, this.done.get(++this.emitted)!);
@@ -170,9 +176,11 @@ class Session {
 }
 
 const n = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, "");
-/** Drop leading words of `next` that repeat the last words of `prev` (chunk overlap). */
+/** Drop leading words of `next` that repeat the last words of `prev` (chunk overlap); "" if `next` was already said. */
 export function dedupe(prev: string, next: string) {
   const p = prev.split(" ").filter(Boolean).map(n), w = next.split(" ").filter(Boolean);
+  const wn = w.map(n).filter(Boolean);
+  if (wn.length && ` ${p.slice(-40).join(" ")} `.includes(` ${wn.join(" ")} `)) return "";
   for (let k = Math.min(4, p.length, w.length); k > 0; k--) {
     if (w.slice(0, k).map(n).join(" ") === p.slice(-k).join(" ")) return w.slice(k).join(" ");
   }

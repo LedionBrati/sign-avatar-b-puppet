@@ -22,7 +22,7 @@ const pillState = $("pillState"), pillSub = $("pillSub");
 const srcBtn = $("srcBtn"), srcMenu = $("srcMenu"), ccBtn = $("ccBtn");
 const vids = [$("v0") as HTMLVideoElement, $("v1") as HTMLVideoElement];
 $("brand").innerHTML = `${MARK}<span class="wm" aria-hidden="true">s<span class="wm-i">ı</span>gnlayer</span>`;
-ccBtn.innerHTML = ICON.captions;
+ccBtn.innerHTML = ICON.subtitles;
 $("closeBtn").innerHTML = ICON.close;
 
 const post = (m: FromOverlay) => parent.postMessage(m, "*");
@@ -40,7 +40,7 @@ let phrases = 0; // phrases received since load (hides the first-run hint)
 // ── Settings + controls ──
 function applySettings() {
   document.body.dataset.size = s.size;
-  document.querySelectorAll<HTMLButtonElement>("[data-size]").forEach((b) => b.classList.toggle("on", b.dataset.size === s.size));
+  document.querySelectorAll<HTMLButtonElement>("button[data-size]").forEach((b) => b.classList.toggle("on", b.dataset.size === s.size));
   card.classList.toggle("nocc", !s.captions);
   ccBtn.setAttribute("aria-pressed", String(s.captions));
   srcBtn.innerHTML = SOURCE_ICON[s.source];
@@ -57,7 +57,7 @@ onSettings((patch) => {
   applySettings();
   if ("apiUrl" in patch) checkHealth();
 });
-document.querySelectorAll<HTMLButtonElement>("[data-size]").forEach((b) =>
+document.querySelectorAll<HTMLButtonElement>("button[data-size]").forEach((b) =>
   b.addEventListener("click", () => setSettings({ size: b.dataset.size as Size })),
 );
 ccBtn.addEventListener("click", () => setSettings({ captions: !s.captions }));
@@ -197,6 +197,7 @@ function render() {
   renderNote(v);
   cc.dataset.empty = v === "offline" ? "Signer offline" : "Captions appear here";
   wave.active = v === "listening" || v === "caption_only" || v === "confirm";
+  if (v === "listening" || v === "paused" || v === "ad" || v === "need-cc") showNeutral();
 }
 
 function setNote(kind: "" | "center" | "hint", ic = "", title = "", text = "", actions = "") {
@@ -517,13 +518,14 @@ async function checkHealth() {
 }
 
 /** Idle: the signer waits in the shared neutral pose (first frame of a clip). Never during a blocked phrase. */
+let neutralId: string | null = null;
 async function showNeutral() {
   if (job || blocked(shown) || vids[front]!.dataset.url) return;
   try {
-    const first = (await client.vocab()).signs[0];
-    if (!first || job || blocked(shown)) return;
+    neutralId ??= (await client.vocab()).signs[0]?.motion_id ?? null;
+    if (!neutralId || job || blocked(shown) || vids[front]!.dataset.url) return;
     const v = vids[front]!;
-    load(v, `${client.base}${ROUTES.clips}${first.motion_id}.mp4`);
+    load(v, `${client.base}${ROUTES.clips}${neutralId}.mp4`);
     v.addEventListener("loadeddata", () => !job && !blocked(shown) && v.classList.add("on"), { once: true });
   } catch {
     /* idle tile stays dark */

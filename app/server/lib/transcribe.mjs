@@ -11,7 +11,12 @@ import { createRequire } from "node:module";
 import { redactor } from "./secrets.mjs";
 
 export const TRANSCRIBE_ROUTE = "/api/transcribe";
-/** Picked 2026-11-15 from the key's model list: fastest of gpt-4o-mini-transcribe / gpt-transcribe / whisper-1 on 4 s chunks. */
+/**
+ * Picked 2026-11-15 from the key's model list (scripts/transcribe-bench.mjs on 5 real 2-5 s tab-audio chunks of a TED talk):
+ * median round trip gpt-transcribe 513 ms, gpt-4o-mini-transcribe 560 ms, gpt-4o-transcribe 606 ms, whisper-1 1007 ms.
+ * mini-transcribe: the same text on these chunks, within 50 ms of the fastest, and the cheapest per minute.
+ * Clients should not send ?prev= for overlapping chunks: on a mostly-silent tail the models echo the prompt.
+ */
 export const DEFAULT_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
 export const DEFAULT_TRANSCRIBE_TIMEOUT_MS = 10_000;
 /** 2 MB: ~60 s of opus at the extension's bitrate; real chunks are 3-5 s (~30-60 kB). */

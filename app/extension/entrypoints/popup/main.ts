@@ -26,7 +26,10 @@ $("start").addEventListener("click", async () => {
 
 // ── Main ──
 let site = "This page";
-try { site = activeTab?.url ? new URL(activeTab.url).hostname.replace(/^www\./, "") || "This page" : site; } catch { /* keep */ }
+try {
+  const u = activeTab?.url ? new URL(activeTab.url) : null;
+  if (u && /^https?:$/.test(u.protocol)) site = u.hostname.replace(/^www\./, "");
+} catch { /* keep */ }
 $("site").textContent = site;
 
 const HINT: Record<Source, () => string> = {

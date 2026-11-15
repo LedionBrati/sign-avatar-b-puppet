@@ -116,7 +116,7 @@ body { font-size: 12px; --ink-cap: #111a5c; --amber: #ffc46b; --mint: #5ef2c2; }
 .cc:empty::before { content: attr(data-empty); color: rgb(17 26 92 / .45); font-size: 9.5px; letter-spacing: .13em; text-transform: uppercase; word-spacing: normal; }
 .cc .w { display: inline-block; word-spacing: normal; opacity: .38; transition: opacity .3s ease, color .25s ease; animation: wordIn .4s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes wordIn { from { opacity: 0; transform: translateY(4px); filter: blur(3px); } }
-.cc .w.heard { opacity: .7; }
+.cc .w.heard { opacity: .86; }
 .cc .w.signed, .cc .w.caption { opacity: 1; }
 .cc .w.now { opacity: 1; color: #fff; }
 .cc .w.nosign { text-decoration: underline dotted rgb(200 120 0 / .75); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
@@ -124,7 +124,7 @@ body { font-size: 12px; --ink-cap: #111a5c; --amber: #ffc46b; --mint: #5ef2c2; }
   transition: transform .36s cubic-bezier(.2,.8,.2,1), width .36s cubic-bezier(.2,.8,.2,1), height .36s ease, opacity .3s ease; }
 .cc .hl.show { opacity: 1; }
 .cc.pending .w { animation: wordIn .4s cubic-bezier(.2,.8,.2,1) both, shimmer 1.4s ease-in-out .4s infinite; }
-@keyframes shimmer { 50% { opacity: .45; } }
+@keyframes shimmer { 50% { opacity: .62; } }
 .card.nocc:not(.forcecc) .sheet { display: none; }
 
 /* ── Sizes ── */
