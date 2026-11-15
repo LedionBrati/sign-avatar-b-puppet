@@ -25,7 +25,8 @@ speech (on the device) ──► text ──► app/server ──► playlist of
 ## Run
 
 ```bash
-node app/server/index.mjs                         # http://localhost:8787 (CLIPS_DIR defaults to out/realtime/clips)
+(cd translate && npm i)                           # once: translator deps (local embeddings model)
+node app/server/index.mjs                         # http://localhost:8787 + LAN URL; CLIPS_DIR=dirA,dirB (default out/realtime/clips)
 cd app/web && npm i && npm run dev                # web app
 cd app/extension && npm i && npm run dev          # Chrome extension (WXT opens a browser)
 cd app/mobile && npm i && npx expo start          # phone: set the server URL to http://<LAN-IP>:8787
