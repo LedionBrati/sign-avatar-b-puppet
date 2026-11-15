@@ -379,7 +379,7 @@ svg { display: block; }
   transition: transform 460ms var(--spring-snappy), width 460ms var(--spring-snappy), height .3s ease, opacity .35s ease; }
 .sl-cap .hl.show { opacity: 1; }
 .sl-cap .placeholder { position: absolute; inset: 0; color: var(--label-3); font-weight: 500; animation: fade .6s ease both; }
-.hint { margin: var(--s2) 0 0; font-size: 14px; line-height: 1.4; color: var(--label-2); animation: rise .5s var(--spring) both; }
+.hint { margin: var(--s2) 0 0; font-size: 14px; line-height: 1.4; color: var(--label-2); text-align: center; text-wrap: balance; animation: rise .5s var(--spring) both; }
 .hint b { color: var(--label); font-weight: 600; }
 
 .controls { position: relative; z-index: 3; flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--s4); width: 100%; max-width: 520px; margin: 0 auto;

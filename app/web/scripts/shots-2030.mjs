@@ -2,7 +2,7 @@
 // plus a playback trace of typed signing that flags seams (frozen stretches, frames with no opaque video).
 //   npm run dev   then   node scripts/shots-2030.mjs
 // Env: APP_URL (default http://localhost:5173), OUT (default docs/), PREFIX (default "2030-"), ONLY (comma list of
-// screen names), THEMES ("dark,light"), SIZES ("phone,desktop"), TEXT, REC=1 (also save screencast frames to OUT/rec).
+// screen names: home settings listening live done hints offline nospeech sign), THEMES ("dark,light"), SIZES ("phone,desktop"), TEXT, DPR (phone, default 2), WAIT_MS, REC=1 (also save screencast frames to OUT/rec).
 import fs from "node:fs";
 import path from "node:path";
 import puppeteer from "puppeteer-core";
@@ -14,7 +14,8 @@ const TEXT = process.env.TEXT ?? "I feel sick, I need help please.";
 const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(",")) : null;
 const THEMES = (process.env.THEMES ?? "dark,light").split(",");
 const SIZES = (process.env.SIZES ?? "phone,desktop").split(",");
-const VIEW = { phone: { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true }, desktop: { width: 1440, height: 900, deviceScaleFactor: 1 } };
+const DPR = +(process.env.DPR ?? 2);
+const VIEW = { phone: { width: 390, height: 844, deviceScaleFactor: DPR, isMobile: true, hasTouch: true }, desktop: { width: 1440, height: 900, deviceScaleFactor: 1 } };
 const CHROME = process.env.CHROME ?? ["C:/Program Files/Google/Chrome/Application/chrome.exe", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome"].find((p) => fs.existsSync(p));
 const want = (n) => !ONLY || ONLY.has(n);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -112,6 +113,20 @@ try {
       await sleep(1500);
       await shot("offline");
       await page.evaluate(() => localStorage.removeItem("sl-api"));
+    }
+
+    if (want("nospeech")) {
+      // Browsers without speech recognition (Firefox, iOS home-screen PWA): typing is the way in.
+      const p2 = await browser.newPage();
+      await p2.setViewport(VIEW[size]);
+      await p2.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+      await p2.evaluateOnNewDocument(() => { delete window.webkitSpeechRecognition; delete window.SpeechRecognition; });
+      await p2.goto(APP, { waitUntil: "networkidle0" });
+      await sleep(1200);
+      const f = path.join(OUT, `${PREFIX}nospeech-${size}-${theme}.png`);
+      await p2.screenshot({ path: f });
+      console.log("saved", path.basename(f));
+      await p2.close();
     }
 
     if (want("sign")) {
