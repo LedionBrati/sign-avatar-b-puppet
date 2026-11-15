@@ -49,11 +49,14 @@ export class Chunker {
   private stopped = false;
   private mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
 
-  constructor(private stream: MediaStream, private apiUrl: string, private h: ChunkHandlers, private opts: { monitor: boolean; silentHint: string }) {}
+  constructor(private stream: MediaStream, private apiUrl: string, private h: ChunkHandlers, private opts: { monitor: boolean; silentHint: string; silentHint2?: string }) {}
 
   async start() {
     this.ctx = new AudioContext();
-    await this.ctx.resume().catch(() => {});
+    // Never await resume(): if Chrome held the context for a user gesture the promise would stay pending and the
+    // start reply would never come. Extension offscreen documents may play audio, so it normally just runs; the tick
+    // nudges it again if it is ever suspended (no audio would reach the speakers or the analyser then).
+    void this.ctx.resume().catch(() => {});
     const src = this.ctx.createMediaStreamSource(this.stream);
     if (this.opts.monitor) src.connect(this.ctx.destination); // keep the tab audible
     this.analyser = this.ctx.createAnalyser();
@@ -62,7 +65,7 @@ export class Chunker {
     this.stream.getAudioTracks()[0]?.addEventListener("ended", () => {
       if (!this.stopped) { this.stop(); this.h.onError(this.opts.monitor ? "The tab stopped sharing audio (closed or navigated away)." : "The microphone was disconnected."); }
     });
-    this.startedAt = performance.now();
+    this.startedAt = this.lastTick = performance.now();
     this.cur = this.newSeg();
     this.timer = self.setInterval(() => this.tick(), 50);
   }
@@ -83,22 +86,29 @@ export class Chunker {
     return Math.sqrt(sum / this.buf.length);
   }
 
+  private lastTick = 0;
+  private hints = 0;
   private tick() {
     if (!this.cur || this.stopped) return;
+    const now = performance.now();
+    // Real elapsed time, not the nominal 50 ms: timers in a hidden document can be throttled on long sessions.
+    const dt = Math.min(1000, Math.max(0, now - this.lastTick));
+    this.lastTick = now;
+    if (this.ctx && this.ctx.state === "suspended") void this.ctx.resume().catch(() => {});
     const level = this.rms();
     // Slow-moving noise floor; "voiced" = clearly above it.
     this.noise = level < this.noise ? this.noise * 0.9 + level * 0.1 : this.noise * 0.999 + level * 0.001;
     const voiced = level > Math.max(0.012, this.noise * 2.5);
     if (voiced) {
-      this.cur.voicedMs += 50;
+      this.cur.voicedMs += dt;
       this.silenceRun = 0;
       if (!this.everVoiced) { this.everVoiced = true; this.h.onHint(""); }
-    } else this.silenceRun += 50;
+    } else this.silenceRun += dt;
     this.h.onLevel(Math.min(1, level * 6), voiced);
-    const now = performance.now();
     if (!this.everVoiced && now - this.startedAt > NO_AUDIO_MS) {
       this.startedAt = now;
-      this.h.onHint(this.opts.silentHint);
+      // After a while, the longer hint (e.g. "In a Zoom app call? ..."), then alternate.
+      this.h.onHint(this.hints++ % 2 && this.opts.silentHint2 ? this.opts.silentHint2 : this.opts.silentHint);
     }
     const age = now - this.cur.started;
     if (age >= MIN_MS && this.silenceRun >= SILENCE_MS) this.cut(false);
@@ -108,7 +118,15 @@ export class Chunker {
   /** End the current chunk and start the next. A hard cut (mid-speech) starts the next recorder early, so they overlap. */
   private cut(hard: boolean) {
     const old = this.cur!;
-    this.cur = this.newSeg();
+    try {
+      this.cur = this.newSeg();
+    } catch (e) { // the stream died under us (its "ended" handler reports it)
+      console.warn("[signlayer] recorder", e);
+      this.cur = null;
+      try { old.rec.stop(); } catch { /* already stopped */ }
+      if (!this.stopped) { this.stop(); this.h.onError("The audio stopped. Press Start to listen again."); }
+      return;
+    }
     const finish = () => {
       old.rec.onstop = () => this.upload(old, performance.now() - old.started);
       old.rec.stop();
@@ -135,7 +153,9 @@ export class Chunker {
       } else text = body?.text ?? "";
     } catch (e) {
       console.warn("[signlayer] transcribe failed", e);
-      this.h.onHint("Can't reach the SIGNLAYER server for speech-to-text.");
+      let host = this.apiUrl;
+      try { host = new URL(this.apiUrl).host; } catch { /* keep */ }
+      this.h.onHint(`Can't reach the server (${host}) for speech-to-text. Set it in ⚙.`);
     }
     this.done.set(id, text);
     const chunk: ChunkInfo = { ms: Math.round(ms), bytes: blob.size, latency_ms: Math.round(performance.now() - t0), text };

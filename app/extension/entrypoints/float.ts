@@ -67,29 +67,62 @@ export default defineUnlistedScript(() => {
   if (g.__slFloat) { g.__slFloat.close(); return; }
 
   const extOrigin = new URL(browser.runtime.getURL("/")).origin;
+  // DOM APIs only, no innerHTML: YouTube, Meet and other Google pages enforce Trusted Types
+  // (require-trusted-types-for 'script'), and a string HTML sink would throw there. Styles go through the CSSOM
+  // (host.style, adoptedStyleSheets), which the page's CSP style-src doesn't govern.
   const host = document.createElement("signlayer-float");
-  host.setAttribute("style", "all: initial !important; position: fixed !important; left: 0 !important; top: 0 !important; width: 0 !important; height: 0 !important; z-index: 2147483647 !important; display: block !important; pointer-events: none !important;");
+  const HOST_STYLE: [string, string][] = [["all", "initial"], ["position", "fixed"], ["left", "0"], ["top", "0"], ["right", "auto"], ["bottom", "auto"],
+    ["width", "0"], ["height", "0"], ["margin", "0"], ["padding", "0"], ["border", "0"], ["background", "transparent"], ["overflow", "visible"],
+    ["z-index", "2147483647"], ["display", "block"], ["pointer-events", "none"]];
+  for (const [k, v] of HOST_STYLE) host.style.setProperty(k, v, "important");
   const root = host.attachShadow({ mode: "closed" });
-  root.innerHTML = `<style>${CSS}</style><div class="card" data-tone="idle"><div class="glass"><i class="sheen"></i></div><iframe title="SIGNLAYER signer" allow="autoplay" scrolling="no"></iframe><div class="rim"></div><div class="ring"><i></i></div><div class="grip" title="Drag to move"></div></div>`;
-  const card = root.querySelector<HTMLElement>(".card")!;
-  const frame = root.querySelector<HTMLIFrameElement>("iframe")!;
-  const grip = root.querySelector<HTMLElement>(".grip")!;
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(CSS);
+    root.adoptedStyleSheets = [sheet];
+  } catch {
+    const st = document.createElement("style");
+    st.textContent = CSS;
+    root.append(st);
+  }
+  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", parent?: Node) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    parent?.appendChild(e);
+    return e;
+  };
+  const card = el("div", "card", root);
+  card.dataset.tone = "idle";
+  el("i", "sheen", el("div", "glass", card));
+  const frame = el("iframe", "", card);
+  frame.title = "SIGNLAYER signer";
+  frame.setAttribute("allow", "autoplay");
+  frame.setAttribute("scrolling", "no");
+  el("div", "rim", card);
+  el("i", "", el("div", "ring", card));
+  const grip = el("div", "grip", card);
+  grip.title = "Drag to move";
   const q = new URLSearchParams({ tab: String(g.__slTabId ?? "") });
   if (g.__slAutostart) q.set("autostart", g.__slAutostart);
   frame.src = browser.runtime.getURL(`/overlay.html?${q}`);
 
   let w = 300, h = 540, x = 0, y = 0, placed = false, saved: Pos | null = null;
   const vw = () => document.documentElement.clientWidth || innerWidth;
+  // Video calls (Meet, Zoom web): the card never covers the bottom control bar, and starts top-left
+  // (their chat / people panels open on the right). It can still be dragged anywhere above the bar.
+  const CALL = /(^|\.)meet\.google\.com$|(^|\.)zoom\.(us|com)$|(^|\.)teams\.(microsoft|live)\.com$/.test(location.hostname);
+  const BAR = CALL ? 96 : 0;
   const vh = () => innerHeight;
+  const room = () => (document.fullscreenElement ? vh() : vh() - BAR);
   const M = 8;
   const clamp = () => {
     x = Math.round(Math.min(Math.max(M, x), Math.max(M, vw() - w - M)));
-    y = Math.round(Math.min(Math.max(M, y), Math.max(M, vh() - h - M)));
+    y = Math.round(Math.min(Math.max(M, y), Math.max(M, room() - h - M)));
   };
   const apply = () => { card.style.setProperty("--x", `${x}px`); card.style.setProperty("--y", `${y}px`); };
   const place = () => {
     if (saved) { x = saved.ax === "r" ? vw() - w - saved.dx : saved.dx; y = saved.y; }
-    else { x = vw() - w - 20; y = 20; }
+    else { x = CALL ? 20 : vw() - w - 20; y = CALL ? 72 : 20; }
     clamp(); apply();
   };
   const save = () => {
@@ -98,7 +131,7 @@ export default defineUnlistedScript(() => {
     browser.storage.local.set({ floatPos: saved }).catch(() => {});
   };
   const post = (m: object) => frame.contentWindow?.postMessage({ sl: 1, ...m }, extOrigin);
-  const sendViewport = () => post({ type: "viewport", w: vw(), h: vh() });
+  const sendViewport = () => post({ type: "viewport", w: vw(), h: room() });
 
   // Drag: in page coordinates, on the grip over the card's header.
   let drag: { dx: number; dy: number } | null = null, raf = 0;
@@ -137,11 +170,33 @@ export default defineUnlistedScript(() => {
   }
   const onResize = () => { if (!placed) return; if (saved) place(); else { clamp(); apply(); } sendViewport(); };
 
+  // Fullscreen (YouTube's player, a call's stage): only the top layer is painted, so the card would vanish. Show the
+  // host as a manual popover then: it joins the top layer above the fullscreen element without moving in the DOM
+  // (moving it would reload the iframe and stop listening). On exit it goes back to a plain fixed element (its
+  // inline display:block !important keeps it shown when the popover is closed), so it is always there afterwards.
+  const topLayer = (on: boolean) => {
+    try {
+      if (on) {
+        if (!host.hasAttribute("popover")) host.setAttribute("popover", "manual");
+        if (host.matches(":popover-open")) host.hidePopover(); // re-show: above the element that just went fullscreen
+        host.showPopover();
+      } else if (host.hasAttribute("popover")) {
+        if (host.matches(":popover-open")) host.hidePopover();
+        host.removeAttribute("popover");
+      }
+    } catch { /* no popover API: the card simply waits under the fullscreen element and is back on exit */ }
+  };
+  const onFullscreen = () => {
+    topLayer(!!document.fullscreenElement && document.fullscreenElement !== host);
+    requestAnimationFrame(onResize);
+  };
+
   function close() {
     if (!g.__slFloat) return;
     g.__slFloat = undefined;
     removeEventListener("message", onMessage);
     removeEventListener("resize", onResize);
+    document.removeEventListener("fullscreenchange", onFullscreen);
     post({ type: "closing" });
     card.classList.remove("in");
     card.classList.add("out");
@@ -150,6 +205,7 @@ export default defineUnlistedScript(() => {
   g.__slFloat = { close };
   addEventListener("message", onMessage);
   addEventListener("resize", onResize);
+  document.addEventListener("fullscreenchange", onFullscreen);
 
   browser.storage.local.get("floatPos").then((r) => {
     const p = r.floatPos as Pos | undefined;
@@ -157,4 +213,5 @@ export default defineUnlistedScript(() => {
     if (placed) place();
   }).catch(() => {});
   document.documentElement.append(host);
+  if (document.fullscreenElement) onFullscreen();
 });
