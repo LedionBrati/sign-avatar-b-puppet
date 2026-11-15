@@ -26,15 +26,17 @@ const VERIFIED = new Set(["exact", "phrase", "lemma", "synonym"]);
 /** Static instructions: identical for every request so the prompt prefix (instructions + vocab) is cacheable. */
 export const INSTRUCTIONS = `You plan English -> ASL sign sequences for an avatar that can ONLY play the signs listed in VOCAB.
 Translate by meaning, not word by word:
-- Paraphrase into VOCAB signs when the exact word is missing ("catch you later" -> SEE YOU LATER, "headache" -> HEAD HURT if both exist).
+- Paraphrase into VOCAB signs when the exact word is missing ("hey there" -> HELLO, "catch you later" -> SEE YOU LATER, "headache" -> HEAD HURT if both exist).
 - Use only IDs that appear in VOCAB, spelled exactly. Never make up an ID. If a meaning cannot be expressed with VOCAB, put that word's index in "unsupported" (do not guess).
+- Never change who or what is meant: keep person (YOU is not MY), number, time, place and negation. If they cannot be kept, mark the word unsupported.
+- A word whose meaning a sign carries approximately (intensifiers like "a lot" or "so", politeness, idiom parts) goes in that sign's covers; "unsupported" is only for meaning that is actually lost.
 - Choose the sense that fits the sentence; VOCAB notes in parentheses give senses.
 - Order ASL-ish: time signs first; WH-question sign (WHERE, WHAT, ...) last; a question_wh marker spans the whole WH question; a yes/no question gets question_yn over its signs; a negation sign gets a negation marker from it to the end of its clause. Marker from/to are item indices (inclusive).
 - Fingerspell names and proper nouns: type "fingerspell", letters = the word in A-Z only, id null.
 - Drop words ASL does not sign: articles, am/is/are/was/were/be, do/does/did, "to", fillers.
 - source = index of the input word the item renders. covers = every input word index whose meaning that item carries (include source). Each input word belongs to at most one item. Words that are neither covered, unsupported nor droppable are treated as lost.
 - confidence: 0-1, how sure you are the sign keeps the intended meaning in this sentence.
-- paraphrase: plain English of exactly what the signs say. notes: one short sentence on what was lost, assumed or simplified ("" if nothing).
+- paraphrase: one natural English sentence saying exactly what the signs say. notes: one short sentence on what was lost, assumed or simplified ("" if nothing).
 Input words are numbered "index:word".`;
 
 /** Strict JSON schema for the Responses API structured output. */
@@ -128,7 +130,7 @@ export function createAgent(o) {
   const cache = lru(o.cacheSize ?? 200);
   const unsupportedParams = new Set();          // params this model rejected once (e.g. temperature); not sent again
   const effort = o.reasoningEffort ?? process.env.AGENT_REASONING ?? "none";
-  const stats = { requests: 0, cache_hits: 0, failures: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0 };
+  const stats = { requests: 0, cache_hits: 0, failures: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0, dropped_params: [] };
 
   function params(vocabText, vocabHash, words) {
     const p = {
@@ -201,7 +203,7 @@ export function createAgent(o) {
         const status = error?.status;
         // A rejected optional parameter (temperature / reasoning) is retried once without it.
         const param = status === 400 && /temperature|reasoning/i.exec(String(error?.message ?? ""))?.[0]?.toLowerCase();
-        if (param && !unsupportedParams.has(param)) { unsupportedParams.add(param); attempts--; continue; }
+        if (param && !unsupportedParams.has(param)) { unsupportedParams.add(param); stats.dropped_params.push(param); attempts--; continue; }
         if (status === 401 || status === 403 || status === 404 || (status === 400 && !param)) break;   // not retryable
       }
     }
@@ -232,7 +234,8 @@ export function buildPlan(input, words, proposal, byId, vocab, { englishWords, m
   const inRange = (i) => Number.isInteger(i) && i >= 0 && i < n;
   const rejected = [];
   const warnings = [];
-  const unsupportedIdx = new Set((Array.isArray(proposal?.unsupported) ? proposal.unsupported : []).filter(inRange));
+  // Droppable words (articles, copulas, "do") listed as unsupported are just dropped: they carry no meaning to lose.
+  const unsupportedIdx = new Set((Array.isArray(proposal?.unsupported) ? proposal.unsupported : []).filter((i) => inRange(i) && !dropOnly(words[i])));
   const claimed = new Set();
   const items = [];
   const keptIndex = [];                       // proposal item index -> plan item index (or -1)
