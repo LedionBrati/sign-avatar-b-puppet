@@ -45,17 +45,37 @@ export interface HealthResponse {
   ok: true;
   signs: number;
   semantic: "ready" | "loading" | "off";
+  /** Sign -> voice recognizer service status. */
+  recognizer?: "ready" | "down";
 }
 
 export interface ApiError {
   error: { code: string; message: string };
 }
 
+// ── Sign -> voice ──────────────────────────────────────────────────────────────
+export type RecognizeMode = "sign" | "spell";
+
+/** POST /api/recognize?mode=sign|spell. Body: float32 [frames x 543 x 3] (see landmarks.ts), header X-Frames. */
+export interface RecognizeResponse {
+  mode: RecognizeMode;
+  /** mode=sign: top-5 recognizer labels (GISLR vocabulary, e.g. "hello", "thankyou") with softmax confidence. */
+  options: { label: string; text: string; confidence: number }[];
+  /** mode=spell: decoded fingerspelled letters, e.g. "MARIA". */
+  text?: string;
+  frames: number;
+  timings: { inference_ms: number; total_ms: number };
+}
+
+export const FRAMES_HEADER = "X-Frames";
+
 export const ROUTES = {
   health: "/api/health", // GET -> HealthResponse
   vocab: "/api/vocab", // GET -> VocabResponse
   sign: "/api/sign", // POST SignRequest -> SignResponse
   clips: "/clips/", // GET /clips/<file>.mp4 (static)
+  recognize: "/api/recognize", // POST ?mode=sign|spell, octet-stream float32 frames -> RecognizeResponse (proxied to app/recognizer)
+  webApp: "/app/", // GET the built web app (phone WebView loads /app/#/sign?embed=1)
 } as const;
 
 export const DEFAULT_PORT = 8787;
