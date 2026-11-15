@@ -34,9 +34,9 @@ export function createSegmenter(onDone: (s: SegmentDone) => void, onState: (s: S
   let lastHandIdx = -1;
   let prev: HolisticFrame | null = null;
   let moved = false;
-  let t0 = 0, lastHandT = 0, lastMoveT = 0;
+  let t0 = 0, lastHandT = 0, lastMoveT = 0, noHand = 0, still = 0;
   const set = (s: SegState) => { if (s !== state) { state = s; onState(s); } };
-  const reset = () => { buf = []; lastHandIdx = -1; prev = null; moved = false; };
+  const reset = () => { buf = []; lastHandIdx = -1; prev = null; moved = false; noHand = 0; still = 0; };
 
   function finish(reason: SegmentDone["reason"], t: number) {
     const keep = buf.slice(0, Math.max(lastHandIdx + 3, 0)); // drop the trailing frames without hands, keep 2
@@ -66,10 +66,11 @@ export function createSegmenter(onDone: (s: SegmentDone) => void, onState: (s: S
         return;
       }
       buf.push(packFrame(f));
-      if (hands) { lastHandIdx = buf.length - 1; lastHandT = t; }
-      if (m > SEG.moveThresh) { lastMoveT = t; moved = true; }
-      if (t - lastHandT > SEG.goneMs) return finish("gone", t);
-      if (moved && t - lastMoveT > SEG.stillMs && t - t0 > 700) return finish("still", t);
+      if (hands) { lastHandIdx = buf.length - 1; lastHandT = t; noHand = 0; } else noHand++;
+      if (m > SEG.moveThresh) { lastMoveT = t; moved = true; still = 0; } else still++;
+      // Time AND at least 2 frames, so a slow device (a few fps) doesn't cut on one dropped detection.
+      if (noHand >= 2 && t - lastHandT > SEG.goneMs) return finish("gone", t);
+      if (moved && still >= 2 && t - lastMoveT > SEG.stillMs && t - t0 > 700) return finish("still", t);
       if (t - t0 > SEG.maxMs || buf.length >= 384) return finish("max", t);
     },
   };

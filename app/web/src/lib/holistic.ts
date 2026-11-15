@@ -17,7 +17,21 @@ export interface Tracker {
   close(): void;
 }
 
-export async function createTracker(): Promise<Tracker> {
+/** GPU unless WebGL is a software rasterizer (headless Chrome's SwiftShader, llvmpipe), where the wasm CPU path is faster.
+ *  Override with ?delegate=cpu|gpu in the hash. */
+export function pickDelegate(): "GPU" | "CPU" {
+  const forced = new URLSearchParams(location.hash.split("?")[1] ?? "").get("delegate");
+  if (forced) return forced.toLowerCase() === "cpu" ? "CPU" : "GPU";
+  try {
+    const gl = document.createElement("canvas").getContext("webgl2") ?? document.createElement("canvas").getContext("webgl");
+    if (!gl) return "CPU";
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    const r = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    return /swiftshader|llvmpipe|software|basic render/i.test(r) ? "CPU" : "GPU";
+  } catch { return "GPU"; }
+}
+
+export async function createTracker(prefer: "GPU" | "CPU" = pickDelegate()): Promise<Tracker> {
   const { FilesetResolver, HolisticLandmarker } = await import("@mediapipe/tasks-vision");
   const files = await FilesetResolver.forVisionTasks(WASM_URL);
   const make = (delegate: "GPU" | "CPU") => HolisticLandmarker.createFromOptions(files, {
@@ -25,11 +39,12 @@ export async function createTracker(): Promise<Tracker> {
     runningMode: "VIDEO",
     minHandLandmarksConfidence: 0.5,
   });
-  let delegate: "GPU" | "CPU" = "GPU";
+  let delegate = prefer;
   let lm: HolisticLandmarker;
   try {
-    lm = await make("GPU");
-  } catch {
+    lm = await make(prefer);
+  } catch (e) {
+    if (prefer === "CPU") throw e;
     delegate = "CPU";
     lm = await make("CPU");
   }

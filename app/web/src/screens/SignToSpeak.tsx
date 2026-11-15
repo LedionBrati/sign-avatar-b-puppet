@@ -18,7 +18,11 @@ const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 const wordOf = (l: string) => (l.startsWith("#") ? cap(l.slice(1).toLowerCase()) : labelText(l));
 
 declare global { interface Window { ReactNativeWebView?: { postMessage(s: string): void }; __sl?: Record<string, unknown> } }
-const post = (msg: { type: "sentence" | "speak"; text: string }) => { try { window.ReactNativeWebView?.postMessage(JSON.stringify(msg)); } catch { /* not in a WebView */ } };
+/** Embed mode: the phone app's WebView gets a JSON string; its web/iframe fallback gets the object on window "message". */
+const post = (msg: { type: "sentence" | "speak"; text: string }) => {
+  try { window.ReactNativeWebView?.postMessage(JSON.stringify(msg)); } catch { /* not in a WebView */ }
+  try { if (window.parent !== window) window.parent.postMessage(msg, "*"); } catch { /* cross-origin parent gone */ }
+};
 
 export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void }) {
   const client = useMemo(() => createSignClient(apiBase(), { timeoutMs: 12_000 }), []);
@@ -125,7 +129,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   useEffect(() => {
     if (cam !== "ready" || track !== "ready") return;
     const v = video.current!, c = canvas.current!, ctx = c.getContext("2d")!;
-    let stop = false, handle = 0, lastT = -1, n = 0, win = performance.now(), sawHands = false;
+    let stop = false, handle = 0, lastT = -1, n = 0, dms = 0, win = performance.now(), sawHands = false;
     const rvfc = "requestVideoFrameCallback" in v;
     const next = () => { handle = rvfc ? v.requestVideoFrameCallback(tick) : requestAnimationFrame(() => tick()); };
     const tick = () => {
@@ -136,12 +140,13 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
         if (c.width !== v.videoWidth) { c.width = v.videoWidth; c.height = v.videoHeight; }
         const now = performance.now();
         const f = t.detect(v, now);
+        dms += performance.now() - now;
         drawOverlay(ctx, f, t.connections);
         segRef.current!.push(f, performance.now());
         const h = Boolean(f.leftHand?.length || f.rightHand?.length);
         if (h !== sawHands) { sawHands = h; setHands(h); }
         n++;
-        if (now - win >= 1000) { const r = (n * 1000) / (now - win); setFps(r); window.__sl = { ...window.__sl, fps: +r.toFixed(1) }; n = 0; win = now; }
+        if (now - win >= 1000) { const r = (n * 1000) / (now - win); setFps(r); window.__sl = { ...window.__sl, fps: +r.toFixed(1), detectMs: Math.round(dms / n) }; n = 0; dms = 0; win = now; }
       }
       next();
     };
