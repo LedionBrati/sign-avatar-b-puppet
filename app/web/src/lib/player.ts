@@ -1,6 +1,8 @@
-// Gapless playlist player: two stacked <video> elements. While one plays, the next clip preloads in the other;
-// on `ended` the preloaded one starts and is brought to the front only once it is actually playing, so the
-// last frame of the old clip covers any decode gap (every clip starts and ends in the same neutral pose).
+// Gapless playlist player: two stacked <video> elements. While one plays, the next clip preloads in the other.
+// A frame callback watches the playing clip and starts the preloaded one ~one crossfade before the end; the new
+// clip is brought to the front on its first presented frame and fades in over the old one (which stays opaque
+// underneath, holding its last frame), so there is never a black frame, a flash or a freeze at the seam. Every
+// clip starts and ends in the same neutral pose, so the short overlap is imperceptible.
 // New phrases append to the running queue; if playback had drained it resumes at the new items.
 
 export interface PlayerItem { url: string; duration_s: number }
@@ -21,6 +23,13 @@ export function prefetchClip(url: string): Promise<string | null> {
   return p;
 }
 
+/** Crossfade between clips (ms). Long enough to hide a seam, short enough to never read as a dissolve. */
+export const SEAM_MS = 110;
+/** The very first clip fades up from the empty stage a little more slowly. */
+const REVEAL_MS = 360;
+
+type FrameVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: (now: number, meta: { mediaTime: number }) => void) => number; cancelVideoFrameCallback?: (h: number) => void };
+
 export class GaplessPlayer {
   private items: PlayerItem[] = [];
   private loaded: [number, number] = [-1, -1];
@@ -30,12 +39,17 @@ export class GaplessPlayer {
   private pending = -1; // index we asked to play and are waiting on
   private disposed = false;
   private readonly offs: (() => void)[] = [];
+  private fadeTimer = 0;
+  private readonly seamMs: number;
 
   /** Called with the playlist index now on screen; items.length once the queue has drained. */
   onIndex: (index: number) => void = () => {};
 
   constructor(private readonly vids: [HTMLVideoElement, HTMLVideoElement]) {
+    const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.seamMs = reduce ? 0 : SEAM_MS;
     vids.forEach((v, slot) => {
+      v.style.opacity = "0";
       v.muted = true;
       v.playsInline = true;
       v.preload = "auto";
@@ -81,6 +95,7 @@ export class GaplessPlayer {
 
   stop() {
     this.pending = -1;
+    clearTimeout(this.fadeTimer);
     this.vids.forEach((v) => v.pause());
   }
 
@@ -92,7 +107,7 @@ export class GaplessPlayer {
     this.index = -1;
     this.front = 0;
     this.draining = false;
-    this.vids.forEach((v) => { v.removeAttribute("src"); v.load(); v.classList.remove("front", "back"); });
+    this.vids.forEach((v) => { v.removeAttribute("src"); v.load(); v.classList.remove("front", "back"); v.style.transition = "none"; v.style.opacity = "0"; v.style.zIndex = ""; });
     this.onIndex(-1);
   }
 
@@ -128,6 +143,41 @@ export class GaplessPlayer {
     else { this.draining = true; this.index = this.items.length; this.onIndex(this.index); }
   }
 
+  /** Bring `v` up over `under`. `under` stays opaque (holding its last frame) until `v` fully covers it. */
+  private crossfade(v: HTMLVideoElement, under: HTMLVideoElement) {
+    clearTimeout(this.fadeTimer);
+    const covered = under.style.opacity === "1" && under.readyState >= 2;
+    const ms = this.seamMs === 0 ? 0 : covered ? this.seamMs : REVEAL_MS;
+    v.style.zIndex = "2";
+    under.style.zIndex = "1";
+    v.style.transition = "none";
+    v.style.opacity = ms ? "0" : "1";
+    if (ms) {
+      void v.offsetWidth; // commit opacity 0 before animating
+      v.style.transition = `opacity ${ms}ms linear`;
+      v.style.opacity = "1";
+    }
+    this.fadeTimer = window.setTimeout(() => { if (this.vids[this.front] === v) under.pause(); }, ms + 60);
+  }
+
+  /** Watch the clip on screen frame by frame; start the next one a crossfade before this one ends. */
+  private watch(slot: number, i: number) {
+    const v = this.vids[slot] as FrameVideo;
+    const rvfc = v.requestVideoFrameCallback;
+    if (!rvfc || this.seamMs === 0) return; // `ended` still advances the queue
+    const lead = this.seamMs / 1000 + 0.02;
+    const check = (_now: number, meta: { mediaTime: number }) => {
+      if (this.disposed || this.front !== slot || this.index !== i || this.pending >= 0) return;
+      const n = i + 1, d = v.duration;
+      if (n < this.items.length && Number.isFinite(d) && d > 0 && meta.mediaTime >= d - lead) {
+        const back = 1 - slot;
+        if (this.loaded[back] === n && this.vids[back]!.readyState >= 3) { this.playAt(n); return; }
+      }
+      if (!v.paused && !v.ended) rvfc.call(v, check);
+    };
+    rvfc.call(v, check);
+  }
+
   private playAt(i: number) {
     if (this.disposed) return;
     this.draining = false;
@@ -145,13 +195,14 @@ export class GaplessPlayer {
       const other = this.vids[1 - slot]!;
       v.classList.add("front"); v.classList.remove("back");
       other.classList.remove("front"); other.classList.add("back");
-      other.pause();
+      this.crossfade(v, other);
       this.front = slot;
       this.index = i;
       this.onIndex(i);
       this.preloadNext();
+      this.watch(slot, i);
     };
-    const rvfc = (v as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }).requestVideoFrameCallback;
+    const rvfc = (v as FrameVideo).requestVideoFrameCallback;
     if (rvfc) rvfc.call(v, show); // swap on the first presented frame
     v.addEventListener("playing", () => setTimeout(show, 0), { once: true });
     v.play().catch(() => {
