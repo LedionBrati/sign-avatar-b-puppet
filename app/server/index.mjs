@@ -11,6 +11,7 @@
 //                             markers, plan, safety, translator: "local"|"agent", paraphrase?, generating?, timings
 //   GET  /api/sign.mp4?text=  the playlist joined into one mp4 (ffmpeg stream copy), for sharing / download
 //   GET  /clips/<file>        clips from the manifests, with HTTP Range (206) for Safari / iOS / expo-video
+//   POST /api/transcribe      raw audio chunk (audio/webm, ...) -> {text, model, timings}; same OpenAI key (lib/transcribe.mjs)
 //   POST /api/recognize?mode=sign|spell   float32 landmarks + X-Frames, proxied to app/recognizer (RECOGNIZER_URL, default :8788)
 //   GET  /app/*               the built web app (app/web/dist, WEB_DIST), SPA fallback to index.html
 
@@ -30,6 +31,7 @@ import { createAgent } from "./lib/agent.mjs";
 import { loadApiKey, loadFalKey, redactor } from "./lib/secrets.mjs";
 import { createOnDemand, onDemandConfig, prepareClipsDir } from "./lib/ondemand.mjs";
 import { virtualClips } from "./lib/eval-vocab.mjs";
+import { TRANSCRIBE_ROUTE, createTranscribeHandler, transcriberFromEnv } from "./lib/transcribe.mjs";
 
 export const MAX_TEXT = 500;
 const MAX_BODY = 16 * 1024;
@@ -64,6 +66,7 @@ class HttpError extends Error {
  * @param {object|null} [o.ondemand]  generate-on-use options for lib/ondemand.mjs createOnDemand (tests inject fake steps);
  *                                    null = off. Default: from the environment (ONDEMAND=on, FAL_KEY_FILE / FAL_KEY, MOTION_DIRS),
  *                                    never under node --test
+ * @param {object|null} [o.transcriber]  speech-to-text override ({transcribe(audio, opts)}, see lib/transcribe.mjs); null = off
  * @param {(line: string) => void} [o.log]
  */
 export function createApp(o = {}) {
@@ -98,6 +101,8 @@ export function createApp(o = {}) {
   try { englishWords = loadEnglishWords(); } catch (error) { log(`warning: English word list unavailable (${error.message}); names only by capitalization`); }
 
   const agent = o.agent !== undefined ? o.agent : agentFromEnv(keyInfo, englishWords, log);
+  const transcriber = o.transcriber !== undefined ? o.transcriber : transcriberFromEnv(keyInfo, log);
+  const transcribe = createTranscribeHandler(transcriber, { log });
 
   function reloadClips(ids = []) {
     const before = clips.signs.size;
@@ -231,7 +236,7 @@ export function createApp(o = {}) {
 
     if (path === "/api/health") {
       only(req, "GET", "HEAD");
-      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, recognizer: await recognizerStatus(),
+      return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, transcribe: transcriber ? "ready" : "off", recognizer: await recognizerStatus(),
         ...(odConfig.wanted || ondemand.enabled ? { ondemand: ondemand.health() } : {}) });
     }
     if (path === "/api/ondemand") {
@@ -257,6 +262,10 @@ export function createApp(o = {}) {
       if (evalVocab) throw new HttpError(409, "eval_mode", "EVAL_VOCAB server has virtual clips; nothing to join");
       return sendJoined(req, res, result);
     }
+    if (path === TRANSCRIBE_ROUTE) {
+      const r = await transcribe(req, url);
+      return json(res, r.status, r.body);
+    }
     if (path === "/api/recognize") {
       only(req, "POST");
       return recognize(req, res, url);
@@ -274,7 +283,7 @@ export function createApp(o = {}) {
       if (!file) throw new HttpError(404, "no_clip", `no clip ${rel ?? path}`);
       return sendFile(req, res, file);
     }
-    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/recognize?mode=sign|spell", "/app/"] });
+    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "/app/"] });
     throw new HttpError(404, "not_found", `no route ${req.method} ${path}`);
   }
 
@@ -355,7 +364,7 @@ export function createApp(o = {}) {
     });
   });
   server.on("close", () => ondemand.stop());
-  return { server, get clips() { return clips; }, get vocab() { return vocab; }, state, ready, sign, agent, ondemand, reloadClips, recognizerUrl, webDist };
+  return { server, get clips() { return clips; }, get vocab() { return vocab; }, state, ready, sign, agent, transcriber, ondemand, reloadClips, recognizerUrl, webDist };
 }
 
 /** On-demand settings: explicit options (tests), null = off, or the environment (never under node --test). */
@@ -515,6 +524,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log(`semantic: ${app.state.semantic}`);
     console.log(`agent: ${app.state.agent}${app.agent?.model ? ` (${app.agent.model})` : ""}`);
     console.log(`ondemand: ${app.ondemand.enabled ? `on (${app.ondemand.clipsDir})` : "off"}`);
+    console.log(`transcribe: ${app.transcriber?.model ?? "off"}`);
     console.log(`recognizer: ${app.recognizerUrl}`);
     console.log(`web app: ${existsSync(join(app.webDist, "index.html")) ? `${lanUrls(port).at(-1)}/app/` : `not built (${app.webDist})`}`);
   });

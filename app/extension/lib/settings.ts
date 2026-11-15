@@ -1,20 +1,22 @@
 import { browser } from "wxt/browser";
 import { DEFAULT_PORT } from "@signlayer/core";
 
-export type Source = "captions" | "mic" | "selection";
+/** What the signer listens to. Selected text (context menu / Alt+Shift+S) works on top of any source. */
+export type Source = "captions" | "tab" | "mic" | "selection";
 export type Size = "s" | "m" | "l";
 export type Corner = "tl" | "tr" | "bl" | "br";
 
 export interface Settings {
   /** Signer on/off (popup switch). Explicit actions (context menu, shortcut) work either way. */
   enabled: boolean;
-  /** What the signer listens to. Selected text always works on top of this. */
   source: Source;
   size: Size;
   /** Caption sheet under the signer. */
   captions: boolean;
   corner: Corner;
   apiUrl: string;
+  /** First-run screen in the popup has been seen. */
+  onboarded: boolean;
 }
 
 export const DEFAULTS: Settings = {
@@ -24,14 +26,20 @@ export const DEFAULTS: Settings = {
   captions: true,
   corner: "br",
   apiUrl: `http://localhost:${DEFAULT_PORT}`,
+  onboarded: false,
 };
 
-/** Card width per size, px (the design's 190/230/330, a touch larger so captions stay readable). */
-export const WIDTHS: Record<Size, number> = { s: 200, m: 260, l: 360 };
+/** Card width per size, px. */
+export const WIDTHS: Record<Size, number> = { s: 196, m: 256, l: 344 };
+
+export const SOURCES: Source[] = ["captions", "tab", "mic", "selection"];
+export const SOURCE_LABEL: Record<Source, string> = { captions: "Captions", tab: "Tab audio", mic: "Microphone", selection: "Selected text" };
 
 export async function getSettings(): Promise<Settings> {
   const s = await browser.storage.local.get(Object.keys(DEFAULTS));
-  return { ...DEFAULTS, ...(s as Partial<Settings>) };
+  const out: Settings = { ...DEFAULTS, ...(s as Partial<Settings>) };
+  if (!SOURCES.includes(out.source)) out.source = DEFAULTS.source;
+  return out;
 }
 
 export const setSettings = (patch: Partial<Settings>) => browser.storage.local.set(patch);
@@ -46,5 +54,3 @@ export function onSettings(cb: (patch: Partial<Settings>) => void) {
   browser.storage.onChanged.addListener(fn);
   return () => browser.storage.onChanged.removeListener(fn);
 }
-
-export const SOURCE_LABEL: Record<Source, string> = { captions: "Captions", mic: "Microphone", selection: "Selected text" };

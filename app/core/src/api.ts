@@ -120,6 +120,8 @@ export interface HealthResponse {
   semantic: "ready" | "loading" | "off";
   /** LLM agent layer: "ready" when an OpenAI key is configured. Older servers omit it. */
   agent?: "ready" | "off";
+  /** POST /api/transcribe (speech-to-text for tab audio): "ready" when an OpenAI key is configured. Older servers omit it. */
+  transcribe?: "ready" | "off";
   /** Sign -> voice recognizer service status. */
   recognizer?: "ready" | "down";
   /** Generate-on-use (server ONDEMAND=on). Omitted when the server has it off. */
@@ -134,6 +136,17 @@ export interface OnDemandHealth {
   done_today: number;
   /** Conservative fal reserve spent today (USD), counted against the server's daily budget. */
   spent_today_est: number;
+}
+
+/**
+ * POST /api/transcribe. Body: one short audio chunk (audio/webm opus from MediaRecorder; also ogg, wav, mpeg, mp4),
+ * up to 2 MB. Query: lang=en (optional), prev=<last words of the previous chunk, for continuity> (optional).
+ * Header X-Audio-Ms (optional, max 30000). text is "" for silence / music.
+ */
+export interface TranscribeResponse {
+  text: string;
+  model: string;
+  timings: { transcribe_ms: number; total_ms: number };
 }
 
 export interface ApiError {
@@ -162,6 +175,7 @@ export const ROUTES = {
   sign: "/api/sign", // POST SignRequest -> SignResponse
   ondemand: "/api/ondemand", // GET generate-on-use status (queue, spend, recent batches)
   clips: "/clips/", // GET /clips/<file>.mp4 (static)
+  transcribe: "/api/transcribe", // POST audio/webm chunk -> TranscribeResponse
   recognize: "/api/recognize", // POST ?mode=sign|spell, octet-stream float32 frames -> RecognizeResponse (proxied to app/recognizer)
   webApp: "/app/", // GET the built web app (phone WebView loads /app/#/sign?embed=1)
 } as const;
