@@ -2,7 +2,7 @@
 // highlight in the speaker's colour. Words without a sign stay muted and are never shown as signed.
 // The sheet keeps the newest lines in view (it rolls up like the prototype's .roll).
 import { useEffect, useRef } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from "react-native";
 import type { WordState } from "@signlayer/core";
 import { colors, fontMedium, shadow, spk } from "../theme";
 
@@ -17,7 +17,7 @@ interface Props {
 export function CaptionSheet({ words, states, unsigned, lines = 3, fontSize = 22 }: Props) {
   const lh = Math.round(fontSize * 1.22);
   const ys = useRef<number[]>([]);
-  const sv = useRef<ScrollView>(null);
+  const sv = useRef<ScrollViewInstance>(null);
   const nowIdx = states.indexOf("now");
   let lastShown = -1;
   states.forEach((s, i) => { if (s !== "upcoming") lastShown = i; });
