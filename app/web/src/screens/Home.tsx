@@ -14,7 +14,7 @@ export function Home({ canListen, onListen, onType, onSettings, onSign }: { canL
       <div className="bar">
         <Mark />
         <Wordmark />
-        <button className="iconbtn" aria-label="Settings" onClick={onSettings}><GearIcon /></button>
+        {!engineeringPreview && <button className="iconbtn" aria-label="Settings" onClick={onSettings}><GearIcon /></button>}
       </div>
       <div className="headline">
         <h1>{engineeringPreview ? <>Engineering<br />preview.</> : <>Hear anything.<br />See it signed.</>}</h1>

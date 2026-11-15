@@ -14,6 +14,9 @@ export function setApiSetting(v: string) {
   try { if (v.trim()) localStorage.setItem(KEY, v.trim()); else localStorage.removeItem(KEY); } catch { /* private mode */ }
 }
 export function apiBase(): string {
+  // The deployed engineering preview has its API on the same origin. A saved
+  // URL from an older preview must not send requests to a stale deployment.
+  if (import.meta.env.VITE_ENGINEERING_PREVIEW === "1" && ENV_API === "same-origin") return "";
   const v = getApiSetting() || ENV_API;
   return v === "same-origin" ? "" : v.replace(/\/$/, "");
 }

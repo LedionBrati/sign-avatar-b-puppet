@@ -43,6 +43,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const [items, setItems] = useState<Entry[]>([]);
   const [edit, setEdit] = useState<{ text: string; at: number } | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [recognizerOffline, setRecognizerOffline] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [sheet, setSheet] = useState<"signs" | "history" | null>(null);
@@ -73,8 +74,8 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     } catch (e) {
       if (!alive.current) return;
       const err = e as Error;
-      if (err instanceof SignApiError && err.status === 503) setBanner("The sign recognizer is offline (503). Start app/recognizer, then try again.");
-      else if (err instanceof SignApiError && err.status === 404) setBanner(`This server has no sign recognizer yet (${apiLabel()}/api/recognize is 404). Try npm run dev:mock.`);
+      if (err instanceof SignApiError && err.status === 503) { setRecognizerOffline(true); setBanner(import.meta.env.VITE_ENGINEERING_PREVIEW === "1" ? "Camera sign recognition is not online yet." : "The sign recognizer is offline (503). Start app/recognizer, then try again."); }
+      else if (err instanceof SignApiError && err.status === 404) setBanner("This server does not provide sign recognition. Check the server address in Settings.");
       else if (err instanceof SignApiError) setBanner(`The recognizer failed: ${err.message}`);
       else setBanner(`Can't reach the server at ${apiLabel()}. Is it running? (${err.message})`);
     } finally {
@@ -115,7 +116,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
       window.__sl = { ...window.__sl, delegate: t.delegate };
       setTrack("ready");
     }).catch((e) => { if (alive.current) { setTrack("error"); setBanner(`Hand tracking didn't load (${(e as Error).message}). Check the connection and reload.`); } });
-    client.health().then((h) => { if (alive.current && h.recognizer === "down") setBanner("The sign recognizer is offline. Start app/recognizer; signing won't work until then."); }).catch(() => {});
+    client.health().then((h) => { if (alive.current && h.recognizer === "down") { setRecognizerOffline(true); setBanner(import.meta.env.VITE_ENGINEERING_PREVIEW === "1" ? "Camera sign recognition is not online yet. Hand tracking is for testing only." : "The sign recognizer is offline. Start app/recognizer; signing won't work until then."); } }).catch(() => {});
     return () => {
       alive.current = false;
       const s = video.current?.srcObject as MediaStream | null;
@@ -215,8 +216,9 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const last = items[items.length - 1];
   const cands = last?.options?.slice(0, 3) ?? [];
   const ready = cam === "ready" && track === "ready";
-  const island = busy ? "Reading the sign" : seg === "recording" ? "Recording" : seg === "armed" ? (hands ? "Start signing" : "Show your hands") : !ready ? (cam === "starting" || track === "loading" ? "Starting camera" : "Camera off") : mode === "spell" ? "Spell mode" : "Ready to sign";
-  const status = cam === "denied" || cam === "nocam" || cam === "error" ? "Camera unavailable" : cam === "starting" ? "Starting the camera…" : track === "loading" ? "Loading hand tracking…" : track === "error" ? "Hand tracking unavailable" : seg === "armed" ? (hands ? "Hands found. Sign now." : "Raise your hands into view") : seg === "recording" ? "Recording… hold still to finish" : busy ? "Reading…" : hands ? "Tracking your hands" : "Tap Sign, then sign one word";
+  const previewOffline = import.meta.env.VITE_ENGINEERING_PREVIEW === "1" && recognizerOffline;
+  const island = previewOffline ? "Recognition offline" : busy ? "Reading the sign" : seg === "recording" ? "Recording" : seg === "armed" ? (hands ? "Start signing" : "Show your hands") : !ready ? (cam === "starting" || track === "loading" ? "Starting camera" : "Camera off") : mode === "spell" ? "Spell mode" : "Ready to sign";
+  const status = previewOffline ? "Hand tracking only — recognition offline" : cam === "denied" || cam === "nocam" || cam === "error" ? "Camera unavailable" : cam === "starting" ? "Starting the camera…" : track === "loading" ? "Loading hand tracking…" : track === "error" ? "Hand tracking unavailable" : seg === "armed" ? (hands ? "Hands found. Sign now." : "Raise your hands into view") : seg === "recording" ? "Recording… hold still to finish" : busy ? "Reading…" : hands ? "Tracking your hands" : "Tap Sign, then sign one word";
   const btn = busy ? (mode === "spell" ? "Reading letters…" : "Reading…") : seg === "recording" ? "Done" : seg === "armed" ? "Cancel" : mode === "spell" ? "Spell" : "Sign";
 
   return (
@@ -237,7 +239,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
         <div className="stage">
           <video ref={video} className="cam" muted playsInline autoPlay />
           <canvas ref={canvas} className="cam overlay" />
-          <span className="sl-chip"><i />You<em>&nbsp;· {mode === "spell" ? "Spelling" : "Signing"}</em></span>
+          <span className="sl-chip"><i />You<em>&nbsp;· {previewOffline ? "Camera test" : mode === "spell" ? "Spelling" : "Signing"}</em></span>
           <span className={`camstatus${hands ? " on" : ""}`}>{status}</span>
         </div>
         <div className="sl-cap sentence">
@@ -267,12 +269,12 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
             <button role="radio" aria-checked={mode === "sign"} className={mode === "sign" ? "on" : ""} onClick={() => setMode("sign")}>Sign</button>
             <button role="radio" aria-checked={mode === "spell"} className={mode === "spell" ? "on" : ""} onClick={() => setMode("spell")}>Spell</button>
           </div>
-          <button id="signbtn" className={`listenbtn signbtn${seg !== "idle" ? " armed" : ""}`} onClick={tap} disabled={!ready || busy}>
+          <button id="signbtn" className={`listenbtn signbtn${seg !== "idle" ? " armed" : ""}`} onClick={tap} disabled={!ready || busy || previewOffline}>
             {busy ? <i className="spin" aria-hidden="true" /> : <HandIcon />}{btn}
           </button>
         </div>
         <div className="footrow">
-          <p className="credit">Knows {SIGN_VOCAB.length} everyday signs · <button className="textlink inline" onClick={() => setSheet("signs")}>See signs</button></p>
+          <p className="credit">{previewOffline ? "Recognizer offline · camera tracking test only" : <>Knows {SIGN_VOCAB.length} everyday signs · <button className="textlink inline" onClick={() => setSheet("signs")}>See signs</button></>}</p>
           <button className="textlink" onClick={() => setSheet("history")} disabled={!history.length}>Said{history.length ? ` (${history.length})` : ""}</button>
         </div>
       </div>
