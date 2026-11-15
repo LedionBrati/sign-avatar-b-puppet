@@ -8,21 +8,25 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "backgroundColor": "#1f3fd6",
-    "splash": { "backgroundColor": "#1f3fd6", "resizeMode": "contain" },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.signlayer.mobile",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "SIGNLAYER turns what people around you say into sign language. Speech is recognised on this device.",
         "NSMicrophoneUsageDescription": "SIGNLAYER listens to speech around you so it can be signed and captioned.",
-        "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": true, "NSAllowsLocalNetworking": true },
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        },
         "NSLocalNetworkUsageDescription": "SIGNLAYER connects to the signing server on your local network."
       }
     },
     "android": {
       "package": "app.signlayer.mobile",
-      "permissions": ["android.permission.RECORD_AUDIO", "android.permission.INTERNET"],
-      "usesCleartextTraffic": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.INTERNET"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#1f3fd6",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -43,10 +47,20 @@
         {
           "microphonePermission": "SIGNLAYER listens to speech around you so it can be signed and captioned.",
           "speechRecognitionPermission": "SIGNLAYER turns what people around you say into sign language. Speech is recognised on this device.",
-          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ]
   }
 }
