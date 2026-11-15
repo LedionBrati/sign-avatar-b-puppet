@@ -1,7 +1,7 @@
-// The listening wave (from the SIGNLAYER concept card): a thin light line with glowing cobalt-to-ice lobes that
-// swell with the real audio level. Silent: a calm, barely moving line. Speech: the lobes light up.
+// The listening wave, the web app's (app/web/src/lib/signWave.ts): a thin white line with glowing cobalt-to-ice lobes
+// that swell with the real audio level, on a soft violet glow so it reads on white glass. Silent: a calm line.
 // Drawing stops by itself once the line has settled (no idle CPU), and while the card is hidden.
-const COLORS = ["31,63,214", "58,108,255", "96,165,255", "56,189,248", "120,140,255", "186,214,255"];
+import { waveColors as COLORS } from "@signlayer/core";
 
 export function createWave(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext("2d")!;
@@ -53,19 +53,25 @@ export function createWave(canvas: HTMLCanvasElement) {
         for (let i = N; i >= 0; i--) ctx.lineTo((i / N) * W, mid + ys[i]! * amp);
         ctx.closePath();
         const gr = ctx.createLinearGradient(0, mid - amp, 0, mid + amp);
-        gr.addColorStop(0, `rgba(${L.c},0.04)`); gr.addColorStop(0.5, `rgba(${L.c},0.85)`); gr.addColorStop(1, `rgba(${L.c},0.04)`);
+        gr.addColorStop(0, `rgba(${L.c},0.05)`); gr.addColorStop(0.5, `rgba(${L.c},0.9)`); gr.addColorStop(1, `rgba(${L.c},0.05)`);
         ctx.fillStyle = gr;
+        ctx.shadowColor = `rgba(${L.c},0.8)`;
+        ctx.shadowBlur = 14 * d;
         ctx.fill();
       }
+      ctx.shadowBlur = 0;
       ctx.globalCompositeOperation = "source-over";
     }
-    // The centre line: brighter while speech is detected.
-    const a = 0.3 + glow * 0.7;
+    // The centre line: white with a violet glow, brighter while speech is detected.
+    const a = 0.55 + glow * 0.45;
     const lg = ctx.createLinearGradient(0, 0, W, 0);
-    lg.addColorStop(0, "rgba(170,190,255,0)"); lg.addColorStop(0.18, `rgba(190,205,255,${a * 0.7})`); lg.addColorStop(0.5, `rgba(235,240,255,${a})`);
-    lg.addColorStop(0.82, `rgba(190,205,255,${a * 0.7})`); lg.addColorStop(1, "rgba(170,190,255,0)");
+    lg.addColorStop(0, "rgba(255,255,255,0)"); lg.addColorStop(0.18, `rgba(255,255,255,${a * 0.75})`); lg.addColorStop(0.5, `rgba(255,255,255,${a})`);
+    lg.addColorStop(0.82, `rgba(255,255,255,${a * 0.75})`); lg.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = lg;
-    ctx.fillRect(0, mid - 0.6 * d, W, 1.2 * d);
+    ctx.shadowColor = `rgba(123,108,255,${0.5 + glow * 0.4})`;
+    ctx.shadowBlur = 6 * d;
+    ctx.fillRect(0, mid - 0.7 * d, W, 1.4 * d);
+    ctx.shadowBlur = 0;
     // Settled (silent, line drawn): stop until the next level.
     const settled = Math.abs(target - level) < 0.002 && target < 0.02 && Math.abs(glow - (voiced ? 1 : active ? 0.35 : 0.18)) < 0.01;
     still = settled ? still + 1 : 0;

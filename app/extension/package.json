@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SIGNLAYER Chrome extension: one side panel that signs your mic or a tab's audio.",
+  "description": "Flux Chrome extension: a floating card that signs your mic or a tab's audio.",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
@@ -13,6 +13,8 @@
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
+    "@fontsource-variable/inter-tight": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
     "@types/chrome": "^0.3.7",
     "@types/node": "^26.6.6",
     "puppeteer-core": "^25.17.0",

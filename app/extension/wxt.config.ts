@@ -2,11 +2,12 @@ import { resolve } from "node:path";
 import { defineConfig } from "wxt";
 import pinned from "./manifest-key.json";
 
-// SIGNLAYER Chrome extension (Manifest V3): a floating, draggable glass card on top of the page. See README.md.
+// Flux Chrome extension (Manifest V3): a floating, draggable glass card on top of the page. See README.md.
 export default defineConfig({
   alias: { "@signlayer/core": resolve(__dirname, "../core/src/index.ts") },
   manifest: {
-    name: "SIGNLAYER",
+    name: "Flux",
+    short_name: "Flux",
     description: "Hear anything, see it signed. Click the icon: a small signer card floats over the page, signing its audio or your mic.",
     // Pinned key: the unpacked extension always gets the same ID.
     key: pinned.key,
@@ -17,7 +18,7 @@ export default defineConfig({
     // Local Network Access rules, so no prompt; the server sends CORS * (and the PNA preflight header) anyway, which
     // is all an https tunnel URL needs. This only makes localhost robust even for a response without CORS headers.
     host_permissions: ["http://localhost/*", "http://127.0.0.1/*"],
-    action: { default_title: "SIGNLAYER" },
+    action: { default_title: "Flux" },
     // The card's UI is an extension page in an iframe on the site, so the site's CSS and CSP never touch it.
     web_accessible_resources: [{ resources: ["overlay.html"], matches: ["<all_urls>"] }],
   },

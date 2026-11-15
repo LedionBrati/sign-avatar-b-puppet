@@ -79,10 +79,10 @@ async function toggle(tab: Browser.tabs.Tab) {
     console.warn("[signlayer] can't open the card here", e);
     await browser.action.setBadgeBackgroundColor({ tabId, color: "#1f3fd6" }).catch(() => {});
     await browser.action.setBadgeText({ tabId, text: "!" }).catch(() => {});
-    await browser.action.setTitle({ tabId, title: "SIGNLAYER can't open on this page (Chrome pages and the Web Store are off-limits). Try a regular website." }).catch(() => {});
+    await browser.action.setTitle({ tabId, title: "Flux can't open on this page (Chrome pages and the Web Store are off-limits). Try a regular website." }).catch(() => {});
     setTimeout(() => {
       browser.action.setBadgeText({ tabId, text: "" }).catch(() => {});
-      browser.action.setTitle({ tabId, title: "SIGNLAYER" }).catch(() => {});
+      browser.action.setTitle({ tabId, title: "Flux" }).catch(() => {});
     }, 5000);
   }
 }

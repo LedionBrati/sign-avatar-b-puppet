@@ -123,7 +123,7 @@ try {
   };
   const state = (frame) => frame.evaluate(() => ({
     view: document.body.dataset.state, pill: document.getElementById("pill").textContent.replace(/\s+/g, " ").trim(),
-    cc: document.getElementById("cc").textContent.replace(/\s+/g, " ").trim(), focus: document.getElementById("focusText").textContent.trim(),
+    cc: document.getElementById("cc").textContent.replace(/\s+/g, " ").trim(),
     note: document.getElementById("note").textContent.trim(),
     chunks: globalThis.__slTab?.chunks ?? [], phrases: globalThis.__sl?.phrases ?? [],
   }));
@@ -132,7 +132,7 @@ try {
     await frame.click("#go");
     let st;
     for (let i = 0; i < 30; i++) { st = await state(frame); if (st.view !== "starting" && st.view !== "ready") break; await sleep(250); }
-    check(st.view === "listening" || st.view === "signing", `${name}: tab audio started: ${st.view} | ${st.pill} | ${st.focus} ${st.note}`);
+    check(st.view === "listening" || st.view === "signing", `${name}: tab audio started: ${st.view} | ${st.pill} | ${st.note}`);
     await sleep(1500);
     await shots(`${name}-listening`, frame);
     const seen = new Set();
@@ -142,7 +142,7 @@ try {
       st = await state(frame);
       for (const c of st.chunks) if (c.text && !seen.has(c.text)) { seen.add(c.text); log(`transcribed (${c.ms} ms audio, ${c.latency_ms} ms rtt): ${c.text}`); }
       if (st.view === "signing" && !signing) { signing = true; log(`signing: ${st.pill} :: ${st.cc}`); await sleep(500); await shots(`${name}-signing`, frame); }
-      if (captionShot && st.view === "caption_only" && !captionOnly) { captionOnly = true; log(`caption only: ${st.focus} :: ${st.note}`); await sleep(700); await shots(`${name}-caption-only`, frame); }
+      if (captionShot && !captionOnly && st.phrases.some((p) => p.status !== "fully_supported")) { captionOnly = true; log(`not signed (signer stays still): ${st.cc}`); await sleep(700); await shots(`${name}-caption-only`, frame); }
       await sleep(200);
     }
     check(seen.size >= 1, `${name}: tab audio produced text: ${seen.size} chunks`);
@@ -191,16 +191,19 @@ try {
     log("no caption-only phrase in this window; injecting one");
     await sleep(2500);
     await frame.evaluate(() => globalThis.__sl.sign("Rice University, Houston, 1962"));
-    for (let i = 0; i < 40 && st.view !== "caption_only"; i++) { await sleep(250); st = await state(frame); }
-    check(st.view === "caption_only", `caption only: ${st.focus} :: ${st.note}`);
+    for (let i = 0; i < 40 && !/Houston/.test(st.cc); i++) { await sleep(250); st = await state(frame); }
+    check(/Houston/.test(st.cc) && st.view !== "signing" && !st.note, `not signed, no popup, transcript keeps the words: ${st.view} :: ${st.cc}`);
     await sleep(700);
     await shots("light-caption-only", frame);
   }
 
   // Size: M -> L -> S -> M.
   const w = [];
-  for (let i = 0; i < 3; i++) { await frame.click("#size"); await sleep(400); w.push(Math.round((await cardBox(frame)).width)); if (i < 2) await shots(`light-size-${i ? "s" : "l"}`, frame); }
-  check(w[0] > w[2] && w[2] > w[1], `size button: L ${w[0]}px, S ${w[1]}px, M ${w[2]}px`);
+  await frame.click("#gear");
+  await sleep(300);
+  for (let i = 0; i < 3; i++) { await frame.click(`#size [data-size="${["l", "s", "m"][i]}"]`); await sleep(400); w.push(Math.round((await cardBox(frame)).width)); if (i < 2) await shots(`light-size-${i ? "s" : "l"}`, frame); }
+  check(w[0] > w[2] && w[2] > w[1], `size (gear menu): L ${w[0]}px, S ${w[1]}px, M ${w[2]}px`);
+  await frame.click("#gear");
 
   // Toolbar click again: the card closes.
   await extension.triggerAction(page);
