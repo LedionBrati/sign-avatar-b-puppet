@@ -62,6 +62,7 @@ try {
           const vs = [...document.querySelectorAll(".sl-signer video")];
           const front = vs.find((v) => v.classList.contains("front"));
           const op = vs.map((v) => (v.readyState >= 2 ? +getComputedStyle(v).opacity : 0)); // a video with no decoded frame shows nothing
+          window.__rs = vs.map((v) => v.readyState);
           window.__trace.push({ t: performance.now(), src: front?.currentSrc.slice(-12) ?? "", ct: front?.currentTime ?? 0, paused: front?.paused ?? true, op, island: document.querySelector(".island")?.textContent ?? "" });
           if (!document.querySelector(".sumline")) requestAnimationFrame(tick);
         };
@@ -82,7 +83,7 @@ try {
         const a = trace[i - 1], b = trace[i];
         if (a.src && a.src === b.src && a.ct === b.ct && !b.paused) stall = Math.max(stall, b.t - a.t);
         if (b.op.some((o) => o > 0.99)) opened = true;
-        else if (opened) see++;
+        else if (opened && ++see <= 3) console.log(`  see-through @${((b.t - trace[0].t) / 1000).toFixed(2)}s`, JSON.stringify(b.op), b.island, b.src);
       }
       const starts = trace.filter((x, i, arr) => x.src && x.src !== arr[i - 1]?.src).map((x) => `${x.src.replace(/^.*\//, "")}@${((x.t - trace[0].t) / 1000).toFixed(2)}`);
       console.log(`[${size}/${theme}] clips:`, starts.join(" → "));

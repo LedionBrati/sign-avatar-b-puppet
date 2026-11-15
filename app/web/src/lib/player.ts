@@ -129,7 +129,8 @@ export class GaplessPlayer {
     if (!ready.has(url)) {
       // Not fetched yet: switch to the blob as soon as it lands, if this slot is still only preloading it.
       void prefetchClip(url).then((u) => {
-        if (u && this.loaded[slot] === i && slot !== this.front && this.pending !== i && v.src === url) { v.src = u; v.load(); }
+        // Only while it is still waiting in the wings: never under a crossfade or once it has played.
+        if (u && this.loaded[slot] === i && i > this.index && slot !== this.front && this.pending !== i && v.src === url) { v.src = u; v.load(); }
       });
     }
   }
