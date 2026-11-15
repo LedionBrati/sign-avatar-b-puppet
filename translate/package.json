@@ -1,0 +1,18 @@
+{
+  "name": "sign-translate",
+  "private": true,
+  "type": "module",
+  "description": "English -> ASL sign plan (README 6.5) with local rules + optional local embeddings. No remote model/API calls at translate time.",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "index.mjs",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:rules": "node test/translate.test.mjs --no-semantic"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "an-array-of-english-words": "^2.0.0"
+  }
+}

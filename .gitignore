@@ -26,3 +26,4 @@ photos/
 puppet/models/
 puppet/node_modules/
 puppet/dist/
+translate/cache/
