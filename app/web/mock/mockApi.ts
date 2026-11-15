@@ -1,9 +1,10 @@
 // Dev-only mock of app/server, so the web app runs before the real server exists.
-// `npm run dev:mock` serves POST /api/sign, GET /api/vocab, GET /api/health and GET /clips/* from the Vite dev server.
+// `npm run dev:mock` serves POST /api/sign, POST /api/recognize, GET /api/vocab, GET /api/health and GET /clips/* from the Vite dev server.
 // The translator here is a toy (word lookup against clips/manifest.json); the real one is translate/ behind app/server.
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
+import { SIGN_VOCAB } from "../src/lib/vocab";
 
 interface ManifestEntry { gloss: string; file: string; frames: number; seconds: number }
 
@@ -56,6 +57,21 @@ export function mockSign(text: string, manifest: Record<string, ManifestEntry>) 
   return { text, words, playlist, unsupported, fingerspell, markers: [], plan: { mock: true }, timings: { translate_ms: ms, total_ms: ms } };
 }
 
+// Toy recognizer for POST /api/recognize (sign -> speak) until app/recognizer is running. It does not look at the
+// landmarks beyond counting frames: it cycles through a few everyday signs with plausible softmax scores.
+// MOCK_RECOGNIZER=down makes it answer 503 like the real proxy does when the recognizer is offline.
+const CYCLE = ["hello", "where", "water", "please", "thankyou", "drink", "milk", "yes"];
+let turn = 0;
+export function mockRecognize(mode: string, frames: number) {
+  const t0 = performance.now();
+  if (mode === "spell") return { mode, options: [], text: ["MARIA", "NIKOS", "ATHENS"][turn++ % 3], frames, timings: { inference_ms: 9, total_ms: 11 } };
+  const top = CYCLE[turn++ % CYCLE.length]!;
+  const rest = SIGN_VOCAB.filter((l) => l !== top).sort(() => Math.random() - 0.5).slice(0, 4);
+  const conf = [0.58 + Math.random() * 0.3, 0.09, 0.05, 0.03, 0.02];
+  const options = [top, ...rest].map((label, i) => ({ label, text: label === "thankyou" ? "thank you" : label, confidence: +conf[i]!.toFixed(3) }));
+  return { mode, options, frames, timings: { inference_ms: 14, total_ms: +(performance.now() - t0 + 14).toFixed(1) } };
+}
+
 export function mockApi(): Plugin {
   return {
     name: "signlayer-mock-api",
@@ -71,10 +87,22 @@ export function mockApi(): Plugin {
       server.middlewares.use((req, res, next) => {
         const url = new URL(req.url ?? "/", "http://x");
         if (req.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
-          res.writeHead(204, { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "GET,POST" });
+          res.writeHead(204, { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type, x-frames", "access-control-allow-methods": "GET,POST" });
           return res.end();
         }
-        if (url.pathname === "/api/health") return json(res, 200, { ok: true, signs: Object.keys(manifest()).length, semantic: "off" });
+        if (url.pathname === "/api/health") return json(res, 200, { ok: true, signs: Object.keys(manifest()).length, semantic: "off", recognizer: process.env.MOCK_RECOGNIZER === "down" ? "down" : "ready" });
+        if (url.pathname === "/api/recognize" && req.method === "POST") {
+          const chunks: Buffer[] = [];
+          req.on("data", (c: Buffer) => chunks.push(c));
+          req.on("end", () => {
+            if (process.env.MOCK_RECOGNIZER === "down") return json(res, 503, { error: { code: "recognizer_down", message: "sign recognizer is not running" } });
+            const bytes = Buffer.concat(chunks).length;
+            const frames = bytes / (543 * 3 * 4);
+            if (!Number.isInteger(frames) || frames < 1) return json(res, 400, { error: { code: "bad_frames", message: `body is ${bytes} bytes, not N x 543 x 3 float32` } });
+            setTimeout(() => json(res, 200, mockRecognize(url.searchParams.get("mode") ?? "sign", frames)), 90);
+          });
+          return;
+        }
         if (url.pathname === "/api/vocab")
           return json(res, 200, { signs: Object.entries(manifest()).map(([id, m]) => ({ motion_id: id, gloss: m.gloss, duration_s: m.seconds })) });
         if (url.pathname === "/api/sign" && req.method === "POST") {
