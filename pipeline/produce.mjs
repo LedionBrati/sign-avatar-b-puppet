@@ -284,7 +284,8 @@ async function takeJob(b, k) {
       catch (e) { stopReason = e.message; log(`STOP: ${e.message}`); return false; }
       try {
         // Uploads are free and may fail on a bad network: nothing is committed until the submit call starts.
-        b.render.fal_url ??= await fal.upload(b.render.local);
+        if (b.render.fal_url_at && Date.now() - Date.parse(b.render.fal_url_at) > 12 * 3600_000) b.render.fal_url = null;   // re-upload stale storage URLs
+        if (!b.render.fal_url) Object.assign(b.render, { fal_url: await fal.upload(b.render.local), fal_url_at: new Date().toISOString() });
         if (MODEL.avatarImage) avatarUrl ??= await fal.upload(AVATAR_IMAGE);
         const input = modelInput(MODEL, { videoUrl: b.render.fal_url, avatarUrl, frames: b.frames, seed: t.seed, prompt: opt.prompt ?? null, ltxImage: Boolean(opt["ltx-image"]) });
         spentThisRun = round(spentThisRun + b.cost_per_take, 3);   // committed from here: the paid call starts
@@ -296,7 +297,9 @@ async function takeJob(b, k) {
         try { id = await fal.submit(MODEL.endpoint, input); }
         catch (e) {
           const status = e?.status ?? e?.response?.status;
-          if (status >= 400 && status < 500) {     // refused by fal (validation, auth): not a billed job
+          const code = e?.cause?.code ?? e?.code;
+          const neverSent = ["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH"].includes(code);   // no connection: fal never got it
+          if ((status >= 400 && status < 500) || neverSent) {     // refused by fal (validation, auth) or never sent: not a billed job
             Object.assign(t, { status: "planned", error: String(e?.body?.detail ? JSON.stringify(e.body.detail) : e).slice(0, 500) });
             state.spent_usd = round(state.spent_usd - b.cost_per_take, 3);
             spentThisRun = round(spentThisRun - b.cost_per_take, 3);
