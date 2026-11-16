@@ -90,6 +90,8 @@ export interface PuppetOptions {
   realistic?: boolean;
   /** passes drawn side by side, left to right, each `width` wide (default ["rgb"]) */
   passes?: Pass[];
+  /** cheap shading for software WebGL: Lambert + hemisphere light, no environment map (realistic avatar only) */
+  lite?: boolean;
   /** WebGL multisampling (default true). Off is faster on software WebGL. */
   antialias?: boolean;
 }
@@ -141,7 +143,7 @@ export class VrmPuppet {
     this.opts = {
       solver: opts.solver ?? "direct", mannequin: opts.mannequin ?? false, closeup: opts.closeup ?? false,
       background: opts.background ?? (opts.mannequin ? "#2b2b2f" : "#1d2026"), realistic: opts.realistic ?? false,
-      passes: opts.passes?.length ? opts.passes : ["rgb"], antialias: opts.antialias ?? true,
+      passes: opts.passes?.length ? opts.passes : ["rgb"], antialias: opts.antialias ?? true, lite: opts.lite ?? false,
     };
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.opts.antialias, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
@@ -227,6 +229,23 @@ export class VrmPuppet {
         else if (/brow|lash/.test(n)) { m.color.setRGB(0.25, 0.18, 0.14, THREE.SRGBColorSpace); m.alphaTest = 0.3; m.transparent = false; m.side = THREE.DoubleSide; }
       }
     });
+    if (this.opts.lite) {
+      // software WebGL: Lambert shading and a hemisphere light instead of PBR + environment map (much cheaper per pixel)
+      this.scene.environment = null;
+      const hemi = new THREE.HemisphereLight(0xf4f1ee, 0x3a3836, 1.6);
+      this.lights.push(hemi);
+      this.scene.add(hemi);
+      this.vrm!.scene.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const conv = (m: THREE.Material) => {
+          const s = m as THREE.MeshStandardMaterial;
+          if (!s.isMeshStandardMaterial) return m;
+          return new THREE.MeshLambertMaterial({ name: s.name, color: s.color, map: s.map, alphaTest: s.alphaTest, side: s.side, transparent: s.transparent });
+        };
+        mesh.material = Array.isArray(mesh.material) ? mesh.material.map(conv) : conv(mesh.material);
+      });
+    }
   }
 
   private applyMannequin() {
@@ -757,12 +776,14 @@ export class VrmPuppet {
   private handPre: { motion: Motion; left: (HandAngles | null)[]; right: (HandAngles | null)[] } | null = null;
 
   /**
-   * The 21 hand points of one frame in avatar axes (metres): motion v2 `hands3d` when present and confident,
-   * else the tracker's world hand landmarks, else the image landmarks scaled to pixels.
+   * The 21 hand points of one frame in avatar axes (metres): motion v2 `hands3d` when present (already fitted
+   * to an anatomical skeleton; its conf is often low only because the source was blurry, the hand is still a
+   * possible hand), else the tracker's world hand landmarks, else the image landmarks scaled to pixels.
+   * Fingers only use the hand's shape (wrist-relative), so hands3d and v1 points mix freely frame to frame.
    */
   handPoints(f: MotionFrame, m: Motion, side: Side): V3[] | null {
-    const h3 = (f as any).hands3d?.[side];
-    if (h3?.joints?.length === 21 && (h3.conf ?? 1) >= 0.3) return h3.joints.map((p: number[]) => mpToThree(p) as V3);
+    const h3 = f.hands3d?.[side];
+    if (h3?.joints?.length === 21) return h3.joints.map((p) => mpToThree(p) as V3);
     const hand = side === "left" ? f.leftHand : f.rightHand;
     const handW = side === "left" ? f.leftHandWorld : f.rightHandWorld;
     if (handW) return handW.map((p) => mpToThree(p) as V3);

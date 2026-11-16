@@ -6,17 +6,23 @@
 //   node puppet/render.mjs --motion PATH --view skeleton|vrm|sidebyside --out out/puppet/x.mp4
 //        [--video SRC.mp4] [--size 540x720] [--fps 24] [--closeup] [--solver direct|kalidokit]
 //        [--mannequin] [--labels 0|1] [--model URL] [--frames N] [--raw] [--gpu]
-//        [--avatar signer] [--solver anatomic] [--passes rgb,depth,normal,seg] [--aa 0] [--capture raw|png]
+//        [--avatar signer] [--solver anatomic] [--passes rgb,depth,normal,seg] [--aa 0] [--capture jpeg|raw|post|png] [--workers N]
 //
 // --avatar signer   the realistic reference avatar (puppet/models/signer.glb, puppet/avatar/README.md); its
 //                   default solver is anatomic (src/hand.ts: joint limits, fingertip IK, no finger overlap).
 // --passes          extra passes from the same camera, each written to its own mp4 next to --out:
 //                   x.mp4 (rgb), x.depth.mp4, x.normal.mp4, x.seg.mp4 (all frame-aligned, view vrm only).
-// --capture raw     (default for --view vrm) the page reads the WebGL pixels and hands them back base64-encoded
-//                   (native FileReader), 24 frames per page call; they go straight into ffmpeg as raw RGBA: no PNG
-//                   encode or decode. --capture post sends them as a binary HTTP POST instead (slower here).
-//                   --capture png is the old path (page composites all panels, toBlob PNG, base64).
+// --capture jpeg    (default for --view vrm) the page encodes each frame with the browser's own JPEG encoder
+//                   (quality --jpeg-quality, default 0.95) and hands back 24 frames per page call; ffmpeg reads
+//                   them as mjpeg. About 15x fewer bytes than raw, no PNG encode/decode.
+//           raw     readPixels RGBA, base64 over the DevTools protocol, rawvideo into ffmpeg: lossless, but the
+//                   ~1.5 MB/frame transfer makes it slower than jpeg here. Use it when depth must be exact.
+//           post    raw pixels as a binary HTTP POST to the render server (slower still on Windows).
+//           png     the old path (page composites all panels, toBlob PNG, base64). Default for other views.
+// --workers N       N Chrome processes render interleaved 1 s chunks (jpeg/raw capture). On this 10-core laptop it
+//                   did not help: SwiftShader already uses every core. Kept for many-core machines.
 // --aa 0            no multisampling: faster on software WebGL, slightly jaggier edges.
+// --lite            cheap shading (Lambert, hemisphere light, no environment map) for software WebGL.
 //
 // The puppet is smoothed by default (src/track.ts: tracker glitches out, dropouts bridged, light zero-phase
 // smoothing, hair/cloth physics); frame i of the video is still motion frame i, nothing lags.
@@ -63,6 +69,7 @@ const raw = flag("raw");
 const gpu = flag("gpu");
 const passes = String(arg("passes", "rgb")).split(",").filter(Boolean);
 const aa = String(arg("aa", "1")) !== "0";
+const lite = flag("lite");
 const capture = String(arg("capture", view === "vrm" ? "jpeg" : "png")); // jpeg | raw | post | png
 const jpegQ = Number(arg("jpeg-quality", 0.95));
 if (!["skeleton", "vrm", "sidebyside"].includes(view)) { console.error(`--view must be skeleton, vrm or sidebyside`); process.exit(1); }
@@ -134,12 +141,13 @@ if (raw) params.set("smooth", "0");
 if (srcTpl) params.set("srcframes", srcTpl);
 if (passes.join(",") !== "rgb") params.set("passes", passes.join(","));
 if (!aa) params.set("aa", "0");
+if (lite) params.set("lite", "1");
 const panels = view === "sidebyside" ? (srcTpl ? 3 : 2) : passes.length;
 const pageW = W * panels;
 
 // 3. headless Chrome
 const puppeteer = (await import("puppeteer-core")).default;
-const browser = await puppeteer.launch({
+const launch = () => puppeteer.launch({
   executablePath: findChrome(),
   headless: true,
   args: [...(gpu
@@ -148,20 +156,33 @@ const browser = await puppeteer.launch({
   "--hide-scrollbars", "--force-device-scale-factor=1", "--no-first-run"],
   defaultViewport: { width: pageW, height: H, deviceScaleFactor: 1 },
 });
-let ffmpeg;
-try {
-  const page = await browser.newPage();
-  const logs = [];
+// --workers N (fast capture only): N Chrome processes render interleaved 24-frame chunks. Software WebGL runs
+// one context on a few threads; separate processes use the other cores. Frames are still written in order.
+// Each worker solves the motion itself (same deterministic bake). With hair/cloth physics (the VRM) the springs
+// restart at each chunk a worker skips to, so keep 1 worker for the VRM; the signer has no springs.
+const workers = Math.max(1, Number(arg("workers", 1)));
+const browsers = [await launch()];
+const browser = browsers[0];
+const logs = [];
+async function openPage(b) {
+  const page = await b.newPage();
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warn") logs.push(`${m.type()}: ${m.text()}`); });
   page.on("pageerror", (e) => logs.push(`pageerror: ${e.message}`));
   await page.goto(`${base}/index.html?${params}`, { waitUntil: "load", timeout: 120000 });
-  let info;
   try {
-    info = await page.evaluate(() => window.puppetReady);
+    return { page, info: await page.evaluate(() => window.puppetReady) };
   } catch (e) {
     const err = await page.evaluate(() => document.getElementById("error")?.textContent).catch(() => "");
     throw new Error(`page failed to start: ${e.message}\n${err}\n${logs.join("\n")}`);
   }
+}
+let ffmpeg;
+try {
+  const extra = capture !== "png" && workers > 1
+    ? Promise.all(Array.from({ length: workers - 1 }, async () => { const b = await launch(); browsers.push(b); return openPage(b); }))
+    : Promise.resolve([]);
+  const { page, info } = await openPage(browser);
+  const pages = [page, ...(await extra).map((x) => x.page)];
   const gl = await page.evaluate(() => {
     const c = document.createElement("canvas").getContext("webgl");
     const ext = c?.getExtension("WEBGL_debug_renderer_info");
@@ -210,17 +231,38 @@ try {
     const CHUNK = 24; // one page call per second of video
     const ms = { draw: 0, read: 0, post: 0 };
     let tTransfer = 0;
-    for (let a = 0; a < N; a += CHUNK) {
-      const c0 = Date.now();
-      const r = await page.evaluate((from, to, s, q) => window.renderRange(from, to, s, q), a, Math.min(N, a + CHUNK),
-        capture === "post" ? "/__sink" : null, capture === "jpeg" ? jpegQ : 0);
-      tTransfer += Date.now() - c0 - (r.ms.draw + r.ms.read + r.ms.post);
-      reports.push(...r.reports);
-      for (const f of r.frames) await sinkWrite(Buffer.from(f, "base64"));
-      for (const k of Object.keys(ms)) ms[k] += r.ms[k];
-    }
+    if (capture === "post" && pages.length > 1) throw new Error("--capture post works with 1 worker only");
+    // chunks are handed out in order; finished ones wait in `ready` until everything before them is written
+    const chunks = [];
+    for (let a = 0; a < N; a += CHUNK) chunks.push([a, Math.min(N, a + CHUNK)]);
+    const ready = new Map();
+    let nextChunk = 0, nextWrite = 0, writing = Promise.resolve();
+    const flush = () => {
+      writing = writing.then(async () => {
+        while (ready.has(nextWrite)) {
+          const r = ready.get(nextWrite); ready.delete(nextWrite); nextWrite++;
+          reports.push(...r.reports);
+          for (const f of r.frames) await sinkWrite(Buffer.from(f, "base64"));
+        }
+      });
+      return writing;
+    };
+    await Promise.all(pages.map(async (pg) => {
+      while (nextChunk < chunks.length) {
+        const k = nextChunk++;
+        const [from, to] = chunks[k];
+        const c0 = Date.now();
+        const r = await pg.evaluate((a, b, s, q) => window.renderRange(a, b, s, q), from, to,
+          capture === "post" ? "/__sink" : null, capture === "jpeg" ? jpegQ : 0);
+        tTransfer += Date.now() - c0 - (r.ms.draw + r.ms.read + r.ms.post);
+        for (const key of Object.keys(ms)) ms[key] += r.ms[key];
+        if (capture === "post") reports.push(...r.reports);
+        else { ready.set(k, r); flush(); }
+      }
+    }));
+    await flush();
     process.stdout.write("\n");
-    console.log(`per frame: draw ${(ms.draw / N).toFixed(1)} ms, ${capture === "jpeg" ? "jpeg encode" : "readPixels"} ${(ms.read / N).toFixed(1)}, ${capture === "post" ? "POST" : "base64"} ${(ms.post / N).toFixed(1)}, page -> node ${(tTransfer / N).toFixed(1)}`);
+    console.log(`per frame (summed over ${pages.length} worker(s)): draw ${(ms.draw / N).toFixed(1)} ms, ${capture === "jpeg" ? "jpeg encode" : "readPixels"} ${(ms.read / N).toFixed(1)}, ${capture === "post" ? "POST" : "base64"} ${(ms.post / N).toFixed(1)}, page -> node ${(tTransfer / N).toFixed(1)}`);
   } else {
     for (let i = 0; i < N; i++) {
       const a = Date.now();
@@ -299,8 +341,8 @@ try {
 } finally {
   // browser.close() can hang for minutes on Windows; give it a moment, then kill the process tree
   const timeout = (ms) => new Promise((res) => setTimeout(res, ms));
-  await Promise.race([browser.close().catch(() => {}), timeout(5000)]);
-  try { browser.process()?.kill("SIGKILL"); } catch {}
+  await Promise.race([Promise.all(browsers.map((b) => b.close().catch(() => {}))), timeout(5000)]);
+  for (const b of browsers) { try { b.process()?.kill("SIGKILL"); } catch {} }
   await Promise.race([server.close().catch(() => {}), timeout(3000)]);
   rmSync(work, { recursive: true, force: true });
   process.exit(process.exitCode ?? 0);

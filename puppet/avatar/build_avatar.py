@@ -6,7 +6,7 @@
 # puppet/avatar/build.mjs downloads MPFB and the asset pack and runs this for you.
 #
 # What it makes: a woman with realistic proportions, MakeHuman "mixamo" rig (3 bones per finger and thumb,
-# plus tip bones), skin texture, brown eyes, short dark bob, and a black long-sleeve top painted onto the
+# plus tip bones), skin texture, brown eyes, long hair (darkened in the player), and a black long-sleeve top painted onto the
 # body mesh (sleeves end at the wrist, crew neck), so the skin-tone hands stand out against it.
 # Licence: the MakeHuman base mesh, targets, rig and the system assets are CC0; MPFB (the tool) is GPL-3.0,
 # its output is not covered by the GPL.

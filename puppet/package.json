@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "fixture": "node scripts/make-fixture.mjs",
     "fetch-model": "node fetch-model.mjs",
-    "render": "node render.mjs"
+    "render": "node render.mjs",
+    "build:player": "vite build --config vite.player.config.ts"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.5",

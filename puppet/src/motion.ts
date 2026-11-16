@@ -19,6 +19,17 @@ export interface MotionFrame {
   /** 21 x [x, y, z] image coords, the SUBJECT's right hand */
   rightHand: Vec3[] | null;
   rightHandWorld?: Vec3[] | null;
+  /** v2: anatomically fitted hands (FORMAT.md v2): joints wrist-relative metres, camera axes (y down) */
+  hands3d?: { left: Hand3d | null; right: Hand3d | null } | null;
+}
+
+export interface Hand3d {
+  /** 21 x [x, y, z] metres, wrist-relative, MediaPipe hand joint order, poseWorld axes */
+  joints: Vec3[];
+  /** 16 local joint rotations [qx, qy, qz, qw], MANO joint order */
+  rot?: number[][];
+  conf?: number;
+  src?: string;
 }
 
 export interface MotionSource {
@@ -31,7 +42,7 @@ export interface MotionSource {
 }
 
 export interface Motion {
-  version: 1;
+  version: 1 | 2;
   name: string;
   /** canonical catalog ID (catalog/signs.json), e.g. "HELLO"; null for a sentence clip. Optional. */
   motion_id?: string | null;
@@ -89,7 +100,7 @@ export function validateMotion(x: unknown): { motion: Motion; warnings: string[]
   const warnings: string[] = [];
   if (typeof x !== "object" || x === null) throw new MotionError(["not an object"]);
   const m = x as Record<string, unknown>;
-  if (m.version !== 1) problems.push(`version: expected 1, got ${JSON.stringify(m.version)}`);
+  if (m.version !== 1 && m.version !== 2) problems.push(`version: expected 1 or 2, got ${JSON.stringify(m.version)}`); // v2 = v1 + optional hands3d
   if (m.motion_id !== undefined && m.motion_id !== null && typeof m.motion_id !== "string") problems.push("motion_id: expected a string or null");
   if (typeof m.fps !== "number" || !(m.fps > 0)) problems.push("fps: expected a positive number");
   if (typeof m.width !== "number" || !(m.width > 0)) problems.push("width: expected a positive number");
