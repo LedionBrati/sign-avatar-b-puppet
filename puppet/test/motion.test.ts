@@ -24,7 +24,7 @@ describe("validateMotion", () => {
 
   it("rejects wrong version, wrong point counts and non-finite numbers, listing every problem", () => {
     const m = makeMotion(3, () => 0.5) as any;
-    m.version = 2;
+    m.version = 3;
     m.frames[0].rightHand = m.frames[0].rightHand.slice(0, 20);
     m.frames[1].pose[3][1] = NaN;
     let err: unknown;
@@ -34,6 +34,15 @@ describe("validateMotion", () => {
     expect(p).toMatch(/version/);
     expect(p).toMatch(/rightHand: expected 21 points, got 20/);
     expect(p).toMatch(/frames\[1\]\.pose\[3\]: non-finite/);
+  });
+
+  it("accepts v2 (v1 + hands3d) and checks the hands3d joints", () => {
+    const m = makeMotion(2, () => 0.5) as any;
+    m.version = 2;
+    m.frames[0].hands3d = { left: null, right: { joints: Array.from({ length: 21 }, () => [0, 0, 0]), conf: 0.8 } };
+    expect(validateMotion(m).motion.frames[0].hands3d?.right?.joints).toHaveLength(21);
+    m.frames[1].hands3d = { left: { joints: [[0, 0, 0]] }, right: null };
+    expect(() => validateMotion(m)).toThrow(/hands3d\.left\.joints/);
   });
 
   it("accepts files with or without motion_id, rejects a non-string one", () => {

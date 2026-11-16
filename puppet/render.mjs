@@ -147,13 +147,20 @@ const pageW = W * panels;
 
 // 3. headless Chrome
 const puppeteer = (await import("puppeteer-core")).default;
+// hardware WebGL: ANGLE on D3D11 (Windows), Metal (macOS), Vulkan (Linux, e.g. an NVIDIA cloud GPU with the
+// Vulkan driver). The run stops if Chrome still falls back to software, so a GPU you pay for is really used.
+const gpuArgs = process.platform === "win32" ? ["--use-angle=d3d11"]
+  : process.platform === "darwin" ? ["--use-angle=metal"]
+  : ["--use-angle=vulkan", "--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan"];
+// containers run as root, where Chrome needs --no-sandbox; /dev/shm is small in Docker
+const containerArgs = process.platform === "linux" ? ["--disable-dev-shm-usage", ...(process.getuid?.() === 0 ? ["--no-sandbox"] : [])] : [];
 const launch = () => puppeteer.launch({
   executablePath: findChrome(),
   headless: true,
   args: [...(gpu
-    ? ["--enable-gpu", "--use-angle=d3d11", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"]
+    ? ["--enable-gpu", ...gpuArgs, "--ignore-gpu-blocklist", "--enable-gpu-rasterization"]
     : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]),
-  "--hide-scrollbars", "--force-device-scale-factor=1", "--no-first-run"],
+  ...containerArgs, "--hide-scrollbars", "--force-device-scale-factor=1", "--no-first-run"],
   defaultViewport: { width: pageW, height: H, deviceScaleFactor: 1 },
 });
 // --workers N (fast capture only): N Chrome processes render interleaved 24-frame chunks. Software WebGL runs

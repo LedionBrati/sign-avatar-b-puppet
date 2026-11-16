@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  FINGERS, FINGER_LM, LIMITS, OneEuro, countOverlaps, countViolations, fk, geomFromPoints, palmFrame, readAngles,
+  FINGERS, FINGER_LM, LIMITS, OneEuro, clampFinger, countOverlaps, jointRange, palmFrameRobust, countViolations, fk, geomFromPoints, palmFrame, readAngles,
   smoothSequence, solveHand, toLocal, type Finger, type HandAngles, type V3,
 } from "../src/hand";
 
@@ -65,6 +65,25 @@ describe("hand solver", () => {
     const F = palmFrame(mirrored, "left")!;
     const r = readAngles(mirrored.map((p) => toLocal(F, p)));
     for (const f of FINGERS) for (let k = 0; k < 4; k++) expect([f, k, Math.abs(r[f][k] - a[f][k]) < 0.02]).toEqual([f, k, true]);
+  });
+
+  it("curled fingers can spread less than open ones (coupled limits)", () => {
+    const open = jointRange("index", 0, [0, 0, 0, 0]), fist = jointRange("index", 0, [0, 90 * D, 90 * D, 0]);
+    expect(fist[1] - fist[0]).toBeLessThan(0.3 * (open[1] - open[0]));
+    const c = clampFinger("index", [30 * D, 90 * D, 200 * D, 0]);
+    expect(c[2]).toBeCloseTo(110 * D);
+    expect(c[0]).toBeLessThanOrEqual(fist[1] + 1e-9);
+  });
+
+  it("repairs a palm the tracker read inside out", () => {
+    // a loose fist, then the same points with the palm normal flipped (as an edge-on misread looks)
+    const fist = handFrom(deg({ thumb: [30, 30, 30, 20], index: [0, 80, 90, 40], middle: [0, 80, 90, 40], ring: [0, 80, 90, 40], pinky: [0, 80, 90, 40] }));
+    const flipped = fist.map(([x, y, z]) => [x, y, -z] as V3);
+    expect(palmFrameRobust(fist, "right")!.flipped).toBe(false);
+    const F = palmFrameRobust(flipped, "right")!;
+    expect(F.flipped).toBe(true);
+    const s = solveHand(flipped, "right", GEOM)!;
+    expect(s.angles.middle[1] + s.angles.middle[2]).toBeGreaterThan(120 * D); // curled, not bent backwards
   });
 
   it("one-euro smoothing removes jitter and the zero-phase pass does not lag", () => {

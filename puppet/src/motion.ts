@@ -117,6 +117,16 @@ export function validateMotion(x: unknown): { motion: Motion; warnings: string[]
       else { if (f.t < prevT) problems.push(`${where}.t: time goes backwards`); prevT = f.t; }
       if (f.i !== undefined && f.i !== k) warnings.push(`${where}.i is ${f.i}, expected ${k}`);
       for (const part of Object.keys(SIZES) as Part[]) checkPoints(f[part], part, where, problems, warnings);
+      // v2: hands3d.{left,right} is null or { joints: 21 x [x,y,z], rot?, conf? }
+      if (f.hands3d !== undefined && f.hands3d !== null) {
+        for (const side of ["left", "right"]) {
+          const h = f.hands3d[side];
+          if (h === null || h === undefined) continue;
+          const j = h.joints;
+          if (!Array.isArray(j) || j.length !== 21 || !j.every((p: unknown) => Array.isArray(p) && p.length === 3 && p.every((n) => typeof n === "number" && Number.isFinite(n))))
+            problems.push(`${where}.hands3d.${side}.joints: expected 21 x [x, y, z] finite numbers`);
+        }
+      }
     });
   }
   if (problems.length) throw new MotionError(problems);
