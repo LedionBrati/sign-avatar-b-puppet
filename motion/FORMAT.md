@@ -1,4 +1,4 @@
-# Motion file format, v1
+# Motion file format, v1 (and v2 below)
 
 One JSON file per clip or sign. Written by `motion/` (Python, MediaPipe) and read by `puppet/` (three.js) and by the shared plan → motion adapter (`shared/`). All sides follow this file; change it here first, by PR.
 
@@ -58,3 +58,48 @@ Files come in pairs:
 - **`fps` is the frame rate of the data,** which can differ from the source video's.
 - **`motion_id` matches the sign's entry in `catalog/signs.json`.** The catalog's `motion_path` points at the `.clean.json` file. The motion file never decides whether a sign is verified; the catalog does.
 - **The recognizer needs an adapter.** The sign-recognition models expect the legacy 543-point layout (468 face points, no iris), so the adapter drops face points 468–477 and reorders the parts. That conversion lives in the recognizer, not in this format.
+
+# v2: anatomical 3D hands
+
+v2 is v1 plus two optional keys. Every v1 field keeps its meaning, so a v1 reader can read a v2 file and ignore what it doesn't know. Written by `motion/hands3d.py` as `<name>.v2.json` (from the `.raw.json` + `.clean.json` pair; the frames are the clean file's frames).
+
+```jsonc
+{
+  "version": 2,
+  // ... every v1 field ...
+  "hands3d_meta": {
+    "model": "sbp-hand-skeleton v1 (motion/hand_model.py)",
+    "rest_right": [[0, 0, 0], ...],      // 21 x [x,y,z] metres: the right hand's rest skeleton (flat hand),
+                                         //   MANO order: 16 joints + 5 tips (thumb, index, middle, ring, pinky tip)
+    "joint_limits_deg": { "index": [[-25, 95], ...], ... },   // the limits every frame satisfies
+    "smoothing": {...}, "sources": {"right:holistic": 35, ...}, "keypoints": null | "WiLoR ...",
+    "v1_hands": "fitted"                 // left/rightHandWorld were replaced by the fitted skeleton (see below)
+  },
+  "frames": [
+    {
+      // ... every v1 field ...
+      "hands3d": {
+        "left":  null,                   // no hand this frame (never zeros)
+        "right": {
+          "joints": [[0, 0, 0], ...],    // 21 x [x,y,z] metres, wrist-relative, MediaPipe hand joint order,
+                                         //   camera axes (x right, y down, z away; the axes of poseWorld)
+          "rot":    [[qx, qy, qz, qw], ...], // 16 local joint rotations, MANO joint order:
+                                         //   0 wrist (global), 1-3 index, 4-6 middle, 7-9 pinky, 10-12 ring, 13-15 thumb
+          "conf":   0.82,                // 0..1: source confidence x how well the skeleton fits the observation
+          "src":    "holistic",          // the observation: "wilor" | "holistic" | "redetect" | "filled"
+          "fit_mm": 9.4                  // mean joint distance, fit vs observation scaled to the rest hand; null if filled
+        }
+      }
+    }
+  ]
+}
+```
+
+## v2 rules
+- **Every hand in `hands3d` is anatomically possible.** Bone lengths are fixed (a standard adult hand, 17.9 cm wrist to middle tip). Fingers bend only where real joints bend (PIP and DIP are hinges, knuckles flex and spread, the thumb base also rolls), and every angle is inside `joint_limits_deg`.
+- **`joints` and `rot` describe the same hand.** Forward kinematics: `world[0] = rot[0]`; for each joint `j` with parent `p` (MANO tree): `world[j] = world[p] * rot[j]` and `pos[j] = pos[p] + world[p] * (rest[j] - rest[p])`; the tips hang off joints 15, 3, 6, 12, 9. Rest frame as in MANO: rest pose = flat hand, every rest rotation = identity, axes of the right hand's canonical frame = +x wrist to fingers, +y out of the palm, +z toward the thumb. `rot[0]` maps that frame to camera axes. `hand_model.fk_from_rot` is the reference.
+- **Left hands are mirrored right hands.** Left rest = `rest_right` with x negated; left quaternions are the mirror images `(qx, -qy, -qz, qw)`. MANO's own left model is defined the same way.
+- **`rot` is not raw MANO.** It uses our rest skeleton (`rest_right`), not MANO's mean hand (that needs the licensed MANO model). On the GPU path the `.wilor.json` next to the file keeps WiLoR's raw MANO parameters for anyone who has MANO.
+- **Filled frames.** Gaps of up to 6 frames are filled by interpolating joint angles (`src: "filled"`, low `conf`). Longer gaps stay `null`.
+- **`v1_hands: "fitted"`.** `leftHandWorld`/`rightHandWorld` hold the fitted skeleton, scaled to the clip's MediaPipe hand size and anchored on the poseWorld wrist, so the v1 puppet path gets the same anatomical fingers. Frames that had no v1 hand but now have a fitted one also get `leftHand`/`rightHand` image points (from the re-detection, or the fitted hand projected at the pose wrist); they are listed in `hands3d_meta.v1_filled_frames`. The untouched MediaPipe points are always in the `.raw.json`.
+- **`body3d`** (SMPL-X style body rotations) is reserved; nothing writes it yet.
