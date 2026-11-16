@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { basename, extname } from "node:path";
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const TYPES = { ".mp4": "video/mp4", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png" };
 
 export function falKey(env = process.env) {
@@ -28,18 +29,29 @@ export async function falClient(key) {
       const { request_id } = await fal.queue.submit(endpoint, { input });
       return request_id;
     },
-    /** Wait for a submitted request; returns its result data. */
-    async wait(endpoint, requestId, { timeoutMs = 45 * 60_000, everyMs = 5000, onStatus = () => {} } = {}) {
+    /**
+     * Wait for a submitted request; returns its result data. Network errors and 5xx answers are retried until the
+     * timeout (the request id is already in the state, so giving up here costs nothing: the next run polls again).
+     * Throws {code: "failed"} only when fal itself says the request failed (4xx on the result, or an error status).
+     */
+    async wait(endpoint, requestId, { timeoutMs = 60 * 60_000, everyMs = 5000, onStatus = () => {} } = {}) {
       const t0 = Date.now();
+      const transient = (e) => { const s = e?.status ?? e?.response?.status; return !s || s >= 500 || s === 429; };
+      const timeout = () => Object.assign(new Error(`${requestId}: no result after ${Math.round(timeoutMs / 60000)} min`), { code: "timeout" });
       for (;;) {
-        const st = await fal.queue.status(endpoint, { requestId, logs: false });
+        if (Date.now() - t0 > timeoutMs) throw timeout();
+        let st;
+        try { st = await fal.queue.status(endpoint, { requestId, logs: false }); }
+        catch (e) { if (!transient(e)) throw Object.assign(new Error(String(e?.message ?? e)), { code: "failed" }); await sleep(Math.min(60_000, everyMs * 4)); continue; }
         onStatus(st.status);
-        if (st.status === "COMPLETED") break;
-        if (Date.now() - t0 > timeoutMs) throw Object.assign(new Error(`${requestId}: still ${st.status} after ${Math.round(timeoutMs / 60000)} min`), { code: "timeout" });
-        await new Promise((r) => setTimeout(r, everyMs));
+        if (st.status === "COMPLETED") {
+          try { return (await fal.queue.result(endpoint, { requestId })).data; }
+          catch (e) { if (!transient(e)) throw Object.assign(new Error(String(e?.body?.detail ? JSON.stringify(e.body.detail) : e?.message ?? e)), { code: "failed" }); }
+        } else if (st.status && !["IN_QUEUE", "IN_PROGRESS"].includes(st.status)) {
+          throw Object.assign(new Error(`fal status ${st.status}`), { code: "failed" });
+        }
+        await sleep(everyMs);
       }
-      const res = await fal.queue.result(endpoint, { requestId });
-      return res.data;
     },
   };
 }

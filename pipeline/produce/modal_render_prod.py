@@ -92,6 +92,16 @@ def render_job(job: dict, avatar_model: str = "signer", placement: str = "ik", r
             "model": rep.get("model"), "report_vol": str(report_path).removeprefix("/vol"), "log_tail": p.stdout[-800:]}
 
 
+def _count_local(mp4: str) -> int:
+    """Frame count of a downloaded render (ffprobe header packets: a tiny local probe, no decode)."""
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
+                              "stream=nb_read_packets", "-of", "csv=p=0", mp4], capture_output=True, text=True).stdout.strip()
+        return int(out) if out.isdigit() else -1
+    except OSError:
+        return -1
+
+
 @app.local_entrypoint()
 def main(spec: str):
     s = json.loads(Path(spec).read_text(encoding="utf-8"))
@@ -103,10 +113,27 @@ def main(spec: str):
         for j in jobs:
             b.put_file(j["motion_local"], j["motion_vol"])
     print(f"uploaded {len(jobs)} motion(s); rendering on Modal ({CPU:.0f} CPU each)", flush=True)
-    rows = list(render_job.map(jobs, kwargs={"avatar_model": s.get("avatar_model", "signer"), "placement": s.get("placement", "ik"),
-                                             "render_fps": int(s.get("render_fps", 24))}, return_exceptions=True))
+    # Resume after a network drop: a render already on the volume (its name carries the batch content hash and the
+    # renderer sha / placement / avatar) is reused, not rendered again.
+    have: dict[str, set] = {}
+    def on_volume(path: str) -> bool:
+        d, name = path.rsplit("/", 1)
+        if d not in have:
+            try:
+                have[d] = {e.path.rsplit("/", 1)[-1] for e in vol.listdir(d)}
+            except Exception:
+                have[d] = set()
+        return name in have[d]
+    done = {j["name"]: {"name": j["name"], "ok": True, "sha": s.get("sha"), "reused": True, "report_vol": j["out_vol"].removesuffix(".mp4") + ".json"}
+            for j in jobs if on_volume(j["out_vol"]) and on_volume(j["out_vol"].removesuffix(".mp4") + ".json")}
+    todo = [j for j in jobs if j["name"] not in done]
+    print(f"{len(done)} render(s) already on the volume, {len(todo)} to render", flush=True)
+    rows = list(render_job.map(todo, kwargs={"avatar_model": s.get("avatar_model", "signer"), "placement": s.get("placement", "ik"),
+                                             "render_fps": int(s.get("render_fps", 24))}, return_exceptions=True)) if todo else []
+    by_name = {j["name"]: r for j, r in zip(todo, rows)}
     results = []
-    for j, r in zip(jobs, rows):
+    for j in jobs:
+        r = done.get(j["name"]) or by_name[j["name"]]
         if not isinstance(r, dict):
             results.append({"name": j["name"], "ok": False, "error": str(r)[-1500:]})
             continue
@@ -116,6 +143,9 @@ def main(spec: str):
                 with open(local, "wb") as f:
                     for chunk in vol.read_file(remote):
                         f.write(chunk)
+        if r.get("reused"):
+            rep = json.loads(Path(j["report_local"]).read_text())
+            r.update(frames_video=_count_local(j["out_local"]), frames_report=rep.get("frames"), placement=(rep.get("avatar") or {}).get("placement"))
         results.append(r)
-        print(json.dumps({k: r.get(k) for k in ("name", "ok", "sha", "frames_video", "wall_s", "placement", "error")}), flush=True)
+        print(json.dumps({k: r.get(k) for k in ("name", "ok", "sha", "frames_video", "wall_s", "placement", "reused", "error")}), flush=True)
     Path(s["result"]).write_text(json.dumps({"results": results, "wall_s": round(time.time() - t0, 1)}, indent=1), encoding="utf-8")

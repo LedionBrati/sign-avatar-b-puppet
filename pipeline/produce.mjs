@@ -164,8 +164,24 @@ if (PAID_RUN) {
   fal = await falClient(falKey());
 }
 
-/** Run a Modal entrypoint with a JSON spec; returns the result JSON it wrote. */
-function modal(file, entry, spec, env = {}) {
+/**
+ * Run a Modal entrypoint with a JSON spec; returns the result JSON it wrote. Network drops are retried with backoff
+ * (MODAL_RETRIES, default 6, 30 s .. 5 min apart); the Modal steps are idempotent (renders already on the volume are
+ * reused, takes are fetched once, finish is incremental), so a retry never redoes finished work or costs fal money.
+ */
+async function modal(file, entry, spec, env = {}) {
+  const tries = Math.max(1, Number(process.env.MODAL_RETRIES ?? 6));
+  for (let i = 1; ; i++) {
+    try { return await modalOnce(file, entry, spec, env); }
+    catch (e) {
+      if (i >= tries) throw e;
+      const wait = Math.min(300, 30 * 2 ** (i - 1));
+      log(`${e.message}; retry ${i}/${tries - 1} in ${wait} s (network drop?)`);
+      await new Promise((r) => setTimeout(r, wait * 1000));
+    }
+  }
+}
+function modalOnce(file, entry, spec, env = {}) {
   const dir = join(WORK, "modal");
   mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -258,12 +274,14 @@ async function takeJob(b, k) {
   if (t.status === "planned") {
     const ok = await serial(async () => {
       if (stopReason) return false;
-      try { spentThisRun = guardSpend({ spentThisRun, cost: b.cost_per_take, maxUsd: MAX_USD }); }
+      try { guardSpend({ spentThisRun, cost: b.cost_per_take, maxUsd: MAX_USD }); }
       catch (e) { stopReason = e.message; log(`STOP: ${e.message}`); return false; }
       try {
+        // Uploads are free and may fail on a bad network: nothing is committed until the submit call starts.
         b.render.fal_url ??= await fal.upload(b.render.local);
         if (MODEL.avatarImage) avatarUrl ??= await fal.upload(AVATAR_IMAGE);
         const input = modelInput(MODEL, { videoUrl: b.render.fal_url, avatarUrl, frames: b.frames, seed: t.seed, prompt: opt.prompt ?? null, ltxImage: Boolean(opt["ltx-image"]) });
+        spentThisRun = round(spentThisRun + b.cost_per_take, 3);   // committed from here: the paid call starts
         Object.assign(t, { status: "submitting", submitted_at: new Date().toISOString(), cost_usd: b.cost_per_take, endpoint: MODEL.endpoint, model: MODEL.name,
           input: { ...input, video_url: "(puppet render)", ...(input.reference_image_urls ? { reference_image_urls: ["(avatar)"] } : {}), ...(input.image_url ? { image_url: "(avatar)" } : {}) } });
         state.spent_usd = round(state.spent_usd + b.cost_per_take, 3);
@@ -279,7 +297,9 @@ async function takeJob(b, k) {
             save();
             throw e;
           }
-          throw e;                                // unknown outcome: stays "submitting" (counted as spent, never auto-resubmitted)
+          // Unknown outcome (network drop mid-call): stays "submitting", counted as spent, never resubmitted
+          // automatically. Check the fal dashboard; rerun with --resubmit-unknown only if fal has no such request.
+          throw e;
         }
         Object.assign(t, { status: "submitted", request_id: id });
         run.calls.push({ batch: b.name, take: k, request_id: id, cost_usd: b.cost_per_take });
@@ -304,8 +324,9 @@ async function takeJob(b, k) {
       t.vol = `${VOL}/takes/${b.name}-t${k}.mp4`;
       log(`${url ? "completed" : "FAILED"} ${b.name} take ${k} (${t.request_id})`);
     } catch (e) {
-      if (e?.code === "timeout") log(`still waiting on ${t.request_id}; rerun later to pick it up (no new spend)`);
-      else { Object.assign(t, { status: "failed_after_submit", error: String(e?.message ?? e).slice(0, 500) }); log(`FAILED ${b.name} take ${k} (${t.request_id}): ${t.error}`); }
+      // Only a definite answer from fal fails the take; a network problem leaves it "submitted" for the next run to poll.
+      if (e?.code === "failed") { Object.assign(t, { status: "failed_after_submit", error: String(e?.message ?? e).slice(0, 500) }); log(`FAILED ${b.name} take ${k} (${t.request_id}): ${t.error}`); }
+      else log(`still waiting on ${t.request_id} (${String(e?.message ?? e).slice(0, 120)}); rerun to pick it up (no new spend)`);
     }
     save();
   }
