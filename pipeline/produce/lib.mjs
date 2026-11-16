@@ -462,8 +462,15 @@ export function budgetPrefix(batches, usd, remainingCost) {
 
 // ── Render QC gate (before any paid call) ───────────────────────────────────────
 
-/** Defaults from the lead: palm/hand dir > 60 deg, fingers > 50 deg, arm > 45 deg is a bad frame; > 3 % bad = reject. */
-export const RENDER_QC = { handDeg: 60, palmDeg: 60, fingersDeg: 50, armDeg: 45, maxBadPct: 3, palmFlipDeg: 90 };
+/**
+ * Render QC thresholds (same as render.mjs summarizeBadFrames): palm / hand dir > 60 deg or fingers > 50 deg is a bad
+ * hand frame; > 3 % bad frames in a sign, or any palm flip (> 90 deg in one frame), rejects the sign.
+ * Arms: with --placement ik the arm leaves the tracker's direction on purpose, so the arm angle check is off (armDeg
+ * null) and the location block is used instead: a frame whose hand-to-face/shoulder distance error (shoulder widths,
+ * render.mjs "location") exceeds locMax is bad. armDeg 45 is the check for --placement fk.
+ */
+export const RENDER_QC = { handDeg: 60, palmDeg: 60, fingersDeg: 50, armDeg: null, locMax: 0.35, maxBadPct: 3, palmFlipDeg: 90 };
+export const renderQcFor = (placement, o = {}) => ({ ...RENDER_QC, armDeg: placement === "fk" ? 45 : null, ...Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) });
 
 const angle = (a, b) => {
   const d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2], n = Math.hypot(...a) * Math.hypot(...b);
@@ -484,12 +491,20 @@ export function frameQc(f, t = RENDER_QC) {
     over(`${S} hand dir`, t.handDeg); over(`${S} palm`, t.palmDeg); over(`${S} fingers`, t.fingersDeg);
     over(`${S} upper arm`, t.armDeg); over(`${S} forearm`, t.armDeg);
   }
+  // hand location vs the source (render.mjs per_frame loc: {side: {src: [..], av: [..]}}, shoulder widths)
+  if (t.locMax !== null && t.locMax !== undefined) {
+    for (const [S, l] of Object.entries(f.loc ?? {})) {
+      if (!l?.src || !l?.av) continue;
+      const e = Math.max(...l.src.map((v, k) => Math.abs((l.av[k] ?? v) - v)));
+      if (e > t.locMax) bad.push(`${S} location off by ${e.toFixed(2)} shoulder widths`);
+    }
+  }
   const explicitBad = f.bad ?? f.bad_frame;
   if (explicitBad === true) bad.push("renderer: bad frame");
   else if (Array.isArray(explicitBad)) bad.push(...explicitBad.map((x) => `renderer: ${x}`));
   if (f.palm_flip === true) flip.push("renderer: palm flip");
   else if (f.palm_flip && typeof f.palm_flip === "object") for (const [S, v] of Object.entries(f.palm_flip)) if (v) flip.push(`${S} palm flip (renderer)`);
-  const palm = f.palm_n ?? f.palm_normal ?? (f.palm && Array.isArray(f.palm.L ?? f.palm.R) ? f.palm : null);
+  const palm = f.palmN ?? f.palm_n ?? f.palm_normal ?? null;   // render.mjs per_frame palmN: the avatar's own palm normals
   return { bad, flip, palm, palmErr: { L: err["L palm"] ?? null, R: err["R palm"] ?? null } };
 }
 

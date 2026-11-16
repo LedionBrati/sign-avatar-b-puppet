@@ -217,9 +217,17 @@ test("render QC: bad-frame share and palm flips per sign, explicit renderer fiel
   frames[130].palm_flip = { R: true };
   assert.equal(L.renderQc({ per_frame: frames }, seg, signs, { ...L.RENDER_QC, maxBadPct: 5 }).signs[1].pass, false);
   frames[130].palm_flip = null;
-  frames[131].palm_n = { R: [0, 0, 1] }; frames[132].palm_n = { R: [0, 0, -1] };
+  frames[131].palmN = { R: [0, 0, 1] }; frames[132].palmN = { R: [0, 0, -1] };
   assert.match(L.renderQc({ per_frame: frames }, seg, signs, { ...L.RENDER_QC, maxBadPct: 5 }).signs[1].reasons.join(), /palm turned 180/);
   assert.equal(L.renderQc({}, seg, signs).ok, false, "no per-frame data: never paid blind");
+  // ik: arm angles are not a defect, hand location is (render.mjs "location")
+  const g = Array.from({ length: 230 }, (_, i) => ({ i, err: { "R upper arm": 80 }, loc: { R: { src: [0.5, 0.4], av: [0.52, 0.41] } } }));
+  assert.equal(L.renderQc({ per_frame: g }, seg, signs, L.renderQcFor("ik")).ok, true);
+  assert.equal(L.renderQc({ per_frame: g }, seg, signs, L.renderQcFor("fk")).ok, false);
+  for (let i = 30; i < 40; i++) g[i].loc.R.av = [1.2, 0.4];
+  const ql = L.renderQc({ per_frame: g }, seg, signs, L.renderQcFor("ik"));
+  assert.deepEqual(ql.signs.map((x) => x.pass), [false, true]);
+  assert.match(ql.signs[0].reasons[0], /location off by 0.70/);
 });
 
 // ── best take ──────────────────────────────────────────────────────────────────

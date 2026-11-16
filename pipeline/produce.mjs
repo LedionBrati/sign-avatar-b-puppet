@@ -38,7 +38,8 @@
 //   --placement ik|fk|auto                  hand placement (default ik)
 //   --takes N  --max-seconds S              takes per batch; batch length in video seconds
 //   --concurrency N (4)  --chunk N (16)     fal jobs in flight; batches per render/repaint/finish round
-//   --qc-bad-pct P (3)  --qc-arm-deg D|off  render QC thresholds (hand/palm 60, fingers 50, arm 45 degrees)
+//   --qc-bad-pct P (3) --qc-loc X|off --qc-arm-deg D|off   render QC: hand/palm 60, fingers 50 deg; hand location error
+//                                           > 0.35 shoulder widths (ik); arm angle 45 deg only with --placement fk
 //   --no-qc  --retry-qc  --redo-upgraded    skip motion QC / retry render-QC rejects / remake v1 signs that now have v2
 //   --no-score  --fake-recast               skip the finger score / use the puppet render as the "take" (free test,
 //                                           writes out/produce/<variant>-fake/clips, never a served folder)
@@ -90,7 +91,9 @@ const PLACEMENT = opt.placement ?? "ik";
 const CONCURRENCY = Math.max(1, Number(opt.concurrency ?? 4));
 const CHUNK = Math.max(1, Number(opt.chunk ?? 16));
 const DO_SCORE = !opt["no-score"] && SETS[SET].score;
-const QC_T = { ...RENDER_QC, maxBadPct: Number(opt["qc-bad-pct"] ?? RENDER_QC.maxBadPct), armDeg: opt["qc-arm-deg"] === "off" ? null : Number(opt["qc-arm-deg"] ?? RENDER_QC.armDeg) };
+const QC_T = lib.renderQcFor(PLACEMENT, { maxBadPct: opt["qc-bad-pct"] === undefined ? undefined : Number(opt["qc-bad-pct"]),
+  armDeg: opt["qc-arm-deg"] === undefined ? undefined : opt["qc-arm-deg"] === "off" ? null : Number(opt["qc-arm-deg"]),
+  locMax: opt["qc-loc"] === undefined ? undefined : opt["qc-loc"] === "off" ? null : Number(opt["qc-loc"]) });
 
 const gitOrigin = () => { try { return execFileSync("git", ["-C", REPO, "remote", "get-url", "origin"]).toString().trim(); } catch { return null; } };
 const MAIN = findMain(opt.main, { originUrl: gitOrigin() });

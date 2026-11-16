@@ -19,6 +19,7 @@ Volume: signlayer-renders (motions, renders, /models/signer.glb). Free to write,
 from __future__ import annotations
 
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -60,9 +61,16 @@ def _workdir() -> Path:
 
 
 def _frames(mp4: str) -> int:
-    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
-                          "stream=nb_read_packets", "-of", "csv=p=0", mp4], capture_output=True, text=True).stdout.strip()
-    return int(out) if out.isdigit() else -1
+    """Frame count (container packets, no decode; falls back to decoding). -1 if ffprobe cannot read it."""
+    import subprocess
+    for entry, flag in (("nb_read_packets", "-count_packets"), ("nb_read_frames", "-count_frames")):
+        p = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", flag, "-show_entries", f"stream={entry}",
+                            "-of", "default=nokey=1:noprint_wrappers=1", mp4], capture_output=True, text=True)
+        m = re.search(r"\d+", p.stdout)
+        if m:
+            return int(m.group())
+        print(f"ffprobe {flag} on {mp4}: {p.returncode} {p.stdout[-200:]!r} {p.stderr[-300:]!r}", flush=True)
+    return -1
 
 
 @app.function(volumes={"/vol": vol}, cpu=CPU, memory=8192, timeout=3600)
@@ -97,7 +105,8 @@ def _count_local(mp4: str) -> int:
     try:
         out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
                               "stream=nb_read_packets", "-of", "csv=p=0", mp4], capture_output=True, text=True).stdout.strip()
-        return int(out) if out.isdigit() else -1
+        m = re.search(r"\d+", out)
+        return int(m.group()) if m else -1
     except OSError:
         return -1
 
@@ -143,9 +152,12 @@ def main(spec: str):
                 with open(local, "wb") as f:
                     for chunk in vol.read_file(remote):
                         f.write(chunk)
+            # the authoritative frame check is on the downloaded file (a tiny local probe)
+            r["frames_remote"] = r.get("frames_video")
+            r["frames_video"] = _count_local(j["out_local"])
         if r.get("reused"):
             rep = json.loads(Path(j["report_local"]).read_text())
-            r.update(frames_video=_count_local(j["out_local"]), frames_report=rep.get("frames"), placement=(rep.get("avatar") or {}).get("placement"))
+            r.update(frames_report=rep.get("frames"), placement=(rep.get("avatar") or {}).get("placement"))
         results.append(r)
         print(json.dumps({k: r.get(k) for k in ("name", "ok", "sha", "frames_video", "wall_s", "placement", "reused", "error")}), flush=True)
     Path(s["result"]).write_text(json.dumps({"results": results, "wall_s": round(time.time() - t0, 1)}, indent=1), encoding="utf-8")

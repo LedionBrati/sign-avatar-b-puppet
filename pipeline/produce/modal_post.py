@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 import tarfile
 import time
@@ -54,10 +55,16 @@ def _model() -> None:
 
 
 def _probe(mp4: str) -> int:
+    """Frame count (container packets, no decode; falls back to decoding). -1 if ffprobe cannot read it."""
     import subprocess
-    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
-                          "stream=nb_read_packets", "-of", "csv=p=0", mp4], capture_output=True, text=True).stdout.strip()
-    return int(out) if out.isdigit() else -1
+    for entry, flag in (("nb_read_packets", "-count_packets"), ("nb_read_frames", "-count_frames")):
+        p = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", flag, "-show_entries", f"stream={entry}",
+                            "-of", "default=nokey=1:noprint_wrappers=1", mp4], capture_output=True, text=True)
+        m = re.search(r"\d+", p.stdout)
+        if m:
+            return int(m.group())
+        print(f"ffprobe {flag} on {mp4}: {p.returncode} {p.stdout[-200:]!r} {p.stderr[-300:]!r}", flush=True)
+    return -1
 
 
 @app.function(volumes={"/vol": vol}, cpu=4.0, memory=8192, timeout=3600)
