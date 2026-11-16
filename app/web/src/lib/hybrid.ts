@@ -23,7 +23,12 @@ export class HybridPlayer {
   /** The 3D signer is loading (first use: player bundle + avatar). */
   onLoading: (loading: boolean) => void = () => {};
 
-  constructor(private readonly clips: GaplessPlayer, private readonly signer3d: () => Signer3D) {
+  private readonly clips: GaplessPlayer;
+  private readonly signer3d: () => Signer3D;
+
+  constructor(clips: GaplessPlayer, signer3d: () => Signer3D) {
+    this.clips = clips;
+    this.signer3d = signer3d;
     clips.onIndex = (i) => this.fromClips(i);
   }
 
