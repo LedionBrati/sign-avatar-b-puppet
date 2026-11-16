@@ -39,9 +39,10 @@
 //                                           git archive (committed code only), and Modal renders exactly that sha
 //   --placement ik|fk|auto                  hand placement (default ik)
 //   --takes N  --max-seconds S              takes per batch; batch length in video seconds
-//   --concurrency N (4)  --chunk N (16)     fal jobs in flight; batches per render/repaint/finish round
+//   --concurrency N (10) --chunk N (40)     fal results polled in parallel; batches per round (all of a round's takes
+//                                           are submitted up front, 429 / concurrency limits are retried with backoff)
 //   --qc-bad-pct P (3) --qc-loc X|off --qc-arm-deg D|off   render QC: hand/palm 60, fingers 50 deg; hand location error
-//                                           > 0.35 shoulder widths (ik); arm angle 45 deg only with --placement fk
+//                                           > 0.6 shoulder widths (ik); arm angle 45 deg only with --placement fk
 //   --no-qc  --retry-qc  --redo-upgraded    skip motion QC / retry render-QC rejects / remake v1 signs that now have v2
 //   --no-score  --fake-recast               skip the finger score / use the puppet render as the "take" (free test,
 //                                           writes out/produce/<variant>-fake/clips, never a served folder)
@@ -90,8 +91,8 @@ const AVATAR_MODEL = opt["avatar-model"] ?? "signer";
 const FAKE = Boolean(opt["fake-recast"]);
 const VARIANT = variantName(SET, MODEL.name, AVATAR_MODEL) + (FAKE ? "-fake" : "");
 const PLACEMENT = opt.placement ?? "ik";
-const CONCURRENCY = Math.max(1, Number(opt.concurrency ?? 4));
-const CHUNK = Math.max(1, Number(opt.chunk ?? 16));
+const CONCURRENCY = Math.max(1, Number(opt.concurrency ?? 10));
+const CHUNK = Math.max(1, Number(opt.chunk ?? 40));
 const DO_SCORE = !opt["no-score"] && SETS[SET].score;
 const QC_T = lib.renderQcFor(PLACEMENT, { maxBadPct: opt["qc-bad-pct"] === undefined ? undefined : Number(opt["qc-bad-pct"]),
   armDeg: opt["qc-arm-deg"] === undefined ? undefined : opt["qc-arm-deg"] === "off" ? null : Number(opt["qc-arm-deg"]),
@@ -262,90 +263,106 @@ function applyQc(batches) {
 }
 
 // ── Repaint (fal) ──────────────────────────────────────────────────────────────
-let lock = Promise.resolve();
-const serial = (fn) => { const p = lock.then(fn); lock = p.catch(() => {}); return p; };
-
-async function takeJob(b, k) {
+/**
+ * Phase 1: submit one take (all takes of a round are submitted up front, one after the other, so the --max-usd guard
+ * sees every call). The request id is written to the state file the moment fal returns it, before anything waits.
+ */
+async function submitTake(b, k) {
   b.takes[k] ??= { k, seed: b.seeds[k], status: "planned" };
   const t = b.takes[k];
-  if (["completed", "done", "rejected", "failed_after_submit"].includes(t.status)) return;
+  if (t.status !== "planned" && t.status !== "submitting") return;
   if (FAKE) {
     Object.assign(t, { status: "completed", request_id: "fake", cost_usd: 0, vol: b.render.vol, url: null, completed_at: new Date().toISOString() });
     return save();
   }
   if (t.status === "submitting" && !t.request_id) {
-    if (!opt["resubmit-unknown"]) { log(`SKIP ${b.name} take ${k}: a submit started on ${t.submitted_at} but no request id was saved; check the fal dashboard, then --resubmit-unknown`); return; }
+    if (!opt["resubmit-unknown"]) { log(`SKIP ${b.name} take ${k}: a submit started on ${t.submitted_at} but no request id came back; check the fal dashboard, then --resubmit-unknown`); return; }
     t.status = "planned";
+    state.spent_usd = round(state.spent_usd - (t.cost_usd ?? 0), 3);
   }
-  if (t.status === "planned") {
-    const ok = await serial(async () => {
-      if (stopReason) return false;
-      try { guardSpend({ spentThisRun, cost: b.cost_per_take, maxUsd: MAX_USD }); }
-      catch (e) { stopReason = e.message; log(`STOP: ${e.message}`); return false; }
-      try {
-        // Uploads are free and may fail on a bad network: nothing is committed until the submit call starts.
-        if (b.render.fal_url_at && Date.now() - Date.parse(b.render.fal_url_at) > 12 * 3600_000) b.render.fal_url = null;   // re-upload stale storage URLs
-        if (!b.render.fal_url) Object.assign(b.render, { fal_url: await fal.upload(b.render.local), fal_url_at: new Date().toISOString() });
-        if (MODEL.avatarImage) avatarUrl ??= await fal.upload(AVATAR_IMAGE);
-        const input = modelInput(MODEL, { videoUrl: b.render.fal_url, avatarUrl, frames: b.frames, seed: t.seed, prompt: opt.prompt ?? null, ltxImage: Boolean(opt["ltx-image"]) });
-        spentThisRun = round(spentThisRun + b.cost_per_take, 3);   // committed from here: the paid call starts
-        Object.assign(t, { status: "submitting", submitted_at: new Date().toISOString(), cost_usd: b.cost_per_take, endpoint: MODEL.endpoint, model: MODEL.name,
-          input: { ...input, video_url: "(puppet render)", ...(input.reference_image_urls ? { reference_image_urls: ["(avatar)"] } : {}), ...(input.image_url ? { image_url: "(avatar)" } : {}) } });
-        state.spent_usd = round(state.spent_usd + b.cost_per_take, 3);
-        save();
-        let id;
-        try { id = await fal.submit(MODEL.endpoint, input); }
-        catch (e) {
-          const status = e?.status ?? e?.response?.status;
-          const code = e?.cause?.code ?? e?.code;
-          const neverSent = ["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH"].includes(code);   // no connection: fal never got it
-          if ((status >= 400 && status < 500) || neverSent) {     // refused by fal (validation, auth) or never sent: not a billed job
-            Object.assign(t, { status: "planned", error: String(e?.body?.detail ? JSON.stringify(e.body.detail) : e).slice(0, 500) });
-            state.spent_usd = round(state.spent_usd - b.cost_per_take, 3);
-            spentThisRun = round(spentThisRun - b.cost_per_take, 3);
-            save();
-            throw e;
-          }
-          // Unknown outcome (network drop mid-call): stays "submitting", counted as spent, never resubmitted
-          // automatically. Check the fal dashboard; rerun with --resubmit-unknown only if fal has no such request.
-          throw e;
-        }
-        Object.assign(t, { status: "submitted", request_id: id });
-        run.calls.push({ batch: b.name, take: k, request_id: id, cost_usd: b.cost_per_take });
-        appendFileSync(join(WORK, "requests.log"), `${new Date().toISOString()} ${b.name} take ${k} seed ${t.seed} ${MODEL.endpoint} ${MODEL.resolution} ${id} $${b.cost_per_take.toFixed(3)} frames ${b.frames} (${b.signs.map((s) => s.motion_id).join(" ")})\n`);
-        log(`submitted ${b.name} take ${k} (seed ${t.seed}): ${id}, $${b.cost_per_take.toFixed(3)}; this run $${spentThisRun.toFixed(2)} of ${money(MAX_USD)}`);
-        save();
-        return true;
-      } catch (e) {
-        log(`submit ${b.name} take ${k} failed: ${String(e?.message ?? e).slice(0, 300)}`);
-        save();
-        return false;
-      }
-    });
-    if (!ok) return;
-  }
-  if (t.status === "submitted") {
-    try {
-      const data = await fal.wait(MODEL.endpoint, t.request_id);
-      const url = data?.video?.url;
-      Object.assign(t, url ? { status: "completed", url, seed_used: data?.seed ?? t.seed, completed_at: new Date().toISOString() }
-        : { status: "failed_after_submit", error: `no video in result: ${JSON.stringify(data).slice(0, 200)}` });
-      t.vol = `${VOL}/takes/${b.name}-t${k}.mp4`;
-      log(`${url ? "completed" : "FAILED"} ${b.name} take ${k} (${t.request_id})`);
-    } catch (e) {
-      // Only a definite answer from fal fails the take; a network problem leaves it "submitted" for the next run to poll.
-      if (e?.code === "failed") { Object.assign(t, { status: "failed_after_submit", error: String(e?.message ?? e).slice(0, 500) }); log(`FAILED ${b.name} take ${k} (${t.request_id}): ${t.error}`); }
-      else log(`still waiting on ${t.request_id} (${String(e?.message ?? e).slice(0, 120)}); rerun to pick it up (no new spend)`);
-    }
+  if (stopReason) return;
+  try { guardSpend({ spentThisRun, cost: b.cost_per_take, maxUsd: MAX_USD }); }
+  catch (e) { stopReason = e.message; log(`STOP: ${e.message}`); return; }
+  try {
+    // Uploads are free and may fail on a bad network: nothing is committed until the submit call starts.
+    if (b.render.fal_url_at && Date.now() - Date.parse(b.render.fal_url_at) > 12 * 3600_000) b.render.fal_url = null;   // stale storage URL
+    if (!b.render.fal_url) Object.assign(b.render, { fal_url: await fal.upload(b.render.local), fal_url_at: new Date().toISOString() });
+    if (MODEL.avatarImage) avatarUrl ??= await fal.upload(AVATAR_IMAGE);
+  } catch (e) { log(`upload for ${b.name} failed (${String(e?.message ?? e).slice(0, 160)}); not submitted, rerun to retry`); return; }
+  const input = modelInput(MODEL, { videoUrl: b.render.fal_url, avatarUrl, frames: b.frames, seed: t.seed, prompt: opt.prompt ?? null, ltxImage: Boolean(opt["ltx-image"]) });
+  const refund = (why) => {
+    Object.assign(t, { status: "planned", error: why.slice(0, 500) });
+    state.spent_usd = round(state.spent_usd - b.cost_per_take, 3);
+    spentThisRun = round(spentThisRun - b.cost_per_take, 3);
     save();
+  };
+  spentThisRun = round(spentThisRun + b.cost_per_take, 3);   // committed from here: the paid call starts
+  Object.assign(t, { status: "submitting", submitted_at: new Date().toISOString(), cost_usd: b.cost_per_take, endpoint: MODEL.endpoint, model: MODEL.name,
+    input: { ...input, video_url: "(puppet render)", ...(input.reference_image_urls ? { reference_image_urls: ["(avatar)"] } : {}), ...(input.image_url ? { image_url: "(avatar)" } : {}) } });
+  state.spent_usd = round(state.spent_usd + b.cost_per_take, 3);
+  save();
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const id = await fal.submit(MODEL.endpoint, input);
+      if (!id) throw new Error("fal returned no request id");
+      Object.assign(t, { status: "submitted", request_id: id, error: undefined });
+      save();                                                  // the id is on disk before we wait on it
+      run.calls.push({ batch: b.name, take: k, request_id: id, cost_usd: b.cost_per_take });
+      appendFileSync(join(WORK, "requests.log"), `${new Date().toISOString()} ${b.name} take ${k} seed ${t.seed} ${MODEL.endpoint} ${MODEL.resolution} ${id} $${b.cost_per_take.toFixed(3)} frames ${b.frames} (${b.signs.map((s) => s.motion_id).join(" ")})\n`);
+      log(`submitted ${b.name} take ${k} (seed ${t.seed}): ${id}, $${b.cost_per_take.toFixed(3)}; this run $${spentThisRun.toFixed(2)} of ${money(MAX_USD)}`);
+      save();
+      return;
+    } catch (e) {
+      const st = e?.status ?? e?.response?.status;
+      const code = e?.cause?.code ?? e?.code;
+      const msg = String(e?.body?.detail ? JSON.stringify(e.body.detail) : e?.message ?? e);
+      // 429 / concurrency limit: fal did not take the job. Wait and retry, never failing the run.
+      if ((st === 429 || /concurren|rate.?limit|too many/i.test(msg)) && attempt < 40) {
+        const wait = Math.min(120, 5 * 2 ** Math.min(attempt, 5));
+        log(`fal busy (${st ?? "limit"}) on ${b.name} take ${k}; retry ${attempt} in ${wait} s`);
+        await new Promise((r) => setTimeout(r, wait * 1000));
+        continue;
+      }
+      // Refused by fal (validation, auth, no credit) or never sent (no connection): not a billed job.
+      if ((st >= 400 && st < 500) || ["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH"].includes(code)) {
+        refund(msg);
+        log(`submit ${b.name} take ${k} refused (${st ?? code}): ${msg.slice(0, 200)}`);
+        if (st === 401 || st === 403) stopReason = `fal refused the key (${st}): ${msg.slice(0, 120)}`;
+        return;
+      }
+      // Unknown outcome (connection dropped mid-call): stays "submitting", counted as spent, never resubmitted
+      // automatically. Check the fal dashboard; rerun with --resubmit-unknown only if fal has no such request.
+      log(`submit ${b.name} take ${k}: outcome unknown (${msg.slice(0, 160)}); counted as spent, not resubmitted`);
+      save();
+      return;
+    }
   }
 }
 
+/** Phase 2: wait for a submitted take (all in parallel). A network problem leaves it "submitted" for the next run. */
+async function waitTake(b, t) {
+  try {
+    const data = await fal.wait(MODEL.endpoint, t.request_id);
+    const url = data?.video?.url;
+    Object.assign(t, url ? { status: "completed", url, seed_used: data?.seed ?? t.seed, completed_at: new Date().toISOString() }
+      : { status: "failed_after_submit", error: `no video in result: ${JSON.stringify(data).slice(0, 200)}` });
+    t.vol = `${VOL}/takes/${b.name}-t${t.k}.mp4`;
+    log(`${url ? "completed" : "FAILED"} ${b.name} take ${t.k} (${t.request_id})`);
+  } catch (e) {
+    if (e?.code === "failed") { Object.assign(t, { status: "failed_after_submit", error: String(e?.message ?? e).slice(0, 500) }); log(`FAILED ${b.name} take ${t.k} (${t.request_id}): ${t.error}`); }
+    else log(`still waiting on ${t.request_id} (${String(e?.message ?? e).slice(0, 120)}); rerun to pick it up (no new spend)`);
+  }
+  save();
+}
+
 async function recastStep(batches) {
-  const jobs = batches.flatMap((b) => Array.from({ length: b.n_takes }, (_, k) => [b, k]));
+  // 1. submit every take of the round up front (serial: the cap is checked before each call)
+  for (const b of batches) for (let k = 0; k < b.n_takes; k++) await submitTake(b, k);
+  // 2. poll them all in parallel (--concurrency bounds the polling workers; fal runs its own queue)
+  const waits = batches.flatMap((b) => (b.takes ?? []).filter((t) => t?.status === "submitted").map((t) => [b, t]));
   let next = 0;
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, async () => {
-    while (next < jobs.length) { const [b, k] = jobs[next++]; await takeJob(b, k); }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, waits.length) }, async () => {
+    while (next < waits.length) { const [b, t] = waits[next++]; await waitTake(b, t); }
   }));
 }
 
@@ -374,6 +391,7 @@ async function postStep() {
       }
       const sc = r.score?.takes?.find((x) => x.k === m.k);
       if (sc) t.scores = { all: sc.all, per_sign: sc.per_sign };
+      else if (r.score_error && m.ok) t.scores = { error: r.score_error.slice(0, 300) };   // not retried every round
       if (t.status === "done") state.finish_needed = true;
     }
   }

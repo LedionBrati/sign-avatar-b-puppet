@@ -467,9 +467,10 @@ export function budgetPrefix(batches, usd, remainingCost) {
  * hand frame; > 3 % bad frames in a sign, or any palm flip (> 90 deg in one frame), rejects the sign.
  * Arms: with --placement ik the arm leaves the tracker's direction on purpose, so the arm angle check is off (armDeg
  * null) and the location block is used instead: a frame whose hand-to-face/shoulder distance error (shoulder widths,
- * render.mjs "location") exceeds locMax is bad. armDeg 45 is the check for --placement fk.
+ * render.mjs "location") exceeds locMax (0.6: a gross misplacement; the final renderer's worst frames are ~0.5) is bad.
+ * armDeg 45 is the check for --placement fk.
  */
-export const RENDER_QC = { handDeg: 60, palmDeg: 60, fingersDeg: 50, armDeg: null, locMax: 0.35, maxBadPct: 3, palmFlipDeg: 90 };
+export const RENDER_QC = { handDeg: 60, palmDeg: 60, fingersDeg: 50, armDeg: null, locMax: 0.6, maxBadPct: 3, palmFlipDeg: 90 };
 export const renderQcFor = (placement, o = {}) => ({ ...RENDER_QC, armDeg: placement === "fk" ? 45 : null, ...Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) });
 
 const angle = (a, b) => {

@@ -29,7 +29,7 @@ VOLUME = "signlayer-renders"
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .apt_install("curl", "ca-certificates", "gnupg", "ffmpeg", "libgl1", "libglib2.0-0")
+    .apt_install("curl", "ca-certificates", "gnupg", "ffmpeg", "libgl1", "libglib2.0-0", "libegl1", "libgles2")  # MediaPipe Tasks: EGL + GLES
     .run_commands("curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs")
     .pip_install("mediapipe==1.2.3", "numpy>=1.26,<3", "scipy>=1.13")
     .env({"FINGER_CACHE": "/tmp/finger-cache", "HOLISTIC_MODEL": "/vol/models/holistic_landmarker.task"})
