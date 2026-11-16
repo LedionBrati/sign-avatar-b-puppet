@@ -28,7 +28,7 @@ from pathlib import Path
 import modal
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = HERE.parents[1] if len(HERE.parents) > 1 else HERE  # in the container the file sits at /root
 VOLUME = "signlayer-signeval"
 DEMO = "/vol/wlasl-demo"  # DEMO_DIR inside the container
 LIB = "/vol/lib"  # SIGN_LIB: index.json + videos/ of the demo signs
