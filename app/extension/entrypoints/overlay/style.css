@@ -103,6 +103,14 @@ body[data-state="signing"] .halo { opacity: 1; animation: halo 2.4s ease-in-out 
 .stage video.top { z-index: 3; }
 .stage video.top.on { transition: opacity .1s linear; }
 .still { z-index: 1; }
+/* The instant 3D signer: same 3:4 stage over the clips; a 3D phrase crossfades it in, a clip phrase out. */
+.s3d { position: absolute; inset: 0; z-index: 3; opacity: 0; pointer-events: none; transition: opacity .35s ease; }
+.stage[data-mode="3d"] .s3d { opacity: 1; }
+.stage[data-mode="3d"]::before { opacity: 1; }
+.s3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
+.menu .chk { cursor: pointer; font: 500 12px/1.2 var(--font); color: var(--label); }
+.menu .chk input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .s3d { transition: none; } }
 .stage[data-state="ready"] video.on, .stage[data-state="starting"] video.on { filter: saturate(.92); }
 
 /* ── Transcript under the signer, in the serif: fixed two-line height, so nothing jumps ── */

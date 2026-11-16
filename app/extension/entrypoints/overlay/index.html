@@ -33,6 +33,7 @@
         <input id="apiUrl" type="url" spellcheck="false" autocomplete="off" />
         <button class="save" type="submit">Save</button>
       </div>
+      <label class="row chk"><span class="lbl">3D</span><input type="checkbox" id="always3d" /><span>Always use the 3D signer</span></label>
     </form>
 
     <section class="voice" id="voice" aria-label="Listening">
@@ -51,6 +52,7 @@
         <canvas class="still" id="still" aria-hidden="true"></canvas>
         <video id="v0" muted playsinline preload="auto" aria-hidden="true"></video>
         <video id="v1" muted playsinline preload="auto" aria-hidden="true"></video>
+        <div class="s3d" id="s3d" aria-hidden="true"></div>
       </div>
     </main>
 
