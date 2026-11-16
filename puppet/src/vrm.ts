@@ -21,13 +21,24 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from "@pixiv/three-vrm";
 import * as Kalidokit from "kalidokit";
 import type { Motion, MotionFrame, Vec3 } from "./motion";
 import { angleDeg, mirrorFrame, mpToThree, palmNormal, sub3 } from "./geom";
 import { cleanQuatChannel, cleanScalarChannel, DEFAULT_CLEAN, framePos, linkedSpikes, twistAbout, type ChannelParams, type CleanStats, type QuatChannel } from "./track";
+import { AvatarHand, buildSegmentation, fingerBones, mixamoTips, vrmFromGltf } from "./avatar";
+import { FINGERS, RELAXED_DEG, countOverlaps, countViolations, dirToWorld, fk, palmFrameRobust, separateFingers, smoothSequence, solveHand, thumbPlaneNormal, type HandAngles, type PalmFrame, type V3 } from "./hand";
 
-export type Solver = "kalidokit" | "direct";
+/**
+ * direct: aim every bone at the landmarks (fingers copy the tracker, noise and impossible angles included).
+ * anatomic: body and wrist as direct; fingers through src/hand.ts (joint limits, IK to the fingertips, no
+ * finger overlap, one-euro smoothing). The default for the realistic avatar.
+ * kalidokit: the GSL repo's approach, for comparison (assumes a T-pose model such as the VRM sample).
+ */
+export type Solver = "kalidokit" | "direct" | "anatomic";
+/** render passes: the picture, depth (white = near), view-space normals, and per-finger colours */
+export type Pass = "rgb" | "depth" | "normal" | "seg";
 
 /**
  * Clean-up per bone group (src/track.ts): the fastest a joint can plausibly turn (anything faster that comes
@@ -75,6 +86,12 @@ export interface PuppetOptions {
   /** render hand close-up insets */
   closeup?: boolean;
   background?: string;
+  /** soft image-based lighting, tone mapping and target-photo framing (on for non-VRM avatars such as signer.glb) */
+  realistic?: boolean;
+  /** passes drawn side by side, left to right, each `width` wide (default ["rgb"]) */
+  passes?: Pass[];
+  /** WebGL multisampling (default true). Off is faster on software WebGL. */
+  antialias?: boolean;
 }
 
 export interface RetargetReport {
@@ -85,6 +102,8 @@ export interface RetargetReport {
   retarget: string[];
   /** degrees between avatar bone and tracked bone; null when the part was not tracked */
   err: Record<string, number | null>;
+  /** per hand: finger joints of the shown avatar hand outside src/hand.ts LIMITS, and overlapping neighbour fingers */
+  limits?: { L: number; R: number; overlapsL: number; overlapsR: number };
 }
 
 export const RETARGET_THRESHOLD_DEG = 30;
@@ -111,33 +130,55 @@ export class VrmPuppet {
   opts: Required<PuppetOptions>;
   private brow: { mesh: THREE.Mesh; up: number | null; down: number | null }[] = [];
 
+  /** true for a plain glTF avatar (signer.glb): A-pose rest, realistic look */
+  isGltfAvatar = false;
+  private lights: THREE.Light[] = [];
+  private hands: Partial<Record<Side, AvatarHand>> = {};
+  private segMaterial: THREE.Material | null = null;
+  private passMats: Partial<Record<Pass, THREE.Material>> = {};
+
   constructor(public canvas: HTMLCanvasElement, public width: number, public height: number, opts: PuppetOptions = {}) {
-    this.opts = { solver: opts.solver ?? "direct", mannequin: opts.mannequin ?? false, closeup: opts.closeup ?? false, background: opts.background ?? (opts.mannequin ? "#2b2b2f" : "#1d2026") };
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true, alpha: false });
+    this.opts = {
+      solver: opts.solver ?? "direct", mannequin: opts.mannequin ?? false, closeup: opts.closeup ?? false,
+      background: opts.background ?? (opts.mannequin ? "#2b2b2f" : "#1d2026"), realistic: opts.realistic ?? false,
+      passes: opts.passes?.length ? opts.passes : ["rgb"], antialias: opts.antialias ?? true,
+    };
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.opts.antialias, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
-    this.renderer.setSize(width, height, false);
+    this.renderer.setSize(width * this.opts.passes.length, height, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene.background = new THREE.Color(this.opts.background);
     this.camera = new THREE.PerspectiveCamera(24, width / height, 0.05, 20);
     const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(0.6, 1.6, 2.0);
     const fill = new THREE.DirectionalLight(0xffffff, 0.8); fill.position.set(-1.2, 1.0, 1.5);
-    this.scene.add(key, fill, new THREE.AmbientLight(0xffffff, 0.9));
+    this.lights = [key, fill, new THREE.AmbientLight(0xffffff, 0.9)];
+    this.scene.add(...this.lights);
   }
 
+  /** Load a .vrm, or a glTF/GLB with a Mixamo-named skeleton (the realistic signer avatar). */
   async load(url: string): Promise<VRM> {
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
     const gltf = await loader.loadAsync(url);
-    const vrm = gltf.userData.vrm as VRM;
-    if (!vrm) throw new Error(`${url} is not a VRM file`);
-    VRMUtils.removeUnnecessaryVertices(gltf.scene);
-    VRMUtils.combineSkeletons(gltf.scene);
-    VRMUtils.rotateVRM0(vrm); // VRM0 models face -Z; turn them to face the camera like VRM1
+    let vrm = gltf.userData.vrm as VRM | undefined;
+    if (!vrm) {
+      vrm = vrmFromGltf(gltf);
+      this.isGltfAvatar = true;
+      this.opts.realistic = true;
+    } else {
+      VRMUtils.removeUnnecessaryVertices(gltf.scene);
+      VRMUtils.combineSkeletons(gltf.scene);
+      VRMUtils.rotateVRM0(vrm); // VRM0 models face -Z; turn them to face the camera like VRM1
+    }
     vrm.scene.traverse((o) => { o.frustumCulled = false; });
     if (vrm.springBoneManager) vrm.springBoneManager.reset();
     this.scene.add(vrm.scene);
     this.vrm = vrm;
+    if (this.opts.realistic) this.applyRealisticLook();
     if (this.opts.mannequin) this.applyMannequin();
+    for (const s of SIDES) {
+      try { this.hands[s] = new AvatarHand(vrm, s, this.isGltfAvatar ? mixamoTips(vrm.scene, s) : {}); } catch { /* no finger bones */ }
+    }
     // brow morphs are not VRM presets; VRoid models have Fcl_BRW_Surprised / Fcl_BRW_Angry
     vrm.scene.traverse((o) => {
       const mesh = o as THREE.Mesh;
@@ -150,6 +191,42 @@ export class VrmPuppet {
     vrm.update(0);
     this.frameCamera();
     return vrm;
+  }
+
+  /**
+   * Soft, photo-like light for the realistic avatar: a room environment map (image-based light, no hard edges),
+   * a large soft key from the upper right, neutral tone mapping, and the target photo's dark grey wall.
+   */
+  private applyRealisticLook() {
+    const r = this.renderer;
+    r.toneMapping = THREE.NeutralToneMapping;
+    r.toneMappingExposure = 1.0;
+    const pmrem = new THREE.PMREMGenerator(r);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.55;
+    pmrem.dispose();
+    this.scene.remove(...this.lights);
+    const key = new THREE.DirectionalLight(0xfff4ea, 1.6); key.position.set(-0.8, 2.2, 2.4); // camera-left, like the photo
+    const fill = new THREE.DirectionalLight(0xeaf0ff, 0.45); fill.position.set(1.4, 1.2, 1.8);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.5); rim.position.set(0.3, 1.8, -2.0);
+    this.lights = [key, fill, rim];
+    this.scene.add(...this.lights);
+    if (this.opts.background === "#1d2026" || this.opts.background === "#2b2b2f") this.opts.background = "#33363a";
+    this.scene.background = new THREE.Color(this.opts.background);
+    this.vrm!.scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      for (const m of (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) as THREE.MeshStandardMaterial[]) {
+        if (!m.isMeshStandardMaterial) continue;
+        const n = m.name.toLowerCase();
+        m.metalness = 0;
+        if (n === "top") m.roughness = 0.85;
+        else if (n === "skin") m.roughness = 0.55;
+        // the MakeHuman bob texture is light brown; the target has dark brown hair
+        else if (n === "hair") { m.color.setRGB(0.22, 0.15, 0.11, THREE.SRGBColorSpace); m.roughness = 0.6; m.alphaTest = 0.35; m.transparent = false; m.side = THREE.DoubleSide; }
+        else if (/brow|lash/.test(n)) { m.color.setRGB(0.25, 0.18, 0.14, THREE.SRGBColorSpace); m.alphaTest = 0.3; m.transparent = false; m.side = THREE.DoubleSide; }
+      }
+    });
   }
 
   private applyMannequin() {
@@ -186,8 +263,18 @@ export class VrmPuppet {
     this.vrm!.scene.updateMatrixWorld(true);
     const hips = this.wpos("hips")!, head = this.wpos("head")!;
     const chest = this.wpos("upperChest") ?? this.wpos("chest") ?? head.clone().lerp(hips, 0.5);
-    const top = head.y + (head.y - hips.y) * 0.62; // head top (hair) plus a little air
-    const bottom = hips.y - (head.y - hips.y) * 0.25; // below the waist, so hands resting on the lap stay in frame
+    let top = head.y + (head.y - hips.y) * 0.62; // head top (hair) plus a little air
+    let bottom = hips.y - (head.y - hips.y) * 0.25; // below the waist, so hands resting on the lap stay in frame
+    if (this.isGltfAvatar) {
+      // assets/avatar/avatar-main.jpg: hair top 19.7% from the top, chin at 46.7%, the frame ends at the hips
+      const box = new THREE.Box3();
+      this.vrm!.scene.traverse((o) => { if ((o as THREE.Mesh).isMesh && /bob|hair/i.test(o.name + ((o as THREE.Mesh).material as THREE.Material).name)) box.expandByObject(o); });
+      const hairTop = box.isEmpty() ? head.y + 0.21 : box.max.y;
+      const chin = head.y - 0.01; // the neck/head joint sits about at the jaw line
+      const span = (hairTop - chin) / (0.467 - 0.197);
+      top = hairTop + 0.197 * span;
+      bottom = top - span;
+    }
     const mid = (top + bottom) / 2;
     const span = top - bottom;
     const dist = span / 2 / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
@@ -200,15 +287,30 @@ export class VrmPuppet {
   restPose() {
     const vrm = this.vrm!;
     vrm.humanoid.resetNormalizedPose();
-    const down = 1.25;
-    this.node("leftUpperArm")?.rotation.set(0, 0, -down);
-    this.node("rightUpperArm")?.rotation.set(0, 0, down);
-    this.node("leftLowerArm")?.rotation.set(0, -0.15, 0);
-    this.node("rightLowerArm")?.rotation.set(0, 0.15, 0);
+    if (this.isGltfAvatar) {
+      // A-pose rest: aim the arms instead (same pose as the VRM's: upper arm 72 degrees down, elbow a little bent)
+      for (const s of SIDES) {
+        const x = s === "left" ? 1 : -1;
+        this.aim(`${s}UpperArm`, `${s}LowerArm`, new THREE.Vector3(0.315 * x, -0.949, 0.02));
+        this.aim(`${s}LowerArm`, `${s}Hand`, new THREE.Vector3(0.2 * x, -0.95, 0.24));
+        this.aim(`${s}Hand`, `${s}MiddleProximal`, new THREE.Vector3(0.1 * x, -0.97, 0.2));
+      }
+    } else {
+      const down = 1.25;
+      this.node("leftUpperArm")?.rotation.set(0, 0, -down);
+      this.node("rightUpperArm")?.rotation.set(0, 0, down);
+      this.node("leftLowerArm")?.rotation.set(0, -0.15, 0);
+      this.node("rightLowerArm")?.rotation.set(0, 0.15, 0);
+    }
     for (const s of SIDES) this.relaxFingers(s);
   }
 
   private relaxFingers(side: Side) {
+    if (this.opts.solver === "anatomic" || this.isGltfAvatar) {
+      const relaxed = Object.fromEntries(FINGERS.map((f) => [f, RELAXED_DEG[f].map((v) => (v * Math.PI) / 180)])) as HandAngles;
+      this.poseFingers(side, relaxed);
+      return;
+    }
     const sign = side === "left" ? -1 : 1; // VRM1: curling toward the palm is -Z for the left hand, +Z for the right
     for (const f of FINGER_BONES) {
       if (f === "Thumb") continue;
@@ -294,11 +396,15 @@ export class VrmPuppet {
   bake(m: Motion): BakedTrack {
     const vrm = this.vrm!;
     const n = m.frames.length, fps = m.fps;
+    if (this.opts.solver === "anatomic") this.precomputeHands(m);
+    else this.handPre = null;
     const bones = this.drivenBones().map((b) => {
       const node = this.node(b.name)!;
       const forearm = b.name === "leftLowerArm" || b.name === "rightLowerArm";
       const child = forearm ? this.node(`${b.side}Hand` as VRMHumanBoneName) : null;
-      const channel = (name: string, group: BoneGroup): QuatChannel => ({ name, q: new Float32Array(4 * n), valid: new Uint8Array(n), params: CHANNEL_PARAMS[group] });
+      // anatomic fingers are already smoothed (one-euro, zero-phase) and limit-checked per joint angle: no second blur
+      const params = (group: BoneGroup) => (group === "finger" && this.opts.solver === "anatomic" ? { ...CHANNEL_PARAMS.finger, sigmaS: 0 } : CHANNEL_PARAMS[group]);
+      const channel = (name: string, group: BoneGroup): QuatChannel => ({ name, q: new Float32Array(4 * n), valid: new Uint8Array(n), params: params(group) });
       return {
         ...b, node,
         rot: channel(b.name, b.group),
@@ -602,7 +708,13 @@ export class VrmPuppet {
       // forearm direction first; its roll (pronation/supination) comes from the hand below
       this.aim(`${side}LowerArm`, `${side}Hand`, fore);
       if (!H || !hand) continue;
-      const palmN = v3(mpToThree(handW ? palmNormal(handW, side) : palmNormal(hand, side, [m.width, m.height, m.width])));
+      let palmN = v3(mpToThree(handW ? palmNormal(handW, side) : palmNormal(hand, side, [m.width, m.height, m.width])));
+      if (this.opts.solver === "anatomic") {
+        // the anatomic solver may decide the tracker flipped the palm (src/hand.ts palmFrameRobust): follow it
+        const pts = this.handPoints(f, m, side);
+        const R = pts ? palmFrameRobust(pts, side) : null;
+        if (R) palmN = new THREE.Vector3(...R.n);
+      }
       const restPalm = this.restPalmNormal(side);
       // hand: wrist -> middle knuckle, rolled by the palm normal. Always well defined: the palm normal is
       // perpendicular to that direction (it could line up with the forearm when the wrist bends, which made
@@ -611,6 +723,13 @@ export class VrmPuppet {
       // a wrist cannot roll: move the hand's roll about the forearm axis into the forearm.
       // The hand's world orientation (and so every finger) is unchanged by this.
       this.moveRollToForearm(side);
+      if (this.opts.solver === "anatomic") {
+        // fingers from the anatomical hand solver: limited, IK-fitted, smoothed over the clip when baked
+        const pre = this.handPre?.motion === m ? this.handPre[side][f.i] : undefined;
+        const angles = pre !== undefined ? pre : this.solveHandFrame(f, m, side);
+        if (angles) this.poseFingers(side, angles);
+        continue;
+      }
       // fingers: swing each joint toward the next landmark (keeps curl and spread)
       for (const fg of FINGER_BONES) {
         const lm = FINGER_LM[fg];
@@ -631,6 +750,74 @@ export class VrmPuppet {
     fore.quaternion.multiply(roll);
     hand.quaternion.premultiply(roll.invert());
     fore.updateMatrixWorld(true);
+  }
+
+  // ---------------------------------------------------------------- anatomic hands (src/hand.ts)
+  /** per-frame hand angles of the baked motion, solved and smoothed over the whole clip (anatomic solver) */
+  private handPre: { motion: Motion; left: (HandAngles | null)[]; right: (HandAngles | null)[] } | null = null;
+
+  /**
+   * The 21 hand points of one frame in avatar axes (metres): motion v2 `hands3d` when present and confident,
+   * else the tracker's world hand landmarks, else the image landmarks scaled to pixels.
+   */
+  handPoints(f: MotionFrame, m: Motion, side: Side): V3[] | null {
+    const h3 = (f as any).hands3d?.[side];
+    if (h3?.joints?.length === 21 && (h3.conf ?? 1) >= 0.3) return h3.joints.map((p: number[]) => mpToThree(p) as V3);
+    const hand = side === "left" ? f.leftHand : f.rightHand;
+    const handW = side === "left" ? f.leftHandWorld : f.rightHandWorld;
+    if (handW) return handW.map((p) => mpToThree(p) as V3);
+    if (hand) return hand.map((p) => mpToThree([p[0] * m.width, p[1] * m.height, p[2] * m.width]) as V3);
+    return null;
+  }
+
+  private solveHandFrame(f: MotionFrame, m: Motion, side: Side): HandAngles | null {
+    const ah = this.hands[side];
+    const pts = this.handPoints(f, m, side);
+    if (!ah || !pts) return null;
+    return solveHand(pts, side, ah.geom)?.angles ?? null;
+  }
+
+  /** Solve both hands over the whole clip, then smooth (zero-phase one-euro) and re-check overlaps. */
+  private precomputeHands(m: Motion) {
+    const out = { motion: m, left: [] as (HandAngles | null)[], right: [] as (HandAngles | null)[] };
+    for (const side of SIDES) {
+      const raw = m.frames.map((f) => this.solveHandFrame(f, m, side));
+      const ah = this.hands[side];
+      out[side] = smoothSequence(raw, m.fps).map((a) => { if (a && ah) separateFingers(ah.geom, a, 0.0065); return a; });
+    }
+    this.handPre = out;
+  }
+
+  /** current palm frame of the avatar's hand (world): its rest palm frame carried by the hand bone */
+  private currentPalm(side: Side): PalmFrame | null {
+    const ah = this.hands[side], hand = this.node(`${side}Hand`);
+    if (!ah || !hand) return null;
+    hand.updateWorldMatrix(true, false);
+    const q = hand.getWorldQuaternion(new THREE.Quaternion());
+    const rot = (v: V3) => new THREE.Vector3(v[0], v[1], v[2]).applyQuaternion(q).toArray() as V3;
+    return { o: hand.getWorldPosition(new THREE.Vector3()).toArray() as V3, x: rot(ah.rest.x), y: rot(ah.rest.y), n: rot(ah.rest.n) };
+  }
+
+  /** Pose the 15 finger bones of a hand from joint angles (forward kinematics in the avatar's own palm frame). */
+  private poseFingers(side: Side, angles: HandAngles) {
+    const ah = this.hands[side];
+    const F = this.currentPalm(side);
+    if (!ah || !F) return;
+    for (const f of FINGERS) {
+      const bones = fingerBones(side, f);
+      if (!bones.every((b) => this.node(b))) continue;
+      const { dirs } = fk(ah.geom, f, angles[f]);
+      for (let k = 0; k < 3; k++) {
+        const child = k < 2 ? bones[k + 1] : ah.tipOffset[f];
+        const dW = new THREE.Vector3(...dirToWorld(F, dirs[k]));
+        if (f === "thumb" && k === 0) {
+          // the thumb also turns about its own axis as it opposes: carry its bend plane along
+          const restN = new THREE.Vector3(...dirToWorld(ah.rest, ah.thumbPlaneNormal));
+          const n = new THREE.Vector3(...dirToWorld(F, thumbPlaneNormal(dirs[0])));
+          this.aim(bones[k], child, dW, restN, n, 1);
+        } else this.aim(bones[k], child, dW);
+      }
+    }
   }
 
   /** world vector -> local frame of a bone's parent, assuming the bone itself is still at rest */
@@ -681,6 +868,14 @@ export class VrmPuppet {
         }
       }
       r.err[`${S} fingers`] = cnt ? sum / cnt : null;
+      // anatomy of the hand as shown: joints outside the limits, neighbour fingers inside each other
+      const ah = this.hands[side];
+      if (ah) {
+        const shown = ah.points();
+        r.limits ??= { L: 0, R: 0, overlapsL: 0, overlapsR: 0 };
+        r.limits[S] = countViolations(shown, side).count;
+        r.limits[`overlaps${S}`] = countOverlaps(shown, side);
+      }
     }
     for (const [k, v] of Object.entries(r.err)) {
       const limit = k.endsWith("fingers") ? RETARGET_THRESHOLD_DEG * 0.75 : RETARGET_THRESHOLD_DEG;
@@ -689,12 +884,52 @@ export class VrmPuppet {
   }
 
   // ---------------------------------------------------------------- rendering
+  /**
+   * One pass from the same camera. depth: 8-bit, white = near, over a 1.2 m slab around the avatar (so the
+   * hands in front of the body get most of the range), black = background. normal: view-space normals as
+   * RGB = n * 0.5 + 0.5, background (128, 128, 255). seg: flat colours per finger (avatar.ts SEG_COLORS).
+   */
+  private renderPass(p: Pass) {
+    const { renderer, scene, camera } = this;
+    if (p === "rgb") { renderer.render(scene, camera); return; }
+    const saved = { bg: scene.background, tm: renderer.toneMapping, cs: renderer.outputColorSpace, near: camera.near, far: camera.far, ov: scene.overrideMaterial };
+    renderer.toneMapping = THREE.NoToneMapping;
+    if (p === "depth") {
+      const d = camera.position.distanceTo(this.wpos("upperChest") ?? this.wpos("hips") ?? new THREE.Vector3());
+      camera.near = Math.max(0.05, d - 0.75); camera.far = d + 0.45;
+      camera.updateProjectionMatrix();
+      this.passMats.depth ??= new THREE.MeshDepthMaterial();
+      scene.overrideMaterial = this.passMats.depth;
+      scene.background = new THREE.Color(0, 0, 0);
+      renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    } else if (p === "normal") {
+      this.passMats.normal ??= new THREE.MeshNormalMaterial();
+      scene.overrideMaterial = this.passMats.normal;
+      scene.background = new THREE.Color(0.5, 0.5, 1.0);
+      renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    } else {
+      this.segMaterial ??= buildSegmentation(this.vrm!);
+      scene.overrideMaterial = this.segMaterial;
+      scene.background = new THREE.Color(0, 0, 0);
+    }
+    renderer.render(scene, camera);
+    scene.background = saved.bg; scene.overrideMaterial = saved.ov;
+    renderer.toneMapping = saved.tm; renderer.outputColorSpace = saved.cs;
+    if (camera.near !== saved.near || camera.far !== saved.far) { camera.near = saved.near; camera.far = saved.far; camera.updateProjectionMatrix(); }
+  }
+
   render(closeupLabels?: (rects: { side: Side; x: number; y: number; size: number }[]) => void) {
     const { renderer, width: w, height: h } = this;
+    const passes = this.opts.passes;
+    renderer.setScissorTest(passes.length > 1);
+    passes.forEach((p, k) => {
+      renderer.setViewport(k * w, 0, w, h);
+      renderer.setScissor(k * w, 0, w, h);
+      this.renderPass(p);
+    });
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, w, h);
-    renderer.render(this.scene, this.camera);
-    if (!this.opts.closeup || !this.vrm) return;
+    if (!this.opts.closeup || !this.vrm || passes[0] !== "rgb") return;
     const box = Math.round(Math.min(w * 0.46, h * 0.34)), pad = Math.round(w * 0.02), labelPad = 26;
     const rects: { side: Side; x: number; y: number; size: number }[] = [];
     // the avatar's right hand appears on the image left, like the subject's

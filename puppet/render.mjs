@@ -6,6 +6,17 @@
 //   node puppet/render.mjs --motion PATH --view skeleton|vrm|sidebyside --out out/puppet/x.mp4
 //        [--video SRC.mp4] [--size 540x720] [--fps 24] [--closeup] [--solver direct|kalidokit]
 //        [--mannequin] [--labels 0|1] [--model URL] [--frames N] [--raw] [--gpu]
+//        [--avatar signer] [--solver anatomic] [--passes rgb,depth,normal,seg] [--aa 0] [--capture raw|png]
+//
+// --avatar signer   the realistic reference avatar (puppet/models/signer.glb, puppet/avatar/README.md); its
+//                   default solver is anatomic (src/hand.ts: joint limits, fingertip IK, no finger overlap).
+// --passes          extra passes from the same camera, each written to its own mp4 next to --out:
+//                   x.mp4 (rgb), x.depth.mp4, x.normal.mp4, x.seg.mp4 (all frame-aligned, view vrm only).
+// --capture raw     (default for --view vrm) the page reads the WebGL pixels and hands them back base64-encoded
+//                   (native FileReader), 24 frames per page call; they go straight into ffmpeg as raw RGBA: no PNG
+//                   encode or decode. --capture post sends them as a binary HTTP POST instead (slower here).
+//                   --capture png is the old path (page composites all panels, toBlob PNG, base64).
+// --aa 0            no multisampling: faster on software WebGL, slightly jaggier edges.
 //
 // The puppet is smoothed by default (src/track.ts: tracker glitches out, dropouts bridged, light zero-phase
 // smoothing, hair/cloth physics); frame i of the video is still motion frame i, nothing lags.
@@ -42,14 +53,24 @@ const view = arg("view", "sidebyside");
 const out = resolve(arg("out"));
 const videoPath = arg("video", null) ? resolve(arg("video")) : null;
 const [W, H] = String(arg("size", "540x720")).split("x").map(Number);
-const solver = arg("solver", "direct");
+const avatar = arg("avatar", null);
+const model = arg("model", null) ?? (avatar === "signer" ? "/models/signer.glb" : null);
+const solver = arg("solver", model && /\.(glb|gltf)$/i.test(model) ? "anatomic" : "direct");
 const closeup = flag("closeup");
 const mannequin = flag("mannequin");
 const labels = arg("labels", null);
-const model = arg("model", null);
 const raw = flag("raw");
 const gpu = flag("gpu");
+const passes = String(arg("passes", "rgb")).split(",").filter(Boolean);
+const aa = String(arg("aa", "1")) !== "0";
+const capture = String(arg("capture", view === "vrm" ? "jpeg" : "png")); // jpeg | raw | post | png
+const jpegQ = Number(arg("jpeg-quality", 0.95));
 if (!["skeleton", "vrm", "sidebyside"].includes(view)) { console.error(`--view must be skeleton, vrm or sidebyside`); process.exit(1); }
+if (passes.some((p) => !["rgb", "depth", "normal", "seg"].includes(p))) { console.error("--passes: rgb, depth, normal, seg"); process.exit(1); }
+if ((passes.length > 1 || passes[0] !== "rgb") && view !== "vrm") { console.error("--passes needs --view vrm"); process.exit(1); }
+if (capture !== "png" && view !== "vrm") { console.error("--capture jpeg|raw|post needs --view vrm"); process.exit(1); }
+if (!["png", "jpeg", "raw", "post"].includes(capture)) { console.error("--capture: jpeg, raw, post or png"); process.exit(1); }
+const passOut = (p, k) => (k === 0 ? out : out.replace(/\.mp4$/i, "") + `.${p}.mp4`);
 
 const motion = JSON.parse(readFileSync(motionPath, "utf8"));
 const N = Math.min(motion.frames.length, Number(arg("frames", motion.frames.length)));
@@ -85,7 +106,22 @@ if (view === "sidebyside" && videoPath) {
 
 // 2. dev server (serves the page, the model, and local files under /__file/)
 const { createServer } = await import("vite");
-const server = await createServer({ root: here, configFile: join(here, "vite.config.ts"), logLevel: "error", server: { port: 5190, strictPort: false, host: "127.0.0.1" } });
+// raw capture: the page POSTs each frame's RGBA pixels to /__sink; they go straight to ffmpeg's stdin, in order
+let sinkWrite = null;
+const sink = {
+  name: "frame-sink",
+  configureServer(s) {
+    s.middlewares.use("/__sink", (req, res) => {
+      const chunks = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", async () => {
+        try { await sinkWrite(Buffer.concat(chunks)); res.statusCode = 204; res.end(); }
+        catch (e) { res.statusCode = 500; res.end(String(e)); }
+      });
+    });
+  },
+};
+const server = await createServer({ root: here, configFile: join(here, "vite.config.ts"), logLevel: "error", plugins: [sink], server: { port: 5190, strictPort: false, host: "127.0.0.1" } });
 await server.listen();
 const base = server.resolvedUrls.local[0].replace(/\/$/, "");
 
@@ -96,7 +132,9 @@ if (labels !== null) params.set("labels", String(labels));
 if (model) params.set("model", model);
 if (raw) params.set("smooth", "0");
 if (srcTpl) params.set("srcframes", srcTpl);
-const panels = view === "sidebyside" ? (srcTpl ? 3 : 2) : 1;
+if (passes.join(",") !== "rgb") params.set("passes", passes.join(","));
+if (!aa) params.set("aa", "0");
+const panels = view === "sidebyside" ? (srcTpl ? 3 : 2) : passes.length;
 const pageW = W * panels;
 
 // 3. headless Chrome
@@ -137,34 +175,79 @@ try {
   else if (view !== "skeleton") console.log("smoothing: off (--raw)");
 
   mkdirSync(dirname(out), { recursive: true });
-  ffmpeg = spawn("ffmpeg", ["-v", "error", "-y", "-f", "image2pipe", "-framerate", String(fps), "-c:v", "png", "-i", "-",
-    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "17", "-preset", "medium", "-r", String(fps), "-movflags", "+faststart", out],
-  { stdio: ["pipe", "inherit", "inherit"] });
+  const x264 = (crf, preset) => ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", String(crf), "-preset", preset, "-r", String(fps), "-movflags", "+faststart"];
+  const ffArgs = ["-v", "error", "-y"];
+  const fast = capture !== "png";
+  if (fast) {
+    // one wide frame (passes side by side) -> split -> one mp4 per pass. raw/post: RGBA rows bottom-up from readPixels
+    if (capture === "jpeg") ffArgs.push("-f", "image2pipe", "-framerate", String(fps), "-c:v", "mjpeg", "-i", "-");
+    else ffArgs.push("-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${pageW}x${H}`, "-framerate", String(fps), "-i", "-");
+    const k = passes.length;
+    const head = capture === "jpeg" ? "[0:v]null" : "[0:v]vflip";
+    const graph = [`${head}${k > 1 ? `,split=${k}${passes.map((_, j) => `[s${j}]`).join("")}` : "[s0]"}`,
+      ...passes.map((_, j) => `[s${j}]crop=${W}:${H}:${j * W}:0[o${j}]`)].join(";");
+    ffArgs.push("-filter_complex", graph);
+    // rgb keeps the old quality; data passes are flat images that encode fast
+    passes.forEach((p, j) => ffArgs.push("-map", `[o${j}]`, ...(p === "rgb" ? x264(17, "medium") : x264(12, "veryfast")), passOut(p, j)));
+  } else {
+    ffArgs.push("-f", "image2pipe", "-framerate", String(fps), "-c:v", "png", "-i", "-", ...x264(17, "medium"), out);
+  }
+  ffmpeg = spawn("ffmpeg", ffArgs, { stdio: ["pipe", "inherit", "inherit"] });
   const ffDone = new Promise((res, rej) => { ffmpeg.on("close", (c) => (c === 0 ? res() : rej(new Error(`ffmpeg exited ${c}`)))); });
+  const write = async (buf) => { if (!ffmpeg.stdin.write(buf)) await new Promise((res) => ffmpeg.stdin.once("drain", res)); };
 
   const reports = [];
   const t0 = Date.now();
   let tDraw = 0, tCap = 0;
-  for (let i = 0; i < N; i++) {
-    const a = Date.now();
-    const r = await page.evaluate((k) => window.renderFrame(k), i);
-    const b = Date.now();
-    reports.push(r);
-    const png = Buffer.from(await page.evaluate(() => window.captureFrame()), "base64");
-    tDraw += b - a; tCap += Date.now() - b;
-    if (!ffmpeg.stdin.write(png)) await new Promise((res) => ffmpeg.stdin.once("drain", res));
-    if (i % 24 === 0 || i === N - 1) process.stdout.write(`\rframe ${i + 1}/${N}  (${((Date.now() - t0) / (i + 1)).toFixed(0)} ms/frame: draw ${(tDraw / (i + 1)).toFixed(0)}, capture ${(tCap / (i + 1)).toFixed(0)})   `);
+  if (fast) {
+    let got = 0;
+    sinkWrite = async (buf) => {
+      if (capture !== "jpeg" && buf.length !== pageW * H * 4) throw new Error(`frame ${got}: ${buf.length} bytes, expected ${pageW * H * 4}`);
+      await write(buf);
+      got++;
+      if (got % 24 === 0 || got === N) process.stdout.write(`\rframe ${got}/${N}  (${((Date.now() - t0) / got).toFixed(0)} ms/frame)   `);
+    };
+    const CHUNK = 24; // one page call per second of video
+    const ms = { draw: 0, read: 0, post: 0 };
+    let tTransfer = 0;
+    for (let a = 0; a < N; a += CHUNK) {
+      const c0 = Date.now();
+      const r = await page.evaluate((from, to, s, q) => window.renderRange(from, to, s, q), a, Math.min(N, a + CHUNK),
+        capture === "post" ? "/__sink" : null, capture === "jpeg" ? jpegQ : 0);
+      tTransfer += Date.now() - c0 - (r.ms.draw + r.ms.read + r.ms.post);
+      reports.push(...r.reports);
+      for (const f of r.frames) await sinkWrite(Buffer.from(f, "base64"));
+      for (const k of Object.keys(ms)) ms[k] += r.ms[k];
+    }
+    process.stdout.write("\n");
+    console.log(`per frame: draw ${(ms.draw / N).toFixed(1)} ms, ${capture === "jpeg" ? "jpeg encode" : "readPixels"} ${(ms.read / N).toFixed(1)}, ${capture === "post" ? "POST" : "base64"} ${(ms.post / N).toFixed(1)}, page -> node ${(tTransfer / N).toFixed(1)}`);
+  } else {
+    for (let i = 0; i < N; i++) {
+      const a = Date.now();
+      const r = await page.evaluate((k) => window.renderFrame(k), i);
+      const b = Date.now();
+      reports.push(r);
+      const png = Buffer.from(await page.evaluate(() => window.captureFrame()), "base64");
+      tDraw += b - a; tCap += Date.now() - b;
+      await write(png);
+      if (i % 24 === 0 || i === N - 1) process.stdout.write(`\rframe ${i + 1}/${N}  (${((Date.now() - t0) / (i + 1)).toFixed(0)} ms/frame: draw ${(tDraw / (i + 1)).toFixed(0)}, capture ${(tCap / (i + 1)).toFixed(0)})   `);
+    }
+    process.stdout.write("\n");
   }
-  process.stdout.write("\n");
+  const tRender = (Date.now() - t0) / 1000;
   ffmpeg.stdin.end();
   await ffDone;
   if (logs.length) console.warn(`page messages:\n  ${[...new Set(logs)].slice(0, 10).join("\n  ")}`);
 
-  // 4. verify the frame count
-  const count = Number(execFileSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", out]).toString().trim());
+  // 4. verify the frame count of every output
   const secs = (Date.now() - t0) / 1000;
-  console.log(`wrote ${out}: ${count} frames, ${pageW}x${H} @ ${fps} fps (motion has ${N} frames), ${secs.toFixed(1)} s, ${(secs / N).toFixed(3)} s/frame, ${software ? "software" : "hardware"} webgl`);
-  if (count !== N) { console.error(`FRAME COUNT MISMATCH: video ${count} vs motion ${N}`); process.exitCode = 2; }
+  const outs = capture !== "png" ? passes.map(passOut) : [out];
+  for (const o of outs) {
+    const count = parseInt(execFileSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", o]).toString().trim());
+    console.log(`wrote ${o}: ${count} frames, ${capture !== "png" ? W : pageW}x${H} @ ${fps} fps (motion has ${N} frames)`);
+    if (count !== N) { console.error(`FRAME COUNT MISMATCH: video ${count} vs motion ${N}`); process.exitCode = 2; }
+  }
+  console.log(`time: ${secs.toFixed(1)} s total, ${(secs / N).toFixed(3)} s/frame (${(N / secs).toFixed(1)} fps; frames drawn+captured in ${tRender.toFixed(1)} s), ${passes.length} pass(es), ${software ? "software" : "hardware"} webgl, capture ${capture}, aa ${aa ? "on" : "off"}`);
 
   // 5. report: tracking failures (no landmarks) vs retargeting failures (landmarks there, avatar off)
   if (reports.some(Boolean)) {
@@ -185,16 +268,31 @@ try {
     }
     const tracking = {};
     for (const r of reports) for (const t of r?.tracking ?? []) tracking[t] = (tracking[t] ?? 0) + 1;
+    // hands as shown: joint-limit violations and overlapping fingers (src/hand.ts), only where the hand is tracked
+    const limits = { violations: 0, overlaps: 0, frames_with_violation: 0, hand_frames: 0 };
+    for (const r of reports) {
+      if (!r?.limits) continue;
+      for (const S of ["L", "R"]) {
+        if (r.err[`${S} fingers`] === null || r.err[`${S} fingers`] === undefined) continue;
+        limits.hand_frames++;
+        limits.violations += r.limits[S];
+        limits.overlaps += r.limits[`overlaps${S}`];
+        if (r.limits[S]) limits.frames_with_violation++;
+      }
+    }
     const rep = {
-      motion: motionPath, view, solver, frames: N, fps,
+      motion: motionPath, view, solver, model: model ?? "VRM1_Constraint_Twist_Sample.vrm", frames: N, fps, passes,
+      seconds: +secs.toFixed(2), seconds_per_frame: +(secs / N).toFixed(4), webgl: software ? "software" : "hardware", capture, aa,
       smoothing: info.smoothing ?? null,
       tracking_failures_frames: tracking,
+      hand_limits: limits,
       retarget_threshold_deg: 30,
       retarget_error: summary,
-      per_frame: reports.map((r, i) => r && { i, tracking: r.tracking, retarget: r.retarget, err: Object.fromEntries(Object.entries(r.err).map(([k, v]) => [k, v === null ? null : +v.toFixed(1)])) }),
+      per_frame: reports.map((r, i) => r && { i, tracking: r.tracking, retarget: r.retarget, limits: r.limits, err: Object.fromEntries(Object.entries(r.err).map(([k, v]) => [k, v === null ? null : +v.toFixed(1)])) }),
     };
     writeFileSync(out.replace(/\.mp4$/i, "") + ".json", JSON.stringify(rep, null, 1));
     console.log(`tracking failures (frames): ${JSON.stringify(tracking)}`);
+    console.log(`hand joint-limit violations: ${limits.violations} in ${limits.frames_with_violation} of ${limits.hand_frames} tracked hand-frames; overlapping fingers: ${limits.overlaps}`);
     console.log("retargeting error (deg):");
     for (const [k, s] of Object.entries(summary)) if (s.tracked_frames) console.log(`  ${k.padEnd(14)} mean ${String(s.mean_deg).padStart(5)}  max ${String(s.max_deg).padStart(5)} @ frame ${s.worst_frame}  over 30deg: ${s.frames_over_threshold}`);
   }
