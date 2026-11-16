@@ -25,7 +25,8 @@
 // --lite            cheap shading (Lambert, hemisphere light, no environment map) for software WebGL.
 // --placement auto|fk|ik   hand placement (src/place.ts). ik: wrists placed relative to the avatar's own face and
 //                   shoulders, arms solved with IK; fk: arm rotations copied. auto (default): ik for --avatar signer,
-//                   fk for the .vrm. The report's "location" block compares hand-to-face/shoulder distances.
+//                   fk for the .vrm. The report's "location" block compares hand-to-face/shoulder distances,
+//                   "occlusion" counts face points the arms cover. --swivel 0: ik without the elbow swivel search.
 //
 // The puppet is smoothed by default (src/track.ts: tracker glitches out, dropouts bridged, light zero-phase
 // smoothing, hair/cloth physics); frame i of the video is still motion frame i, nothing lags.
@@ -148,6 +149,7 @@ if (passes.join(",") !== "rgb") params.set("passes", passes.join(","));
 if (!aa) params.set("aa", "0");
 if (lite) params.set("lite", "1");
 if (placement !== "auto") params.set("place", placement);
+if (String(arg("swivel", "1")) === "0") params.set("swivel", "0");
 const panels = view === "sidebyside" ? (srcTpl ? 3 : 2) : passes.length;
 const pageW = W * panels;
 
@@ -336,15 +338,16 @@ try {
       }
     }
     const location = summarizeLocation(reports);
+    const occlusion = summarizeOcclusion(reports);
     const rep = {
-      motion: motionPath, avatar: info.avatar ?? null, location, view, solver, model: model ?? "VRM1_Constraint_Twist_Sample.vrm", frames: N, fps, passes,
+      motion: motionPath, avatar: info.avatar ?? null, location, occlusion, view, solver, model: model ?? "VRM1_Constraint_Twist_Sample.vrm", frames: N, fps, passes,
       seconds: +secs.toFixed(2), seconds_per_frame: +(secs / N).toFixed(4), webgl: software ? "software" : "hardware", capture, aa,
       smoothing: info.smoothing ?? null,
       tracking_failures_frames: tracking,
       hand_limits: limits,
       retarget_threshold_deg: 30,
       retarget_error: summary,
-      per_frame: reports.map((r, i) => r && { i, tracking: r.tracking, retarget: r.retarget, limits: r.limits, loc: roundLoc(r.loc), err: Object.fromEntries(Object.entries(r.err).map(([k, v]) => [k, v === null ? null : +v.toFixed(1)])) }),
+      per_frame: reports.map((r, i) => r && { i, tracking: r.tracking, retarget: r.retarget, limits: r.limits, loc: roundLoc(r.loc), occ: r.occ, err: Object.fromEntries(Object.entries(r.err).map(([k, v]) => [k, v === null ? null : +v.toFixed(1)])) }),
     };
     writeFileSync(out.replace(/\.mp4$/i, "") + ".json", JSON.stringify(rep, null, 1));
     console.log(`tracking failures (frames): ${JSON.stringify(tracking)}`);
@@ -352,6 +355,7 @@ try {
     if (location) {
       console.log(`hand placement: ${info.avatar?.placement ?? "?"}`);
       console.log(`location error (frontal, shoulder widths): mean ${location.mean_err}  max ${location.max_err} @ frame ${location.max_err_frame} (${location.max_err_pair}), ${location.hand_frames} hand-frames`);
+      if (occlusion) console.log(`face covered by the arms: mean ${occlusion.mean_fraction} of the face points, ${occlusion.frames_any} frames with any (${occlusion.frames_2plus} with 2+), at face contacts ${occlusion.contact_mean_fraction}`);
       console.log(`face contacts (source < ${location.contact_dist}): ${location.contacts_src}, lost on the avatar: ${location.contacts_lost} (> 0.25: ${location.contacts_lost_far}); avatar 3D gap at contacts mean ${location.contact_gap3d_mean}`);
     }
     console.log("retargeting error (deg):");
@@ -407,4 +411,24 @@ function roundLoc(loc) {
   if (!loc) return undefined;
   const r = (v) => +v.toFixed(3);
   return Object.fromEntries(Object.entries(loc).map(([S, l]) => [S, { src: l.src.map(r), av: l.av.map(r), srcFace: r(l.srcFace), avFace: r(l.avFace), avFace3d: r(l.avFace3d) }]));
+}
+
+/**
+ * Face occlusion by the arms (src/place.ts faceSamples, faceOcclusion): per frame, how many of the 8 face points
+ * (eyes, nose, mouth, chin, forehead, cheeks) an upper arm or forearm covers in the render camera. Hands are not
+ * counted: a hand touching the face is meant to be there, and face points within 7 cm of a wrist are left to it.
+ */
+function summarizeOcclusion(reports) {
+  const rows = reports.filter((r) => r?.occ);
+  if (!rows.length) return null;
+  const frac = (r) => r.occ.covered / r.occ.of;
+  const contact = rows.filter((r) => Object.values(r.loc ?? {}).some((l) => l.srcFace < 0.15));
+  const mean = (a) => (a.length ? +(a.reduce((x, r) => x + frac(r), 0) / a.length).toFixed(3) : null);
+  const worst = rows.reduce((b, r) => (frac(r) > frac(b) ? r : b), rows[0]);
+  return {
+    face_points: rows[0].occ.of, frames: rows.length, mean_fraction: mean(rows),
+    frames_any: rows.filter((r) => r.occ.covered > 0).length, frames_2plus: rows.filter((r) => r.occ.covered >= 2).length,
+    max_fraction: +frac(worst).toFixed(3), max_frame: worst.frame,
+    contact_frames: contact.length, contact_mean_fraction: mean(contact),
+  };
 }

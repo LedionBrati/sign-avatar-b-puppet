@@ -123,3 +123,43 @@ describe("head push-out", () => {
     expect(headPushOut([0.3, av.nose[1], 0], [[0, 0, 0]], head)).toBe(0);
   });
 });
+
+describe("elbow swivel and face occlusion", () => {
+  // camera 3 m in front, looking down -z
+  const proj = (p: V3): V3 => { const d = 3 - p[2]; return [p[0] / d, p[1] / d, d]; };
+
+  it("counts face points covered by an arm in front of the face, not one beside it", async () => {
+    const { faceOcclusion, faceSamples } = await import("../src/place");
+    const av = body(0.33, 0.24, 0.15);
+    const face = faceSamples(av);
+    const across = [{ a: [-0.25, 0.2, 0.25] as V3, b: [0.05, av.nose[1], 0.25] as V3, r: 0.04 }];
+    const beside = [{ a: [-0.3, 0.0, 0.0] as V3, b: [-0.25, 0.3, 0.0] as V3, r: 0.04 }];
+    expect(faceOcclusion(face, across, proj).count).toBeGreaterThan(1);
+    expect(faceOcclusion(face, beside, proj).count).toBe(0);
+  });
+
+  it("moves the elbow out of the way when the tracked swivel puts the forearm across the face", async () => {
+    const { elbowCost, faceOcclusion, faceSamples, swivelIK } = await import("../src/place");
+    const av = body(0.33, 0.24, 0.15);
+    const face = faceSamples(av);
+    const s = av.shR, t: V3 = [av.eyeR[0], av.eyeR[1], av.eyeR[2] + 0.03];
+    const segs = (e: V3) => [{ a: s, b: e, r: 0.045 }, { a: e, b: [e[0] + (t[0] - e[0]) * 0.8, e[1] + (t[1] - e[1]) * 0.8, e[2] + (t[2] - e[2]) * 0.8] as V3, r: 0.038 }];
+    const cost = elbowCost(face, proj, s, t, 0.24, [-1, 0, 0]);
+    // pole up and across in front: the plain IK forearm would come in over the face
+    const pole: V3 = [0.15, 0.35, 0.35];
+    const r = swivelIK(s, t, 0.24, 0.22, pole, cost, null);
+    expect(dist(s, r.elbow)).toBeCloseTo(0.24, 5);
+    expect(dist(r.elbow, r.wrist)).toBeCloseTo(0.22, 5);
+    const plain = twoBoneIK(s, t, 0.24, 0.22, pole);
+    const { visibleFace } = await import("../src/place");
+    const vis = visibleFace(face, [t]); // the eye and cheek the hand is at are the hand's
+    const before = faceOcclusion(vis, segs(plain.elbow), proj), after = faceOcclusion(vis, segs(r.elbow), proj);
+    expect(before.count).toBeGreaterThanOrEqual(2);
+    expect(after.count).toBe(0);
+    expect(r.elbow[2]).toBeGreaterThan(s[2] - 0.01); // not behind the shoulder
+    expect(r.elbow[0]).toBeLessThan(av.earR[0]); // the elbow is out beside the face, not under it
+    // with nothing in the way the tracked swivel is kept
+    const free = swivelIK(s, t, 0.24, 0.22, pole, () => 0, null);
+    expect(dist(free.elbow, plain.elbow)).toBeLessThan(1e-3);
+  });
+});

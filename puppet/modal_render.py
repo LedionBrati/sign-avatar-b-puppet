@@ -109,6 +109,7 @@ def render_one(motion: str, avatar: str = "signer", passes: str = "rgb,depth,nor
             "webgl": rep.get("webgl"), "frames": rep.get("frames"), "hand_limits": rep.get("hand_limits"),
             "placement": (rep.get("avatar") or {}).get("placement"),
             "location": {k: loc.get(k) for k in ("mean_err", "max_err", "contacts_src", "contacts_lost", "contact_gap3d_mean")},
+            "occlusion": rep.get("occlusion"),
             "log_tail": log[-600:]}
 
 
@@ -153,12 +154,14 @@ def probe_gpu_remote(motion: str) -> str:
 
 @app.local_entrypoint()
 def main(motions: str, avatar: str = "signer", passes: str = "rgb,depth,normal", lite: bool = True, gpu: bool = False,
-         tag: str = "", placement: str = "auto"):
+         tag: str = "", placement: str = "auto", extra: str = ""):
     """--motions a.clean.json,b.v2.json (names on the volume, under /motion). --avatar signer|vrm.
-    --placement auto|fk|ik (render.mjs --placement), --tag x: outputs named <stem>-<avatar>-x.mp4."""
+    --placement auto|fk|ik (render.mjs --placement), --tag x: outputs named <stem>-<avatar>-x.mp4,
+    --extra "--swivel 0": more render.mjs arguments (space-separated)."""
     names = [m for m in motions.split(",") if m]
     t0 = time.time()
-    rows = list(render_one.map(names, kwargs={"avatar": avatar, "passes": passes, "lite": lite, "gpu": gpu, "tag": tag, "placement": placement},
+    rows = list(render_one.map(names, kwargs={"avatar": avatar, "passes": passes, "lite": lite, "gpu": gpu, "tag": tag, "placement": placement,
+                                                      "extra": extra.split() if extra else None},
                                return_exceptions=True))
     for r in rows:
         print(json.dumps(r if isinstance(r, dict) else {"error": str(r)[-1500:]}))

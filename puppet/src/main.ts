@@ -15,6 +15,7 @@
 //   lite=1              cheap shading for software WebGL (Lambert, no environment map)
 //   place=auto|fk|ik    hand placement: ik puts the wrists where the source's hands are relative to face and
 //                       shoulders (src/place.ts); fk copies arm rotations. auto: ik for a .glb avatar, fk for a .vrm
+//   swivel=0            ik placement without the elbow swivel search (elbow on the tracked side, arm may cross the face)
 //   smooth=0            raw puppet: every frame as tracked (no clean-up, no in-between frames, no hair physics)
 //   render=1            offline mode for render.mjs: no controls, window.renderFrame(i) draws frame i
 //   srcframes=<tpl>     render mode: source frames as images, e.g. /__file/C:/tmp/src_%05d.png (1-based)
@@ -49,6 +50,7 @@ const PASSES = (q.get("passes") ?? "rgb").split(",").filter(Boolean) as Pass[];
 const ANTIALIAS = q.get("aa") !== "0";
 const LITE = q.get("lite") === "1";
 const PLACE = (q.get("place") ?? "auto") as "auto" | "fk" | "ik";
+const SWIVEL = q.get("swivel") !== "0";
 
 /** local paths go through the dev server's /__file/ route (see vite.config.ts) */
 export function resolveUrl(p: string): string {
@@ -109,7 +111,7 @@ async function main() {
     if (PASSES.length > 1) p.style.width = `${PW * PASSES.length}px`;
     const c = canvas(p);
     vrmOverlay = canvas(p, "overlay").getContext("2d")!;
-    puppet = new VrmPuppet(c, PW, PH, { solver, closeup, mannequin: MANNEQUIN, passes: PASSES, antialias: ANTIALIAS, lite: LITE, placement: PLACE });
+    puppet = new VrmPuppet(c, PW, PH, { solver, closeup, mannequin: MANNEQUIN, passes: PASSES, antialias: ANTIALIAS, lite: LITE, placement: PLACE, swivel: SWIVEL });
     await puppet.load(MODEL);
     if (SMOOTH) puppet.bake(motion);
     (window as any).puppet = puppet; // for poking at from devtools

@@ -28,7 +28,7 @@ import type { Motion, MotionFrame, Vec3 } from "./motion";
 import { angleDeg, mirrorFrame, mpToThree, palmNormal, sub3 } from "./geom";
 import { cleanQuatChannel, cleanScalarChannel, DEFAULT_CLEAN, framePos, linkedSpikes, twistAbout, type ChannelParams, type CleanStats, type QuatChannel } from "./track";
 import { AvatarHand, buildSegmentation, faceLandmarks, fingerBones, mixamoTips, vrmFromGltf, type FacePoint } from "./avatar";
-import { CONTACT_POINTS, DEFAULT_PLACE, FACE_KEYS, baseWrist, faceDistance, headEllipsoid, headPushOut, keepHandContact, locDistances, shoulderWidth, sourceAnchors, sourceHand, sourceWrist, twoBoneIK, wristTarget, type Anchors } from "./place";
+import { CONTACT_POINTS, DEFAULT_PLACE, FACE_KEYS, baseWrist, faceDistance, headEllipsoid, headPushOut, keepHandContact, locDistances, shoulderWidth, sourceAnchors, sourceHand, sourceWrist, sternum, swivelIK, armSegs, elbowCost, faceOcclusion, faceSamples, visibleFace, wristTarget, type Anchors, type Project, type Seg } from "./place";
 import { FINGERS, RELAXED_DEG, countOverlaps, countViolations, dirToWorld, fk, palmFrameRobust, separateFingers, smoothSequence, solveHand, thumbPlaneNormal, type HandAngles, type PalmFrame, type V3 } from "./hand";
 
 /**
@@ -102,6 +102,8 @@ export interface PuppetOptions {
    * a .vrm (the anime puppet keeps its old behaviour).
    */
   placement?: "auto" | "fk" | "ik";
+  /** ik placement: choose the elbow swivel so the arm stays out of the face (default true); false = tracked elbow side */
+  swivel?: boolean;
 }
 
 export interface RetargetReport {
@@ -120,6 +122,8 @@ export interface RetargetReport {
    * the avatar's 3D distance of that kind (is a contact a real touch or a hand hovering in front of the face?)
    */
   loc?: Partial<Record<"L" | "R", { src: number[]; av: number[]; srcFace: number; avFace: number; avFace3d: number }>>;
+  /** face points (src/place.ts faceSamples) the ARMS (upper arm, forearm; not the hands) cover in the render camera */
+  occ?: { covered: number; of: number };
 }
 
 export const RETARGET_THRESHOLD_DEG = 30;
@@ -158,7 +162,7 @@ export class VrmPuppet {
       solver: opts.solver ?? "direct", mannequin: opts.mannequin ?? false, closeup: opts.closeup ?? false,
       background: opts.background ?? (opts.mannequin ? "#2b2b2f" : "#1d2026"), realistic: opts.realistic ?? false,
       passes: opts.passes?.length ? opts.passes : ["rgb"], antialias: opts.antialias ?? true, lite: opts.lite ?? false,
-      placement: opts.placement ?? "auto",
+      placement: opts.placement ?? "auto", swivel: opts.swivel ?? true,
     };
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.opts.antialias, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
@@ -838,18 +842,39 @@ export class VrmPuppet {
       const p = plan[side];
       if (!p) continue;
       p.target[2] += headPushOut(p.target, p.all, head);
-      this.ikArm(side, new THREE.Vector3(...p.target));
+      this.ikArm(side, new THREE.Vector3(...p.target), f.i, av);
     }
   }
 
-  /** two-bone IK of one arm to a wrist position; the hand keeps its world orientation (and so its fingers) */
-  private ikArm(side: Side, target: THREE.Vector3) {
+  /** the render camera as a projection for src/place.ts (x / depth, y / depth, depth) */
+  projector(): Project {
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const inv = cam.matrixWorldInverse.clone(), v = new THREE.Vector3();
+    return (p) => { v.set(p[0], p[1], p[2]).applyMatrix4(inv); const d = -v.z; return [v.x / d, v.y / d, d]; };
+  }
+
+  /** last frame's elbow swivel per arm, to keep the choice steady from frame to frame */
+  private swivelPrev: Partial<Record<Side, { i: number; theta: number }>> = {};
+
+  /**
+   * Two-bone IK of one arm to a wrist position; the hand keeps its world orientation (and so its fingers).
+   * The elbow's swivel starts from the tracked elbow but moves (out and down, like a real signer) when the arm
+   * would cross in front of the face as seen from the camera.
+   */
+  private ikArm(side: Side, target: THREE.Vector3, frame: number, av: Anchors) {
     const ua = this.node(`${side}UpperArm`), la = this.node(`${side}LowerArm`), hand = this.node(`${side}Hand`);
     if (!ua || !la || !hand) return;
     hand.updateWorldMatrix(true, false);
     const S = ua.getWorldPosition(new THREE.Vector3()), E0 = la.getWorldPosition(new THREE.Vector3()), W0 = hand.getWorldPosition(new THREE.Vector3());
     const handQ = hand.getWorldQuaternion(new THREE.Quaternion());
-    const { elbow, wrist } = twoBoneIK(S.toArray() as V3, target.toArray() as V3, S.distanceTo(E0), E0.distanceTo(W0), E0.toArray() as V3);
+    const l1 = S.distanceTo(E0), s3 = S.toArray() as V3, t3 = target.toArray() as V3;
+    const face = faceSamples(av), proj = this.projector();
+    const st = sternum(av), out = S.clone().sub(new THREE.Vector3(...st)).normalize().toArray() as V3;
+    const cost = this.opts.swivel ? elbowCost(face, proj, s3, t3, l1, out) : () => 0;
+    const prev = this.swivelPrev[side];
+    const { elbow, wrist, theta } = swivelIK(s3, t3, l1, E0.distanceTo(W0), E0.toArray() as V3, cost, prev && prev.i === frame - 1 ? prev.theta : null);
+    this.swivelPrev[side] = { i: frame, theta };
     const E = new THREE.Vector3(...elbow);
     const upper = E.clone().sub(S), fore = new THREE.Vector3(...wrist).sub(E);
     // same upper-arm roll rule as solveDirect: the forearm swings toward the upper arm's rest front (+Z)
@@ -1002,6 +1027,7 @@ export class VrmPuppet {
       }
     }
     this.measureLocation(f, m, r);
+    this.measureOcclusion(r);
     for (const [k, v] of Object.entries(r.err)) {
       const limit = k.endsWith("fingers") ? RETARGET_THRESHOLD_DEG * 0.75 : RETARGET_THRESHOLD_DEG;
       if (v !== null && v > limit) r.retarget.push(`${k} ${Math.round(v)}°`);
@@ -1024,6 +1050,20 @@ export class VrmPuppet {
         srcFace: faceDistance(src, sh), avFace: faceDistance(av, avh), avFace3d: faceDistance(av, avh, 3),
       };
     }
+  }
+
+  /** face points covered by the arms in the render camera */
+  private measureOcclusion(r: RetargetReport) {
+    const av = this.avatarAnchors();
+    if (!av) return;
+    const segs: Seg[] = [], wrists: V3[] = [];
+    for (const side of SIDES) {
+      const [S, E, W] = [`${side}UpperArm`, `${side}LowerArm`, `${side}Hand`].map((b) => this.wpos(b as VRMHumanBoneName));
+      if (S && E && W) { segs.push(...armSegs(S.toArray() as V3, E.toArray() as V3, W.toArray() as V3)); wrists.push(W.toArray() as V3); }
+    }
+    // points a hand is at (HAND_ZONE) are the hand's to cover; they count as not covered
+    const face = faceSamples(av);
+    r.occ = { covered: faceOcclusion(visibleFace(face, wrists), segs, this.projector()).count, of: face.length };
   }
 
   /** the avatar's face and shoulder points and shoulder width as posed now (for the report) */

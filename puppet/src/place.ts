@@ -273,3 +273,112 @@ export function headPushOut(target: V3, offs: V3[], head: { c: V3; r: V3 }): num
   }
   return need;
 }
+
+// ---------------------------------------------------------------- face occlusion and elbow swivel
+/**
+ * Points that must stay visible on the avatar's face: eyes, nose, mouth, chin, forehead and both cheeks.
+ * A hand touching the face may cover some; an ARM crossing in front of them is what a real signer avoids.
+ */
+export function faceSamples(av: Anchors): V3[] {
+  const eyes = mid(av.eyeL, av.eyeR);
+  const mouth = add(mul(av.nose, 0.55), mul(av.chin, 0.45));
+  const up = sub(eyes, av.chin);
+  const forehead = add(eyes, mul(up, 0.45));
+  const cheek = (ear: V3, eye: V3): V3 => { const c = add(mul(av.nose, 0.4), mul(ear, 0.6)); return [c[0], (eye[1] + av.nose[1]) / 2, (c[2] + eye[2]) / 2]; };
+  return [av.eyeL, av.eyeR, av.nose, mouth, av.chin, forehead, cheek(av.earL, av.eyeL), cheek(av.earR, av.eyeR)];
+}
+
+/** face points nearer than this (frontal plane, metres) to a wrist are the hand's to cover, not the arm's */
+export const HAND_ZONE = 0.07;
+/** the face points no hand is at (see HAND_ZONE) */
+export const visibleFace = (face: V3[], wrists: V3[]) => face.filter((f) => wrists.every((w) => len2(sub(f, w)) > HAND_ZONE));
+
+/** an arm segment as a capsule (world, metres) */
+export interface Seg { a: V3; b: V3; r: number }
+/** world point -> [x / depth, y / depth, depth] in the render camera (depth > 0 in front of it) */
+export type Project = (p: V3) => V3;
+
+/**
+ * How much the capsules cover the face points as seen from the camera: per face point, the deepest overlap
+ * (0..1, 1 = the capsule axis passes right over it) of any capsule part that is nearer the camera than the point.
+ * Returns the soft total (for the solver, continuous in the arm pose) and the count of covered points (metric).
+ */
+export function faceOcclusion(face: V3[], segs: Seg[], proj: Project, steps = 10): { soft: number; count: number } {
+  const fp = face.map(proj);
+  const cover = new Array(face.length).fill(0);
+  for (const s of segs) {
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps;
+      const q = proj([s.a[0] + (s.b[0] - s.a[0]) * t, s.a[1] + (s.b[1] - s.a[1]) * t, s.a[2] + (s.b[2] - s.a[2]) * t]);
+      if (q[2] <= 1e-6) continue;
+      const rr = s.r / q[2];
+      fp.forEach((f, j) => {
+        if (q[2] >= f[2] - 0.01) return; // not in front of the face point
+        const d = Math.hypot(q[0] - f[0], q[1] - f[1]);
+        if (d < rr) cover[j] = Math.max(cover[j], 1 - d / rr);
+      });
+    }
+  }
+  return { soft: cover.reduce((a, b) => a + b, 0), count: cover.filter((c) => c > 0).length };
+}
+
+const wrapPi = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/**
+ * Two-bone IK with the elbow's swivel chosen, not just copied. The elbow can be anywhere on a circle around the
+ * shoulder-wrist line; each candidate is scored by `cost(elbow)` (e.g. arm in front of the face) plus a pull
+ * toward the tracked elbow's swivel (`pole`) and toward the previous frame's (`prev`, radians, null = none).
+ * Returns the elbow, the reachable wrist and the swivel angle (measured from "elbow straight down").
+ */
+export function swivelIK(s: V3, t: V3, l1: number, l2: number, pole: V3, cost: (elbow: V3) => number,
+  prev: number | null, w = { pole: 0.3, prev: 2.0 }): { elbow: V3; wrist: V3; theta: number } {
+  const base = twoBoneIK(s, t, l1, l2, pole);
+  const wrist = base.wrist;
+  const d = sub(wrist, s), dist = len(d), u = mul(d, 1 / dist);
+  const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist);
+  const h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const c = add(s, mul(u, a));
+  // circle frame: e1 = "down" perpendicular to the arm line (or back, if the arm points straight down)
+  let e1 = sub([0, -1, 0], mul(u, -u[1]));
+  if (len(e1) < 1e-3) e1 = sub([0, 0, -1], mul(u, -u[2]));
+  e1 = mul(e1, 1 / len(e1));
+  const e2: V3 = [u[1] * e1[2] - u[2] * e1[1], u[2] * e1[0] - u[0] * e1[2], u[0] * e1[1] - u[1] * e1[0]];
+  const at = (th: number): V3 => add(c, add(mul(e1, h * Math.cos(th)), mul(e2, h * Math.sin(th))));
+  const pv = sub(base.elbow, c);
+  const th0 = Math.atan2(pv[0] * e2[0] + pv[1] * e2[1] + pv[2] * e2[2], pv[0] * e1[0] + pv[1] * e1[1] + pv[2] * e1[2]);
+  const score = (th: number) => cost(at(th)) + w.pole * wrapPi(th - th0) ** 2 + (prev === null ? 0 : w.prev * wrapPi(th - prev) ** 2);
+  if (h < 1e-4) return { elbow: base.elbow, wrist, theta: th0 };
+  let best = th0, bestS = score(th0);
+  const N = 48;
+  for (let k = 0; k < N; k++) {
+    const th = th0 + (2 * Math.PI * k) / N;
+    const sc = score(th);
+    if (sc < bestS - 1e-9) { best = th; bestS = sc; }
+  }
+  for (let step = Math.PI / N; step > 0.003; step /= 2) { // local refinement
+    for (const th of [best - step, best + step]) { const sc = score(th); if (sc < bestS) { best = th; bestS = sc; } }
+  }
+  return { elbow: at(best), wrist, theta: wrapPi(best) };
+}
+
+/** arm capsule radii (metres, sleeve included) for the face-occlusion test */
+export const ARM_RADIUS = { upper: 0.045, fore: 0.038 };
+/** the arms as capsules: shoulder -> elbow, elbow -> 80% of the forearm (the wrist end belongs with the hand) */
+export function armSegs(s: V3, e: V3, w: V3): Seg[] {
+  const f = 0.8;
+  return [{ a: s, b: e, r: ARM_RADIUS.upper }, { a: e, b: [e[0] + (w[0] - e[0]) * f, e[1] + (w[1] - e[1]) * f, e[2] + (w[2] - e[2]) * f], r: ARM_RADIUS.fore }];
+}
+
+/**
+ * Cost of an elbow position for an arm from shoulder `s` to wrist `w`: the arm covering the face in the camera
+ * (dominant), then what a signer touching the face does not do: elbow above the shoulder, behind the shoulder
+ * plane, or in toward the body's midline (`out` = unit vector from the sternum to this shoulder).
+ */
+export function elbowCost(face: V3[], proj: Project, s: V3, w: V3, l1: number, out: V3) {
+  face = visibleFace(face, [w]);
+  return (e: V3) => {
+    const d = sub(e, s);
+    return 20 * faceOcclusion(face, armSegs(s, e, w), proj, 6).soft
+      + 0.5 * Math.max(0, d[1] / l1) + 3 * Math.max(0, -d[2] / l1) + 2 * Math.max(0, -(d[0] * out[0] + d[1] * out[1] + d[2] * out[2]) / l1);
+  };
+}
