@@ -32,9 +32,10 @@ before(async () => {
     req.on("end", () => {
       const body = Buffer.concat(chunks);
       const url = new URL(req.url, "http://x");
-      seen.push({ method: req.method, path: url.pathname, mode: url.searchParams.get("mode"), frames: req.headers["x-frames"], bytes: body.length, first: body.length ? body.readFloatLE(0) : null });
+      seen.push({ method: req.method, path: url.pathname, mode: url.searchParams.get("mode"), frames: req.headers["x-frames"], bytes: body.length, first: body.length ? body.readFloatLE(0) : null, q: Object.fromEntries(url.searchParams), fps: req.headers["x-fps"] });
       res.setHeader("content-type", "application/json");
       if (url.pathname === "/health") return res.end(JSON.stringify({ ok: true }));
+      if (url.pathname === "/enroll" || url.pathname === "/train" || url.pathname === "/profiles") return res.end(JSON.stringify({ profile: url.searchParams.get("profile"), reps: { HELLO: 1 }, trained: url.pathname === "/train" }));
       const frames = Number(req.headers["x-frames"]);
       if (body.length !== frames * FRAME_BYTES) { res.statusCode = 400; return res.end(JSON.stringify({ error: { code: "bad_body_size", message: "size" } })); }
       const mode = url.searchParams.get("mode");
@@ -73,13 +74,33 @@ test("proxy: sign and spell pass body, X-Frames and mode through", async () => {
   let out = await res.json();
   assert.equal(out.mode, "sign");
   assert.deepEqual(out.options[0], { label: "thankyou", text: "thank you", confidence: 0.9 });
-  assert.deepEqual(seen.at(-1), { method: "POST", path: "/recognize", mode: "sign", frames: "12", bytes: 12 * FRAME_BYTES, first: 0.25 });
+  assert.deepEqual(seen.at(-1), { method: "POST", path: "/recognize", mode: "sign", frames: "12", bytes: 12 * FRAME_BYTES, first: 0.25, q: { mode: "sign" }, fps: undefined });
   res = await recognize(base, "spell", 3);
   out = await res.json();
   assert.equal(out.text, "MARIA");
   assert.equal(seen.at(-1).mode, "spell");
   res = await recognize(base, undefined, 2);
   assert.equal((await res.json()).mode, "sign"); // default mode
+});
+
+test("proxy: closed vocabulary (profile, vocab, X-Fps) and Train my signs routes", async () => {
+  seen.length = 0;
+  let res = await fetch(`${base}/api/recognize?mode=sign&profile=me&vocab=HELLO,YES&junk=1`, { method: "POST", headers: { "content-type": "application/octet-stream", "X-Frames": "4", "X-Fps": "24.5" }, body: segment(4) });
+  assert.equal(res.status, 200);
+  assert.deepEqual(seen.at(-1).q, { mode: "sign", profile: "me", vocab: "HELLO,YES" });
+  assert.equal(seen.at(-1).fps, "24.5");
+  res = await fetch(`${base}/api/enroll?profile=me&label=HELLO`, { method: "POST", headers: { "content-type": "application/octet-stream", "X-Frames": "3" }, body: segment(3) });
+  assert.equal(res.status, 200);
+  assert.deepEqual(seen.at(-1), { method: "POST", path: "/enroll", mode: null, frames: "3", bytes: 3 * FRAME_BYTES, first: 0.25, q: { profile: "me", label: "HELLO" }, fps: undefined });
+  assert.equal((await (await fetch(`${base}/api/enroll?profile=me`)).json()).reps.HELLO, 1);
+  assert.equal((await (await fetch(`${base}/api/train?profile=me`, { method: "POST", body: "{}" })).json()).trained, true);
+  assert.equal(seen.at(-1).path, "/train");
+  res = await fetch(`${base}/api/enroll?profile=me&label=HELLO`, { method: "DELETE" });
+  assert.equal(res.status, 200);
+  assert.equal(seen.at(-1).method, "DELETE");
+  assert.equal((await fetch(`${base}/api/enroll?profile=me`, { method: "POST", body: segment(1) })).status, 400); // no X-Frames
+  assert.equal((await fetch(`${base}/api/train`)).status, 405);
+  assert.equal((await fetch(`${baseDown}/api/enroll?profile=me`)).status, 503);
 });
 
 test("proxy: upstream errors are passed through, local validation first", async () => {

@@ -171,7 +171,28 @@ export interface RecognizeResponse {
   timings: { inference_ms: number; total_ms: number };
   motion?: number;
   reject?: boolean;
+  /** With ?profile= (closed demo vocabulary): every sign found in the segment, in order (a long segment can hold
+   *  several); start/end are frame indices in the segment. options above = the first accepted one. */
+  signs?: { start: number; end: number; options: { label: string; text: string; confidence: number }[]; reject: boolean }[];
+  /** The personal model that read it ("demo" = the generic demo model). */
+  personal?: string;
 }
+
+/** POST /api/recognize options for the closed demo vocabulary (app/recognizer enroll.py / personal.py). */
+export interface RecognizeOptions { profile?: string; vocab?: string[]; fps?: number; signal?: AbortSignal }
+
+/** GET /api/enroll?profile=, POST /api/enroll?profile=&label= (one rep), POST /api/train?profile=. */
+export interface EnrollInfo {
+  profile: string;
+  reps: Record<string, number>;
+  trained: boolean;
+  model?: { labels: string[]; samples: number; train_ms: number; own_reps?: number; loo?: { right: number; of: number } | null };
+}
+
+/** Signs of the finals demo (closed vocabulary). "_none" = rest / fidgeting reps (the "no sign" class). */
+export const DEMO_SIGNS = ["HELLO", "YES", "NO", "PLEASE", "THANK_YOU", "WATER", "HUNGRY", "SICK", "HOME", "HELP", "NAME", "NICE",
+  "MEET", "YOU", "ME", "WHERE", "FINE", "HAPPY", "BYE", "SORRY"] as const;
+export const NONE_SIGN = "_none";
 
 /** POST /api/compose. The signs read so far (1-8), each with the recognizer's guesses (best first, up to 5). */
 export interface ComposeRequest {
@@ -213,6 +234,8 @@ export const ROUTES = {
   compose: "/api/compose", // POST ComposeRequest -> ComposeResponse (signs -> sentence, OpenAI)
   speak: "/api/speak", // POST SpeakRequest -> audio/mpeg (natural text-to-speech, OpenAI)
   recognize: "/api/recognize", // POST ?mode=sign|spell, octet-stream float32 frames -> RecognizeResponse (proxied to app/recognizer)
+  enroll: "/api/enroll", // GET|POST|DELETE ?profile=&label= -> EnrollInfo ("Train my signs")
+  train: "/api/train", // POST ?profile= -> EnrollInfo
   webApp: "/app/", // GET the built web app (phone WebView loads /app/#/sign?embed=1)
 } as const;
 

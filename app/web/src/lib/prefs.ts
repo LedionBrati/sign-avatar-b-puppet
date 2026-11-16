@@ -3,11 +3,15 @@ import { useSyncExternalStore } from "react";
 
 export type Theme = "auto" | "light" | "dark";
 /** `v` is the prefs schema: 2 = light glass is the default look (older builds defaulted to dark). */
-export interface Prefs { theme: Theme; captions: boolean; v?: number }
+export interface Prefs {
+  theme: Theme; captions: boolean; v?: number;
+  /** Sign -> voice: closed demo vocabulary with a personal model ("Train my signs"); profile "demo" = the generic one. */
+  closedVocab?: boolean; signProfile?: string; signVocab?: string[];
+}
 
 const KEY = "sl-prefs";
 const V = 2;
-const DEFAULTS: Prefs = { theme: "light", captions: true, v: V };
+const DEFAULTS: Prefs = { theme: "light", captions: true, v: V, closedVocab: true, signProfile: "demo" };
 const subs = new Set<() => void>();
 
 function load(): Prefs {

@@ -1,20 +1,12 @@
-// Cuts signs out of the landmark stream. arm() -> "armed". When hands appear it keeps a short pre-roll; once they
-// move, recording starts. A segment ends when the hands are gone or still for ~0.4 s, after 4 s (to split long
-// signing), or on stop(). Continuous (the default): after each segment it goes straight back to "armed", forever,
-// until cancel(); one-shot: back to "idle".
-import { handsVisible, packFrame, packSegment, type HolisticFrame, type Point } from "@signlayer/core";
+// Cuts signs out of the landmark stream with the shared cutter (app/core/src/segment.ts: hands up / rest pose,
+// motion energy with hysteresis, min / max sign length, cut at the slowest moment when signing runs on).
+// arm() -> "armed"; once a hand is up and moving -> "recording"; each finished sign calls onDone with its frames
+// (plus a few frames of context). A dropped cut (a twitch, the hands going back to rest) calls onDone with count 0,
+// so the caller still knows the hands settled. Continuous (the default): back to "armed" after each sign, until
+// cancel(); one-shot: back to "idle". stop() cuts now (the enrollment countdown and the Spell button use it).
+import { createCutter, packFrame, packSegment, MAX_FRAMES, type HolisticFrame, type Point, type SegConfig, type SegReason } from "@signlayer/core";
 
 export type SegState = "idle" | "armed" | "recording";
-
-export const SEG = {
-  goneMs: 400, // hands out of view this long -> end the segment
-  stillMs: 600, // hands still this long (after moving) -> end the segment (short holds inside a sign don't cut it)
-  minMs: 500, // a "still" cut never comes sooner than this after the start
-  maxMs: 4000, // cap per segment (continuous mode keeps reading right after)
-  preRoll: 8, // frames kept from before the motion starts
-  minFrames: 4, // shorter segments are dropped
-  moveThresh: 0.004, // mean normalized displacement per frame counted as motion
-};
 
 const KEY = [0, 4, 8, 12, 20]; // wrist + finger tips
 
@@ -30,52 +22,58 @@ export function motion(a: HolisticFrame | null, b: HolisticFrame): number {
   return n ? sum / n : 0;
 }
 
-export interface SegmentDone { frames: Float32Array; count: number; ms: number; reason: "gone" | "still" | "max" | "tap" }
+export interface SegmentDone { frames: Float32Array; count: number; ms: number; reason: SegReason | "tap" }
 
-export function createSegmenter(onDone: (s: SegmentDone) => void, onState: (s: SegState) => void, { continuous = true } = {}) {
+/** Fingerspelling: letters are held, so only a long pause ends a word, and the hands may move down while spelling. */
+export const SPELL_SEG: Partial<SegConfig> = { pauseMs: 900, maxMs: 8000, maxDescent: 1.01, minPath: 0.2 };
+
+export function createSegmenter(onDone: (s: SegmentDone) => void, onState: (s: SegState) => void,
+  { continuous = true, config = {} as Partial<SegConfig> } = {}) {
+  let cutter = createCutter(config);
   let state: SegState = "idle";
-  let buf: Float32Array[] = [];
-  let lastHandIdx = -1;
-  let prev: HolisticFrame | null = null;
-  let moved = false;
-  let t0 = 0, lastHandT = 0, lastMoveT = 0, noHand = 0, still = 0;
+  let buf: { f: Float32Array; t: number }[] = []; // frames since the cutter's frame `base`
+  let base = 0;
   const set = (s: SegState) => { if (s !== state) { state = s; onState(s); } };
-  const reset = () => { buf = []; lastHandIdx = -1; prev = null; moved = false; noHand = 0; still = 0; };
+  const reset = () => { cutter.reset(); buf = []; base = 0; };
 
-  function finish(reason: SegmentDone["reason"], t: number) {
-    const keep = buf.slice(0, Math.max(lastHandIdx + 3, 0)); // drop the trailing frames without hands, keep 2
-    reset();
-    set(continuous ? "armed" : "idle");
-    if (keep.length >= SEG.minFrames) onDone({ frames: packSegment(keep), count: Math.min(keep.length, 384), ms: t - t0, reason });
-    else onDone({ frames: new Float32Array(0), count: 0, ms: t - t0, reason });
+  function emit(start: number, end: number, reason: SegmentDone["reason"]) {
+    const a = Math.max(0, start - base), b = Math.min(buf.length, end - base);
+    const seg = buf.slice(a, b);
+    const ms = seg.length ? seg[seg.length - 1]!.t - seg[0]!.t : 0;
+    const frames = seg.slice(-MAX_FRAMES).map((s) => s.f);
+    onDone(frames.length ? { frames: packSegment(frames), count: frames.length, ms, reason } : { frames: new Float32Array(0), count: 0, ms, reason });
   }
 
   return {
     get state() { return state; },
+    configure(c: Partial<SegConfig>) { cutter = createCutter(c); buf = []; base = 0; if (state !== "idle") set("armed"); },
     arm() { reset(); set("armed"); },
     cancel() { reset(); set("idle"); },
     /** Recording: cut now (continuous: keeps reading). Armed: cancel. */
-    stop(t = performance.now()) { if (state === "recording") finish("tap", t); else if (state === "armed") { reset(); set("idle"); } },
+    stop() {
+      if (state === "recording") {
+        const cuts = cutter.flush();
+        if (cuts.length) for (const c of cuts) emit(c.start, c.end, "tap");
+        else onDone({ frames: new Float32Array(0), count: 0, ms: 0, reason: "tap" });
+        reset();
+        set(continuous ? "armed" : "idle");
+      } else if (state === "armed") { reset(); set("idle"); }
+    },
     push(f: HolisticFrame, t: number) {
       if (state === "idle") return;
-      const hands = handsVisible(f);
-      const m = motion(prev, f);
-      prev = f;
-      if (state === "armed") {
-        if (!hands) { buf = []; lastHandIdx = -1; return; }
-        buf.push(packFrame(f));
-        if (buf.length > SEG.preRoll) buf.shift();
-        lastHandIdx = buf.length - 1;
-        if (m > SEG.moveThresh) { set("recording"); t0 = t; lastHandT = t; lastMoveT = t; moved = true; }
-        return;
+      const packed = packFrame(f);
+      buf.push({ f: packed, t });
+      const r = cutter.push(packed, t);
+      for (const c of r.cuts) emit(c.start, c.end, c.reason);
+      if (r.ended && !r.cuts.length) onDone({ frames: new Float32Array(0), count: 0, ms: 0, reason: "rest" });
+      if (r.started) set("recording");
+      else if (r.ended) {
+        if (continuous) set("armed");
+        else { reset(); set("idle"); return; }
       }
-      buf.push(packFrame(f));
-      if (hands) { lastHandIdx = buf.length - 1; lastHandT = t; noHand = 0; } else noHand++;
-      if (m > SEG.moveThresh) { lastMoveT = t; moved = true; still = 0; } else still++;
-      // Time AND at least 2 frames, so a slow device (a few fps) doesn't cut on one dropped detection.
-      if (noHand >= 2 && t - lastHandT > SEG.goneMs) return finish("gone", t);
-      if (moved && still >= 2 && t - lastMoveT > SEG.stillMs && t - t0 > SEG.minMs) return finish("still", t);
-      if (t - t0 > SEG.maxMs || buf.length >= 384) return finish("max", t);
+      // keep only the frames a later cut can still include
+      const from = cutter.keepFrom;
+      if (from > base) { buf = buf.slice(from - base); base = from; }
     },
   };
 }

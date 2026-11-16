@@ -1,7 +1,10 @@
 // Sign -> speak, continuous: the front camera, MediaPipe Holistic landmarks, always reading while the camera is on
 // (no tap per sign). Sign mode (STREAM): lib/stream.ts reads sliding ~1 s windows while the hands move and accepts a
 // sign once it wins 2 windows in a row (junk motion / toddler words filtered); STREAM=false (and Spell mode) use the
-// rest-based segmenter: every segment goes to POST /api/recognize. Top-1 is appended (top-3 chips to correct it), and
+// rest-based segmenter (lib/segmenter.ts on the shared cutter app/core/src/segment.ts): every segment goes to
+// POST /api/recognize. Closed vocabulary (prefs.closedVocab, the default): the demo signs only, read by the profile's
+// personal model ("Train my signs", #/train; profile "demo" = the generic one) + the GISLR prior; a segment can hold
+// several signs (signs[]), and "unsure" segments are dropped. Top-1 is appended (top-3 chips to correct it), and
 // the words show live in the sentence box. With the server's OpenAI layer (health.compose), every new sign asks
 // POST /api/compose in the background (top-5 guesses + the session's conversation from lib/chat.ts; stale calls are
 // aborted). Nothing is spoken while the signer is still signing: once the hands have rested ~900 ms (or left the
@@ -11,16 +14,18 @@
 // Pause/Resume stops reading; Undo/Clear/edit + Speak stay available.
 // "#/sign?embed=1" is the same screen for the phone app's WebView: results also go to window.ReactNativeWebView.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SignApiError, composeSentence, createSignClient, knownPhrase, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
+import { DEMO_SIGNS, SignApiError, composeSentence, createSignClient, knownPhrase, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
 import { ClockIcon, CloseIcon, GridIcon, HandIcon, PauseIcon, SpeakerIcon, UndoIcon } from "../components/Icons";
 import { Segmented } from "../components/Segmented";
 import { createTracker, drawOverlay, type Tracker } from "../lib/holistic";
-import { createSegmenter, type SegState, type SegmentDone } from "../lib/segmenter";
+import { SPELL_SEG, createSegmenter, type SegState, type SegmentDone } from "../lib/segmenter";
 import { createStream, dejunk, type RestInfo, type StreamSign } from "../lib/stream";
 import { readHeard } from "../lib/heard";
 import { addTurn, recentHistory } from "../lib/chat";
 import { SIGN_VOCAB } from "../lib/vocab";
+import { navigate } from "../lib/route";
+import { setPrefs, usePrefs } from "../lib/prefs";
 import { playVoice, stopVoice, unlockVoice } from "../lib/voice";
 
 type Option = RecognizeResponse["options"][number];
@@ -34,7 +39,6 @@ const SENTENCES = true;
 /** false = sentences are built locally (composeSentence rules), no OpenAI generation. true = /api/compose. */
 const MODEL = true;
 const MIN_CONF = 0.25; // a sign is only taken when the recognizer is at least this sure
-const MIN_SEG_MS = 550; // shorter cuts are fragments, not whole signs: ignored
 const WORD_CLEAR_MS = 6000; // word mode: the sentence box clears this long after the last sign
 /** true = sliding-window recognition (lib/stream.ts) in Sign mode; false = the rest-based segmenter (lib/segmenter.ts). */
 const STREAM = false;
@@ -43,7 +47,7 @@ const WAIT_MS = 1200; // at rest, wait this long for the model's sentence, then 
 const HISTORY_TURNS = 10; // conversation turns sent with every compose call
 const CAP = 8; // spoken at this many signs even without a rest
 const VOICE_MS = 12000; // natural voice not back by then -> the device voice
-const END_LAG_MS = 400; // the segmenter needs ~this much stillness before it ends a segment
+const END_LAG_MS = 300; // the segmenter needs ~this much stillness before it ends a segment
 const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 /** potty is read by its bathroom meaning (the server's sentence model does the same). */
 const localLabel = (l: string) => (l.toLowerCase() === "potty" ? "bathroom" : l);
@@ -72,6 +76,12 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const tracker = useRef<Tracker | null>(null);
   const alive = useRef(true);
   const modeRef = useRef<RecognizeMode>("sign");
+  const prefs = usePrefs();
+  const closed = prefs.closedVocab !== false;
+  const vocab = useMemo(() => (prefs.signVocab?.length ? prefs.signVocab : [...DEMO_SIGNS]), [prefs.signVocab]);
+  const closedRef = useRef({ on: closed, profile: prefs.signProfile || "demo", vocab });
+  closedRef.current = { on: closed, profile: prefs.signProfile || "demo", vocab };
+  const fpsRef = useRef(30);
 
   const [cam, setCam] = useState<Cam>("starting");
   const [camMsg, setCamMsg] = useState("");
@@ -117,14 +127,14 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
 
   // ── Recognize segments: parallel requests, results appended in segment order; a Clear/Pause/spoken sentence
   // makes the still-pending ones stale (epoch) so they never land in the next sentence. ──
-  const order = useRef({ seq: 0, next: 1, epoch: 0, done: new Map<number, { epoch: number; entry: Entry | null }>() });
+  const order = useRef({ seq: 0, next: 1, epoch: 0, done: new Map<number, { epoch: number; entries: Entry[] }>() });
   const flush = useCallback(() => {
     const o = order.current;
     const add: Entry[] = [];
     while (o.done.has(o.next)) {
       const r = o.done.get(o.next)!;
       o.done.delete(o.next++);
-      if (r.entry && r.epoch === o.epoch) add.push(r.entry);
+      if (r.epoch === o.epoch) add.push(...r.entries);
     }
     if (add.length) setItems((xs) => [...xs, ...add]);
   }, []);
@@ -140,25 +150,31 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
 
   const onSegment = useCallback(async (s: SegmentDone) => {
     setRestFrom({ since: performance.now() - END_LAG_MS, gone: s.reason === "gone" });
-    if (!s.count || (modeRef.current === "sign" && s.ms < MIN_SEG_MS)) return; // a twitch or a fragment: keep reading // a twitch: keep reading
+    if (!s.count) return; // a twitch, or the hands going back to rest: keep reading
     const o = order.current;
     const id = ++o.seq, epoch = o.epoch;
-    let entry: Entry | null = null;
+    const entries: Entry[] = [];
     setPending((n) => n + 1);
     const m = modeRef.current;
     const t0 = performance.now();
     try {
-      const r = await client.recognize(m, s.frames);
+      const cv = closedRef.current;
+      const r = await client.recognize(m, s.frames, m === "sign" && cv.on ? { profile: cv.profile, vocab: cv.vocab, fps: fpsRef.current } : {});
       if (!alive.current) return;
       window.__sl = { ...window.__sl, last: r, frames: s.count, segMs: Math.round(s.ms), reason: s.reason, rtMs: Math.round(performance.now() - t0), recognized: ((window.__sl?.recognized as number) ?? 0) + 1 };
       setBanner(null);
       if (m === "spell") {
         const word = (r.text ?? "").replace(/[^A-Za-z' -]/g, "").trim();
-        if (word) entry = { label: `#${word.toUpperCase()}` };
+        if (word) entries.push({ label: `#${word.toUpperCase()}` });
+      } else if (r.signs) {
+        // closed vocabulary: every sign the server found in this segment; "unsure" ones are dropped
+        for (const g of r.signs) if (!g.reject && g.options.length) entries.push({ label: g.options[0]!.label, options: g.options, sel: 0 });
+        const last = entries[entries.length - 1];
+        if (epoch === o.epoch) setHint(!last && r.signs.length ? "Not sure what that was. Sign it again?" : last && last.options![0]!.confidence < LOW ? "Not sure about that one. Tap the right word below." : null);
       } else {
         const options = r.reject ? [] : preferDemo(dejunk(r.options)).filter((x) => x.confidence >= MIN_CONF); // no sign / junk / too unsure -> nothing
         if (options.length) {
-          entry = { label: options[0]!.label, options, sel: 0 };
+          entries.push({ label: options[0]!.label, options, sel: 0 });
           if (epoch === o.epoch) setHint(options[0]!.confidence < LOW ? "Not sure about that one. Tap the right word below." : null);
         }
       }
@@ -166,7 +182,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
       showError(e);
     } finally {
       if (alive.current) {
-        o.done.set(id, { epoch, entry });
+        o.done.set(id, { epoch, entries });
         flush();
         setPending((n) => n - 1);
       }
@@ -279,13 +295,16 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
         const h = Boolean(f.leftHand?.length || f.rightHand?.length);
         if (h !== sawHands) { sawHands = h; setHands(h); }
         n++;
-        if (now - win >= 1000) { const r = (n * 1000) / (now - win); setFps(r); window.__sl = { ...window.__sl, fps: +r.toFixed(1), detectMs: Math.round(dms / n) }; n = 0; dms = 0; win = now; }
+        if (now - win >= 1000) { const r = (n * 1000) / (now - win); setFps(r); fpsRef.current = r; window.__sl = { ...window.__sl, fps: +r.toFixed(1), detectMs: Math.round(dms / n) }; n = 0; dms = 0; win = now; }
       }
       next();
     };
     next();
     return () => { stop = true; if (rvfc) v.cancelVideoFrameCallback(handle); else cancelAnimationFrame(handle); };
   }, [cam, track]);
+
+  // Fingerspelling holds each letter: only a long pause ends a word there.
+  useEffect(() => { segRef.current!.configure(mode === "spell" ? SPELL_SEG : {}); }, [mode]);
 
   // ── Camera on => always reading (until Pause) ──
   useEffect(() => {
@@ -486,8 +505,8 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     <div className={`screen signsp${embed ? " embed" : ""}`}>
       <header className="topbar">
         {embed ? <span /> : <button className="circbtn" aria-label="Close" title="Close" onClick={onHome}><CloseIcon /></button>}
-        <span />
-        <button className="circbtn" aria-label="Signs I know" title={`${SIGN_VOCAB.length} signs I know`} onClick={() => setSheet("signs")}><GridIcon /></button>
+        {embed ? <span /> : <button className="textbtn trainbtn" onClick={() => navigate("/train")} title="Record your own signs so they are read better">Train my signs</button>}
+        <button className="circbtn" aria-label="Signs I know" title={`${closed ? vocab.length : SIGN_VOCAB.length} signs I know`} onClick={() => setSheet("signs")}><GridIcon /></button>
       </header>
 
       {camMsg ? (
@@ -510,7 +529,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
               {o.text || labelText(o.label)}<em>{Math.round(o.confidence * 100)}%</em>
             </button>
           ))}
-          {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name, letter by letter." : `Just sign · ${SIGN_VOCAB.length} signs`}</p> : null}
+          {!cands.length ? <p className="candhint">{mode === "spell" ? "Fingerspell a name, letter by letter." : closed ? `Just sign · ${vocab.length} demo signs${prefs.signProfile && prefs.signProfile !== "demo" ? ` · ${prefs.signProfile}` : ""}` : `Just sign · ${SIGN_VOCAB.length} signs`}</p> : null}
         </div>
         <div className="sentence">
           <textarea aria-label="Sentence to speak" rows={2} spellCheck={false} placeholder={lastSaid || "Your sentence"} value={sentence}
@@ -538,13 +557,18 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
           <div className="sheet" role="dialog" aria-modal="true" aria-label={sheet === "signs" ? "Signs I know" : "Said"} onClick={(e) => e.stopPropagation()}>
             <div className="grabber" aria-hidden="true" />
             <header className="sheet-head">
-              <h2>{sheet === "signs" ? `${SIGN_VOCAB.length} signs` : "Said"}</h2>
+              <h2>{sheet === "signs" ? `${closed ? vocab.length : SIGN_VOCAB.length} signs` : "Said"}</h2>
               <button className="textbtn" onClick={() => setSheet(null)} autoFocus>Done</button>
             </header>
             {sheet === "signs" ? (
               <>
-                <p className="lede">Single ASL signs from the Kaggle GISLR set, one at a time. Anything else comes out as the closest of these, so check the guesses. For names, use Spell.</p>
-                <div className="group vocab">{[...SIGN_VOCAB].sort((a, b) => labelText(a).localeCompare(labelText(b))).map((l) => <span key={l}>{labelText(l)}</span>)}</div>
+                {closed ? (
+                  <p className="lede">Demo signs only{prefs.signProfile && prefs.signProfile !== "demo" ? `, read with ${prefs.signProfile}'s own reps` : ""}. Anything else is left out as "not sure". Record your own reps with Train my signs. For names, use Spell.</p>
+                ) : (
+                  <p className="lede">Single ASL signs from the Kaggle GISLR set, one at a time. Anything else comes out as the closest of these, so check the guesses. For names, use Spell.</p>
+                )}
+                <div className="group vocab">{[...(closed ? vocab : SIGN_VOCAB)].sort((a, b) => labelText(a).localeCompare(labelText(b))).map((l) => <span key={l}>{labelText(l)}</span>)}</div>
+                <div className="caprow"><button className="capbtn" onClick={() => setPrefs({ closedVocab: !closed })}>{closed ? "Use all 250+ signs" : "Demo signs only"}</button></div>
               </>
             ) : (
               <ul className="group said">{history.map((h, i) => <li key={i}><span>{h}</span><button className="btn" onClick={() => { setEdit({ text: h, at: items.length }); setSheet(null); }}>Use</button></li>)}</ul>

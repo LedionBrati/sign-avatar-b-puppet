@@ -4,3 +4,4 @@ export * from "./captions";
 export * from "./tokens";
 export * from "./landmarks";
 export * from "./compose";
+export * from "./segment";

@@ -1,4 +1,4 @@
-import { FRAMES_HEADER, ROUTES, type ApiError, type ComposeRequest, type ComposeResponse, type HealthResponse, type RecognizeMode, type RecognizeResponse, type SignRequest, type SignResponse, type SpeakRequest, type TranscribeResponse, type VocabResponse } from "./api";
+import { FRAMES_HEADER, ROUTES, type ApiError, type ComposeRequest, type ComposeResponse, type EnrollInfo, type HealthResponse, type RecognizeMode, type RecognizeOptions, type RecognizeResponse, type SignRequest, type SignResponse, type SpeakRequest, type TranscribeResponse, type VocabResponse } from "./api";
 import { LEGACY_POINTS } from "./landmarks";
 
 export class SignApiError extends Error {
@@ -49,17 +49,29 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
       const playlist = safety.status === "fully_supported" ? res.playlist.map((p) => ({ ...p, url: abs(p.url) })) : [];
       return { ...res, safety, playlist, markers: playlist.length ? res.markers : [] };
     },
-    /** Sign -> voice: send one segment of packed landmark frames (landmarks.ts packSegment). */
-    recognize(mode: RecognizeMode, frames: Float32Array, signal?: AbortSignal): Promise<RecognizeResponse> {
-      const n = frames.length / (LEGACY_POINTS * 3);
-      if (!Number.isInteger(n) || n < 1) throw new Error("frames must be a whole number of 543x3 frames");
-      return request<RecognizeResponse>(`${ROUTES.recognize}?mode=${mode}`, {
-        method: "POST",
-        body: frames.buffer.slice(frames.byteOffset, frames.byteOffset + frames.byteLength) as ArrayBuffer,
-        headers: { "content-type": "application/octet-stream", [FRAMES_HEADER]: String(n) },
-        signal,
+    /** Sign -> voice: send one segment of packed landmark frames (landmarks.ts packSegment). With a profile (sign
+     *  mode): the closed demo vocabulary and the person's own model; the answer lists every sign in the segment. */
+    recognize(mode: RecognizeMode, frames: Float32Array, opts: AbortSignal | RecognizeOptions = {}): Promise<RecognizeResponse> {
+      const o: RecognizeOptions = opts instanceof AbortSignal ? { signal: opts } : opts;
+      const q = new URLSearchParams({ mode });
+      if (o.profile && mode === "sign") { q.set("profile", o.profile); if (o.vocab?.length) q.set("vocab", o.vocab.join(",")); }
+      const headers: Record<string, string> = { "content-type": "application/octet-stream", [FRAMES_HEADER]: String(frameCount(frames)) };
+      if (o.fps) headers["x-fps"] = o.fps.toFixed(1);
+      return request<RecognizeResponse>(`${ROUTES.recognize}?${q}`, { method: "POST", body: bytes(frames), headers, signal: o.signal });
+    },
+    /** "Train my signs": the profile's reps per sign, and whether it has a model. */
+    enrollInfo: (profile: string) => request<EnrollInfo>(`${ROUTES.enroll}?profile=${encodeURIComponent(profile)}`),
+    /** Store one rep (a segment of packed frames) of label for profile. */
+    enroll(profile: string, label: string, frames: Float32Array): Promise<EnrollInfo> {
+      return request<EnrollInfo>(`${ROUTES.enroll}?profile=${encodeURIComponent(profile)}&label=${encodeURIComponent(label)}`, {
+        method: "POST", body: bytes(frames), headers: { "content-type": "application/octet-stream", [FRAMES_HEADER]: String(frameCount(frames)) },
       });
     },
+    /** Forget a profile's reps of one label (or all of them). */
+    unenroll: (profile: string, label?: string) =>
+      request<EnrollInfo>(`${ROUTES.enroll}?profile=${encodeURIComponent(profile)}${label ? `&label=${encodeURIComponent(label)}` : ""}`, { method: "DELETE" }),
+    /** Fit the profile's model (a few seconds). */
+    train: (profile: string) => request<EnrollInfo>(`${ROUTES.train}?profile=${encodeURIComponent(profile)}`, { method: "POST", body: "{}" }),
     /** Sign -> voice: does this run of signs make sense yet, and as what English sentence. 503 compose_off without a key. */
     compose: (req: ComposeRequest, signal?: AbortSignal) => request<ComposeResponse>(ROUTES.compose, { method: "POST", body: JSON.stringify(req), signal }),
     /** Sign -> voice: the sentence as natural speech (audio/mpeg Blob). 503 speak_off without a key: use the device voice. */
@@ -87,5 +99,12 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
     },
   };
 }
+
+function frameCount(frames: Float32Array): number {
+  const n = frames.length / (LEGACY_POINTS * 3);
+  if (!Number.isInteger(n) || n < 1) throw new Error("frames must be a whole number of 543x3 frames");
+  return n;
+}
+const bytes = (f: Float32Array) => f.buffer.slice(f.byteOffset, f.byteOffset + f.byteLength) as ArrayBuffer;
 
 export type SignClient = ReturnType<typeof createSignClient>;

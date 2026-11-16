@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { Home } from "./screens/Home";
 import { Live, type LiveStart } from "./screens/Live";
 import { SignToSpeak } from "./screens/SignToSpeak";
+import { TrainSigns } from "./screens/TrainSigns";
 import { navigate, useRoute } from "./lib/route";
 import { transition } from "./lib/motion";
 import { Settings } from "./components/Settings";
@@ -24,6 +25,13 @@ export function App() {
   const embed = route.params.get("embed") === "1";
   const [camera, setCamera] = useState(false); // artifact build: "Sign to speak" explains why it needs the full app
   // __ARTIFACT__ (not ARTIFACT) so the bundler drops SignToSpeak + MediaPipe from the artifact build entirely.
+  if (!__ARTIFACT__ && route.path === "/train") {
+    return (
+      <div className="app">
+        <main className="device"><TrainSigns onDone={() => navigate("/sign")} /></main>
+      </div>
+    );
+  }
   if (!__ARTIFACT__ && route.path === "/sign") {
     return (
       <div className={`app${embed ? " embed" : ""}`}>
