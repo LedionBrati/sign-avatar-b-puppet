@@ -82,7 +82,12 @@ const report = { target, jobs: [], failed: Object.fromEntries(failed) };
 const out = {};
 for (const g of measured) {
   const plan = evenFilter(g.m, target, { color });
-  const row = { job: g.key, clips: g.ids, before: g.m, scale: plan.scale, shift_px: plan.shift_px, gain: plan.gain, offset: plan.offset, extra_zoom_pct: plan.extra_zoom_pct };
+  // A job whose face could not really be measured gives a NaN zoom/shift: copy it unchanged (below) instead of failing.
+  if (/NaN|Infinity/.test(plan.filter)) {
+    for (const id of g.ids) { failed.push([id, "face not measurable (zoom/shift would be NaN)"]); report.failed[id] = failed.at(-1)[1]; }
+    continue;
+  }
+  const row ={ job: g.key, clips: g.ids, before: g.m, scale: plan.scale, shift_px: plan.shift_px, gain: plan.gain, offset: plan.offset, extra_zoom_pct: plan.extra_zoom_pct };
   for (const id of g.ids) {
     const e = manifest[id];
     if (!dry) ffmpeg(["-i", clipPath(clipsDir, e), "-vf", plan.filter, ...CLIP_ENCODE, join(outDir, e.file)]);

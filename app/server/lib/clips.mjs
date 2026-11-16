@@ -6,7 +6,7 @@
 // falls back to the main checkout next to it (../sign-avatar-b-puppet/out/realtime/clips).
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -21,6 +21,32 @@ const LETTER = /^FS_([A-Z])$/;
 export function parseClipsDirs(value = process.env.CLIPS_DIR) {
   const dirs = String(value ?? "").split(/[,;]/).map((d) => d.trim()).filter(Boolean);
   return dirs.length ? dirs : [DEFAULT_CLIPS_DIR];
+}
+
+export const V2_SETS = ["demo", "sentences", "library"];   // priority order (pipeline/produce/lib.mjs SETS)
+
+/**
+ * clips-v2-<set> folders (with a manifest) next to the configured clip dirs and in <repo>/out/realtime, in priority order.
+ * @param {string[]} dirs  the configured clip dirs
+ */
+export function discoverV2Dirs(dirs, { roots = [join(REPO, "out/realtime"), dirname(DEFAULT_CLIPS_DIR)] } = {}) {
+  const parents = [...new Set([...dirs.map((d) => dirname(resolve(d))), ...roots.map((r) => resolve(r))])];
+  const out = [];
+  for (const set of V2_SETS) {
+    for (const parent of parents) {
+      const d = join(parent, `clips-v2-${set}`);
+      if (existsSync(join(d, "manifest.json"))) { out.push(d); break; }
+    }
+  }
+  return out;
+}
+
+/** The configured dirs with the production clip folders in front (see the header). */
+export function withV2Clips(dirs, env = process.env, opts) {
+  if (/^(0|off|false|no)$/i.test(env.CLIPS_V2 ?? "")) return dirs;
+  const listed = new Set(dirs.map((d) => resolve(d)));
+  if (dirs.some((d) => /^clips-v2-/.test(basename(resolve(d))))) return dirs;   // explicitly configured: leave the order alone
+  return [...discoverV2Dirs(dirs, opts).filter((d) => !listed.has(resolve(d))), ...dirs];
 }
 
 const urlPath = (p) => p.split("/").map(encodeURIComponent).join("/");

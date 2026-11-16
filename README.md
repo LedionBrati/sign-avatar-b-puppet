@@ -142,7 +142,7 @@ Open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and 
 |---|---|
 | `OPENAI_API_KEY_FILE` | Path to a file holding the OpenAI key. Turns on transcription, sentences, voice and the planning layer. |
 | `FAL_KEY_FILE` | Path to a file holding the fal key. Only needed to make new clips. |
-| `CLIPS_DIR` | Comma-separated clip folders, each with a `manifest.json`. The first folder wins on overlap. |
+| `CLIPS_DIR` | Comma-separated clip folders, each with a `manifest.json`. The first folder wins on overlap. The production clips from `pipeline/produce.mjs` (`out/realtime/clips-v2-demo`, `-sentences`, `-library`) are put in front automatically; `CLIPS_V2=0` turns that off. |
 | `SIGNING_MODE` | `strict` (default) signs a phrase only when every word is signable. `relaxed` signs what it can and leaves the rest in the captions. |
 | `ONDEMAND`, `MOTION_DIRS` | `ONDEMAND=on` makes missing signs in the background from extracted motion, capped by `FAL_DAILY_BUDGET_USD` (default 20). |
 | `RECOGNIZER_URL`, `PORT` | Recognizer address (default `http://127.0.0.1:8788`) and API port (default 8787). |

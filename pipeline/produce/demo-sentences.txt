@@ -1,0 +1,14 @@
+# Demo script for `node pipeline/produce.mjs --set sentences` (one continuous half-speed take per line).
+# A short clinic visit. Every sign has a WiLoR-fitted v2 motion (19 of the 20 demo signs; HOME is not used), and
+# every sentence stays under Recast's 15 s single-shot limit at half speed (the longest is 12.5 s of video).
+# Plans come from translate/ (rules only): e.g. "Hello, where does it hurt?" -> HELLO HURT WHERE.
+Hello, where does it hurt?
+Are you sick?
+Are you hungry?
+Do you need water?
+Yes, please.
+No, thank you.
+Are you fine?
+Are you happy?
+Nice to meet you.
+See you later, bye.

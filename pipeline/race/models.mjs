@@ -10,7 +10,7 @@
 const usd = (v) => Math.ceil(v * 1000) / 1000;
 const recastTokens = (s) => 0.022 * Math.max(0, 6750 * s - 4096) / 1000; // $0.022 per 1k tokens after 4096, ~6750 tokens/s
 const perMegapixel = (w, h, frames) => 0.0024075 * Math.ceil(w * h * frames / 1e6);
-const AVATAR_PROMPT = "A real woman in a dark top signs American Sign Language to the camera. Plain dark wall. " +
+export const AVATAR_PROMPT = "A real woman in a dark top signs American Sign Language to the camera. Plain dark wall. " +
   "Keep every finger exactly as in the control video: same handshape, same extended and curled fingers.";
 const NEGATIVE = "extra fingers, missing fingers, fused fingers, fist instead of open hand, changed handshape, blurry hands";
 

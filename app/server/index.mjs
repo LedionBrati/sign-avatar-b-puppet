@@ -1,6 +1,7 @@
 // SIGNLAYER local API (contract: app/core/src/api.ts). Plain node:http, no framework.
 //
 //   node app/server/index.mjs            PORT=8787, CLIPS_DIR=dir[,dir2,...], SEMANTIC=0 to disable embeddings
+//                                        (out/realtime/clips-v2-{demo,sentences,library} are added in front; CLIPS_V2=0 off)
 //                                        OPENAI_API_KEY / OPENAI_API_KEY_FILE enable the agent layer (AGENT=off disables)
 //                                        ONDEMAND=on + FAL_KEY_FILE + MOTION_DIRS: generate missing clips on use (lib/ondemand.mjs)
 //
@@ -30,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { translate, translateRules } from "../../translate/index.mjs";
 import { createNodeMatcher, loadEnglishWords, loadVocab } from "../../translate/node.mjs";
 import { joinClips } from "../../pipeline/lib/clips.mjs";
-import { loadClipSets, parseClipsDirs } from "./lib/clips.mjs";
+import { loadClipSets, parseClipsDirs, withV2Clips } from "./lib/clips.mjs";
 import { planToPlaylist } from "./lib/sign.mjs";
 import { assessSigning } from "./lib/semantic-safety.mjs";
 import { createAgent } from "./lib/agent.mjs";
@@ -92,7 +93,8 @@ export function createApp(o = {}) {
   if (odConfig.enabled && evalVocab) { odConfig.enabled = false; odConfig.reason = "EVAL_VOCAB mode"; log("ondemand off: EVAL_VOCAB mode has virtual clips"); }
   if (odConfig.enabled && odConfig.falKey && !process.env.FAL_KEY) process.env.FAL_KEY = odConfig.falKey;   // for pipeline/lib/fal.mjs, this process only
   // Generated clips are one more clip dir, after the configured ones (a configured clip always wins).
-  const clipsDirs = [...(o.clipsDirs ?? parseClipsDirs()), ...(odConfig.enabled ? [odConfig.clipsDir] : [])];
+  // Production clips (out/realtime/clips-v2-demo|sentences|library, pipeline/produce.mjs) go first: they win over old clips.
+  const clipsDirs = [...(o.clipsDirs ?? withV2Clips(parseClipsDirs())), ...(odConfig.enabled ? [odConfig.clipsDir] : [])];
   if (odConfig.enabled) prepareClipsDir(odConfig.clipsDir);
 
   // Planning vocab + the clip set the playlist builder and the safety gate check against (the real clips, except in eval mode).
