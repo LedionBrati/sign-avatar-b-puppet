@@ -200,7 +200,17 @@ def continuous(args):
         models[s] = fold_train(train, negatives, {})
     print(f"  trained {len(models)} leave-signer-out models in {time.perf_counter() - t:.0f} s")
 
-    systems = ["main (old segmenter + main recognizer)", "new segmenter + main recognizer", "new (segmenter + decoder + personal)"]
+    # (cutter, reader): old = main's web segmenter; new = segment.py; dec = segment.py + personal.decode
+    systems = {
+        "main: old segmenter + main recognizer": ("old", "main"),
+        "new segmenter + main recognizer": ("new", "main"),
+        "new segmenter + main scores, demo signs only": ("new", "vocab"),
+        "new segmenter + personal, strict gate (unsure dropped)": ("new", "personal-strict"),
+        "new segmenter + personal (only 'no sign' dropped)": ("new", "personal"),
+        "new segmenter + personal (always top-1)": ("new", "personal-all"),
+        "new segmenter + decoder + personal (only 'no sign' dropped)": ("dec", "personal"),
+        "new segmenter + decoder + personal (always top-1)": ("dec", "personal-all"),
+    }
     for style in ("rest", "pause", "no pause"):
         tot = defaultdict(lambda: defaultdict(float))
         lat = []
@@ -208,26 +218,29 @@ def continuous(args):
             x, gt = build(clips, style)
             want = [g[2] for g in gt]
             model = models[s]
-            for sys_name in systems:
-                if sys_name.startswith("main"):
-                    pieces = old_segments(x, FPS)
-                elif sys_name.startswith("new segmenter"):
-                    pieces = [(g.start, g.end) for g in S.segment_stream(x, FPS)]
-                else:
-                    pieces = []
-                    for g in S.segment_stream(x, FPS):
-                        pieces += [(g.start + a, g.start + b) for a, b in P.decode(model, x[g.start:g.end], FPS, P.VOCAB)]
+            stems = {c.name for c in clips}  # main's template bank holds the library clips: never match a clip to itself
+            new = [(g.start, g.end) for g in S.segment_stream(x, FPS)]
+            cuts = {"old": old_segments(x, FPS), "new": new, "dec": []}
+            for a0, b0 in new:
+                cuts["dec"] += [(a0 + a, a0 + b) for a, b in P.decode(model, x[a0:b0], FPS, P.VOCAB)]
+            reads: dict = {}
+            for sys_name, (cut, reader) in systems.items():
+                pieces = cuts[cut]
                 got = []
                 for a, b in pieces:
                     seg = x[a:b]
-                    t0 = time.perf_counter()
-                    if sys_name.startswith("new ("):
-                        gp = base.gislr(seg)
-                        r = model.classify(seg, P.VOCAB, gp)
-                        lab = None if r["reject"] or not r["options"] else r["options"][0]["label"]
-                        lat.append((time.perf_counter() - t0) * 1000)
+                    if reader == "main":
+                        lab = client_rules(base.options(seg, exclude=stems))
+                    elif reader == "vocab":
+                        lab = base.vocab_only(seg, stems)
                     else:
-                        lab = client_rules(base.options(seg))
+                        if (a, b) not in reads:
+                            t0 = time.perf_counter()
+                            reads[(a, b)] = model.classify(seg, P.VOCAB, base.gislr(seg))
+                            lat.append((time.perf_counter() - t0) * 1000)
+                        r = reads[(a, b)]
+                        drop = (reader == "personal" and r["reject"]) or (reader == "personal-strict" and (r["reject"] or r["unsure"]))
+                        lab = None if not r["options"] or drop else r["options"][0]["label"]
                     if lab:
                         got.append(lab)
                 m, _ = match(pieces, gt)
@@ -240,7 +253,7 @@ def continuous(args):
             T_ = tot[sys_name]
             p = T_["match"] / max(1, T_["pred"])
             r = T_["match"] / max(1, T_["gt"])
-            print(f"    {sys_name:<40} cuts P {p:.0%} R {r:.0%} | sentences exactly right {int(T_['exact'])}/{len(sentences)} "
+            print(f"    {sys_name:<60} cuts P {p:.0%} R {r:.0%} | sentences exactly right {int(T_['exact'])}/{len(sentences)} "
                   f"({T_['exact'] / len(sentences):.0%}) | word error rate {T_['err'] / T_['words']:.0%}")
         if lat:
             print(f"    new: read one piece (GISLR + personal) median {statistics.median(lat):.0f} ms, p95 {np.percentile(lat, 95):.0f} ms")

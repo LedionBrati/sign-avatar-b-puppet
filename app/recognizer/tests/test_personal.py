@@ -58,7 +58,7 @@ def test_classify_closed_vocab(model):
     rng = np.random.default_rng(7)
     for l in PATHS:
         r = model.classify(sign(l, rng), ["HELLO", "YES", "NO"])
-        assert r["options"][0]["label"] == l and not r["reject"], (l, r)
+        assert r["options"][0]["label"] == l and not r["reject"] and not r["unsure"], (l, r)
     r = model.classify(sign("YES", rng), ["HELLO", "NO"])  # YES is not active: never returned
     assert all(o["label"] != "YES" for o in r["options"])
 

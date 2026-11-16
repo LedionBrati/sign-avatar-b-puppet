@@ -4,7 +4,7 @@
 // rest-based segmenter (lib/segmenter.ts on the shared cutter app/core/src/segment.ts): every segment goes to
 // POST /api/recognize. Closed vocabulary (prefs.closedVocab, the default): the demo signs only, read by the profile's
 // personal model ("Train my signs", #/train; profile "demo" = the generic one) + the GISLR prior; a segment can hold
-// several signs (signs[]), and "unsure" segments are dropped. Top-1 is appended (top-3 chips to correct it), and
+// several signs (signs[]); "no sign" pieces are dropped, unsure ones kept with the hint and the chips. Top-1 is appended (top-3 chips to correct it), and
 // the words show live in the sentence box. With the server's OpenAI layer (health.compose), every new sign asks
 // POST /api/compose in the background (top-5 guesses + the session's conversation from lib/chat.ts; stale calls are
 // aborted). Nothing is spoken while the signer is still signing: once the hands have rested ~900 ms (or left the
@@ -168,9 +168,10 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
         if (word) entries.push({ label: `#${word.toUpperCase()}` });
       } else if (r.signs) {
         // closed vocabulary: every sign the server found in this segment; "unsure" ones are dropped
-        for (const g of r.signs) if (!g.reject && g.options.length) entries.push({ label: g.options[0]!.label, options: g.options, sel: 0 });
+        let unsure = false;
+        for (const g of r.signs) if (!g.reject && g.options.length) { entries.push({ label: g.options[0]!.label, options: g.options, sel: 0 }); unsure = Boolean(g.unsure); }
         const last = entries[entries.length - 1];
-        if (epoch === o.epoch) setHint(!last && r.signs.length ? "Not sure what that was. Sign it again?" : last && last.options![0]!.confidence < LOW ? "Not sure about that one. Tap the right word below." : null);
+        if (epoch === o.epoch) setHint(!last ? null : unsure || last.options![0]!.confidence < LOW ? "Not sure about that one. Tap the right word below." : null);
       } else {
         const options = r.reject ? [] : preferDemo(dejunk(r.options)).filter((x) => x.confidence >= MIN_CONF); // no sign / junk / too unsure -> nothing
         if (options.length) {

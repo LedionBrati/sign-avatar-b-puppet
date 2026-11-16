@@ -14,7 +14,8 @@ model (the face is never stored by enrollment). Pieces:
 - Fusion: p(label) ~ p_lr(label)^A * g(label)^B * exp(-DTW_W * d(label)), with g = GISLR's probability for the labels
   it knows and an even share of its "everything else" mass for the ones it doesn't. Only the active vocabulary is
   ever returned.
-- Open set: reject when "none" wins, the fused top-1 is below REJECT, or its DTW distance is far (DTW_FAR).
+- Open set: reject ("no sign") when the none class wins; unsure when the fused top-1 is below REJECT or its DTW
+  distance is far (DTW_FAR): kept, with a "not sure" hint in the app.
 
 Landmarks are biometric: models store derived features only; enrollment stores pose + hands (no face).
 """
@@ -275,9 +276,12 @@ class Model:
         d = float(dk[top]) if np.isfinite(dk[top]) else None
         order = np.argsort(-fused)[:5]
         options = [{"label": names[i], "text": text_of(names[i]), "confidence": round(float(fused[i]), 4)} for i in order]
-        best_none = none_p > p[keep].max()
-        reject = bool(best_none or fused[top] < REJECT or (d is not None and d > DTW_FAR))
-        return {"options": options, "reject": reject, "none": round(none_p, 4), "dtw": None if d is None else round(d, 4)}
+        # reject = "no sign" (the none class wins: a transition, fidgeting, another sign). Merely unsure (low fused
+        # confidence or far from every template) is kept with unsure: true: on continuous signing, dropping those
+        # lost more right words than wrong ones (eval_demo.py continuous).
+        reject = bool(none_p > p[keep].max())
+        unsure = bool(fused[top] < REJECT or (d is not None and d > DTW_FAR))
+        return {"options": options, "reject": reject, "unsure": unsure, "none": round(none_p, 4), "dtw": None if d is None else round(d, 4)}
 
 
 def build_training(clips: list[tuple[np.ndarray, str, float]], negatives: list[np.ndarray], labels: list[str],

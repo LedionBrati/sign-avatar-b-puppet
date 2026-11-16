@@ -170,7 +170,8 @@ def leave_one_out(signs: list, generic: dict | None, limit: int = 40) -> dict | 
 
 def read(rec, model: P.Model, x: np.ndarray, vocab: list[str] | None, fps: float = 30.0) -> dict:
     """Sign mode with a closed vocabulary: split a long segment into signs (personal.decode), read each with the
-    personal model + the GISLR prior. -> RecognizeResponse fields + signs: [{start, end, options, reject}]."""
+    personal model + the GISLR prior. -> RecognizeResponse fields + signs: [{start, end, options, reject, unsure}]
+    (reject = "no sign"; unsure = a sign, but low confidence or far from every template)."""
     vocab = [v for v in (vocab or P.VOCAB) if v in model.labels] or None
     signs = []
     for a, b in P.decode(model, x, fps, vocab):
@@ -178,7 +179,7 @@ def read(rec, model: P.Model, x: np.ndarray, vocab: list[str] | None, fps: float
         p = rec.gislr(seg)
         gp = {rec.index_to_label[i]: float(v) for i, v in enumerate(p)}
         r = model.classify(seg, vocab, gp)
-        signs.append({"start": int(a), "end": int(b), "options": r["options"], "reject": r["reject"]})
+        signs.append({"start": int(a), "end": int(b), "options": r["options"], "reject": r["reject"], "unsure": r["unsure"]})
     take = [s for s in signs if not s["reject"]]
     first = (take or signs or [{"options": []}])[0]
     out = {"mode": "sign", "options": first["options"], "signs": signs, "personal": model.info.get("profile", "demo")}

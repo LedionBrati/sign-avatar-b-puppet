@@ -172,8 +172,9 @@ export interface RecognizeResponse {
   motion?: number;
   reject?: boolean;
   /** With ?profile= (closed demo vocabulary): every sign found in the segment, in order (a long segment can hold
-   *  several); start/end are frame indices in the segment. options above = the first accepted one. */
-  signs?: { start: number; end: number; options: { label: string; text: string; confidence: number }[]; reject: boolean }[];
+   *  several); start/end are frame indices in the segment. reject = no sign (drop it); unsure = probably this sign,
+   *  but low confidence (show it with a hint). options above = the first accepted one. */
+  signs?: { start: number; end: number; options: { label: string; text: string; confidence: number }[]; reject: boolean; unsure?: boolean }[];
   /** The personal model that read it ("demo" = the generic demo model). */
   personal?: string;
 }
