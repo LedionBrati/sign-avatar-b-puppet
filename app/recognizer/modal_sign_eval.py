@@ -38,7 +38,7 @@ DEMO_GLOSSES = ["hello", "yes", "no", "please", "thank you", "water", "hungry", 
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .apt_install("libgl1", "libglib2.0-0")
+    .apt_install("libgl1", "libglib2.0-0", "libegl1", "libgles2", "libgl1-mesa-dri")
     .pip_install("numpy>=1.26,<3", "ai-edge-litert>=2.0", "opencv-python-headless", "rtmlib==0.0.16", "onnxruntime",
                  "mediapipe==1.2.3", "yt-dlp")
     .run_commands("python -c \"import urllib.request as u; u.urlretrieve('https://storage.googleapis.com/mediapipe-models/holistic_landmarker/'"
@@ -178,10 +178,11 @@ def generic_eval(args: str, log: str) -> str:
 
 
 @app.local_entrypoint()
-def gather(chunk: int = 20):
-    """modal run --detach app/recognizer/modal_sign_eval.py::gather  (after upload_gen)."""
+def gather(chunk: int = 20, lo: int = 0, hi: int = 0):
+    """modal run --detach app/recognizer/modal_sign_eval.py::gather  (after upload_gen). --lo/--hi: a job range only."""
     n = gather_jobs.remote()
-    parts = [(k, min(n, k + chunk)) for k in range(0, n, chunk)]
+    hi = min(n, hi) if hi else n
+    parts = [(k, min(hi, k + chunk)) for k in range(lo, hi, chunk)]
     print(f"{n} jobs in {len(parts)} containers")
     for r in gather_chunk.starmap(parts, return_exceptions=True):
         print(r)

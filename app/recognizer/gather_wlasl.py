@@ -156,7 +156,9 @@ def extract(video: Path, a: int, b: int) -> tuple[np.ndarray, float]:
 def run_job(job: dict) -> dict:
     meta_p = GEN / "meta" / f"{job['name']}.json"
     if meta_p.exists():
-        return json.loads(meta_p.read_text())
+        m = json.loads(meta_p.read_text())
+        if m.get("ok") or not any(w.startswith("extract") for w in m.get("why", [])):
+            return m  # done, or every link dead (an extraction error is retried: the video is cached)
     t = time.perf_counter()
     ranges = job.get("ranges") or [[job["frame_start"], job["frame_end"], job["signer"]]]
     why = []
@@ -169,7 +171,7 @@ def run_job(job: dict) -> dict:
         try:
             x, fps = extract(vid, a, b)
         except Exception as e:  # noqa: BLE001 - unreadable video
-            why.append(f"extract: {type(e).__name__}")
+            why.append(f"extract: {type(e).__name__}: {str(e)[:160]}")
             continue
         hands = int(np.isfinite(x[:, [468, 522], 0]).any(1).sum()) if len(x) else 0
         if len(x) < 8 or hands < 4:
