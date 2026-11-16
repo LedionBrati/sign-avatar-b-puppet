@@ -9,12 +9,12 @@
 // POST /api/compose in the background (top-3 guesses with scores + the session's conversation from lib/chat.ts; stale calls are
 // aborted). Nothing is spoken while the signer is still signing: once the hands have rested ~900 ms (or left the
 // frame) and no window is still being read, the model's sentence for exactly these signs is spoken once, waiting up
-// to 1.2 s for it, else the local composeSentence over the guesses core contextPick picks (demo-sentence prior). At 8 signs it is spoken anyway. Reading goes on while it speaks.
+// to 1.2 s for it, else the local composeSentence. At 8 signs it is spoken anyway. Reading goes on while it speaks.
 // Voice: one POST /api/speak (natural TTS) per phrase on one reused <audio>, else speechSynthesis.
 // Pause/Resume stops reading; Undo/Clear/edit + Speak stay available.
 // "#/sign?embed=1" is the same screen for the phone app's WebView: results also go to window.ReactNativeWebView.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEMO_SIGNS, SignApiError, composeSentence, contextPick, createSignClient, knownPhrase, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
+import { DEMO_SIGNS, SignApiError, composeSentence, createSignClient, knownPhrase, labelText, type RecognizeMode, type RecognizeResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
 import { ClockIcon, CloseIcon, GridIcon, HandIcon, PauseIcon, SpeakerIcon, UndoIcon } from "../components/Icons";
 import { Segmented } from "../components/Segmented";
@@ -52,16 +52,10 @@ const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 /** potty is read by its bathroom meaning (the server's sentence model does the same). */
 const localLabel = (l: string) => (l.toLowerCase() === "potty" ? "bathroom" : l);
 const wordOf = (l: string) => (l.startsWith("#") ? cap(l.slice(1).toLowerCase()) : labelText(localLabel(l)));
-/** Context instead of a hard pick: per sign, the guess (of the top TOP_OPTIONS) that makes the whole run make the most
- *  sense under the demo-sentence prior (core contextPick; a guess picked from the chips is kept). Offline path only:
- *  with the server's sentence model the top TOP_OPTIONS guesses + scores go to /api/compose and it picks. */
+/** Guesses per sign sent to /api/compose (with their scores): the sentence model picks the combination that makes sense. */
 const TOP_OPTIONS = 3;
-const resolved = (xs: Entry[]): string[] => {
-  const pick = contextPick(xs.map((x) => ({ options: x.options ?? [{ label: x.label, confidence: 1 }], fixed: x.fixed || !x.options, sel: x.options ? x.sel ?? 0 : 0 })), { topK: TOP_OPTIONS });
-  return xs.map((x, i) => (x.options && pick[i]! >= 0 ? x.options[pick[i]!]!.label : x.label));
-};
-const localSentence = (xs: Entry[]) => composeSentence(resolved(xs).map(localLabel));
-const fixedSentence = (xs: Entry[]) => knownPhrase(resolved(xs).map(localLabel));
+const localSentence = (xs: Entry[]) => composeSentence(xs.map((x) => localLabel(x.label)));
+const fixedSentence = (xs: Entry[]) => knownPhrase(xs.map((x) => localLabel(x.label)));
 /** Words of the demo sentences: preferred (not forced) when the recognizer is torn between them and other words. */
 const DEMO_WORDS = new Set("hello how are you your today day good evening night morning thank you thankyou all very much judge luck lucky can i me my have some coffee water please want build company nice meet name where bathroom yes no fine happy see later tomorrow help sorry".split(" "));
 const DEMO_BOOST = 1.5;
