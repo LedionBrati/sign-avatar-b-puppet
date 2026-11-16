@@ -39,7 +39,7 @@ export const DEMO_GLOSSES = ["HELLO", "NICE", "MEET", "YOU", "WHERE", "HURT", "N
  * takes per batch, and the batch size in VIDEO seconds (what Recast sees and bills).
  */
 export const SETS = Object.freeze({
-  demo: { composeFps: 48, every: 2, takes: 2, maxVideoS: 14, score: true, priority: 0,
+  demo: { composeFps: 48, every: 2, takes: 1, maxVideoS: 14, score: true, priority: 0,
     note: "20 demo signs, half speed, best of N takes per sign (finger metric)" },
   sentences: { composeFps: 48, every: 2, takes: 1, maxVideoS: SHOT_MAX_S, score: true, priority: 1,
     note: "one continuous take per sentence, half speed; whole video + per-sign cuts" },

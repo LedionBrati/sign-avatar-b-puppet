@@ -9,7 +9,8 @@
 //
 // Sets (pipeline/produce/lib.mjs SETS):
 //   demo       the 20 demo signs, half speed (compose 48 fps, render 24 fps, cut every 2nd frame), N takes per batch
-//              with different seeds (--takes, default 2), every take scored per sign (finger metric), best take kept
+//              with different seeds (--takes, default 1 for now; 2+ = best of N), every take scored per sign (finger
+//              metric), best take per sign kept
 //   sentences  one continuous take per sentence (translate/ rules -> NEUTRAL S1 NEUTRAL S2 ... NEUTRAL), half speed;
 //              keeps the whole sentence video (sentences/<id>.mp4) and cuts per-sign clips
 //   library    the dictionary (index.json), most frequent words first, normal speed, 1 take, batches of ~10 s
@@ -33,8 +34,9 @@
 //   --ltx-image                             also send the avatar image to ltx_r2r (default: prompt only)
 //   --avatar-model signer|signer-bob        render avatar (/models/<name>.glb on the volume; --avatar-glb FILE uploads it)
 //   --avatar-image FILE                     Recast reference photo (default assets/avatar/avatar-main.jpg)
-//   --renderer-repo DIR --renderer-ref REF  renderer code (default: $PRODUCE_RENDERER_REPO or ../sbp-fix-placement,
-//                                           ref fix/hand-placement); exported with git archive, committed code only
+//   --renderer-repo DIR --renderer-ref REF  renderer code (default: the main checkout, ref finals/integration, which has
+//                                           the hand-placement fix); any clone + branch/sha works; exported with
+//                                           git archive (committed code only), and Modal renders exactly that sha
 //   --placement ik|fk|auto                  hand placement (default ik)
 //   --takes N  --max-seconds S              takes per batch; batch length in video seconds
 //   --concurrency N (4)  --chunk N (16)     fal jobs in flight; batches per render/repaint/finish round
@@ -102,8 +104,9 @@ const WORK = join(P.workRoot, VARIANT);
 const STATE_PATH = join(WORK, "state.json");
 const OUT_DIR = FAKE ? join(WORK, "clips") : outDirFor(P.realtime, VARIANT);
 const VOL = `/produce/${VARIANT}`;
-const RENDERER_REPO = resolve(opt["renderer-repo"] ?? process.env.PRODUCE_RENDERER_REPO ?? (existsSync(resolve(REPO, "../sbp-fix-placement/.git")) ? resolve(REPO, "../sbp-fix-placement") : REPO));
-const RENDERER_REF = opt["renderer-ref"] ?? (opt["renderer-repo"] || process.env.PRODUCE_RENDERER_REPO || RENDERER_REPO !== REPO ? "fix/hand-placement" : "HEAD");
+// Renderer: committed code of finals/integration in the main checkout (the hand-placement fix is merged there).
+const RENDERER_REPO = resolve(opt["renderer-repo"] ?? process.env.PRODUCE_RENDERER_REPO ?? MAIN);
+const RENDERER_REF = opt["renderer-ref"] ?? process.env.PRODUCE_RENDERER_REF ?? "finals/integration";
 const AVATAR_IMAGE = resolve(opt["avatar-image"] ?? join(REPO, "assets/avatar/avatar-main.jpg"));
 
 // ── Plan ────────────────────────────────────────────────────────────────────────
@@ -358,6 +361,7 @@ async function postStep() {
   for (const r of res.results) {
     const b = state.batches[r.name];
     if (r.error) { log(`post ${r.name} failed: ${r.error.slice(0, 300)}`); continue; }
+    if (r.score_error) log(`post ${r.name}: finger score failed (clips still made): ${r.score_error.slice(0, 300)}`);
     for (const m of r.takes_meta) {
       const t = b.takes[m.k];
       t.frames = m.frames;

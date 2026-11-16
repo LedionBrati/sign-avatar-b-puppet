@@ -88,10 +88,13 @@ def score_job(job: dict) -> dict:
     out = {"name": job["name"], "takes_meta": meta, "score": None}
     good = [(m["k"], "/vol" + m["vol"]) for m in meta if m["ok"]]
     if job.get("score", True) and good:
-        _model()
-        sys.path.insert(0, "/root/pipeline/produce")
-        from score_takes import score
-        out["score"] = score("/vol" + job["ref_vol"], "/vol" + job["motion_vol"] if job.get("motion_vol") else None, job["segments"], good)
+        try:   # a scoring problem must never block the clips: the frame check above is what gates the cut
+            _model()
+            sys.path.insert(0, "/root/pipeline/produce")
+            from score_takes import score
+            out["score"] = score("/vol" + job["ref_vol"], "/vol" + job["motion_vol"] if job.get("motion_vol") else None, job["segments"], good)
+        except Exception as e:  # noqa: BLE001
+            out["score_error"] = f"{type(e).__name__}: {e}"[-1500:]
     out["wall_s"] = round(time.time() - t0, 1)
     return out
 
