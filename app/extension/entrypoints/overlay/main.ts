@@ -1,7 +1,7 @@
 import "@/lib/fonts";
 import "./style.css";
 import { browser, type Browser } from "wxt/browser";
-import { captionFrame, createSignClient, ROUTES, type PlaylistItem, type SignResponse } from "@signlayer/core";
+import { captionFrame, choosePlayback, createSignClient, ROUTES, Signer3D, type PlaybackMode, type PlaylistItem, type SignResponse } from "@signlayer/core";
 import { $, esc, ICON, mark, WORDMARK } from "@/lib/brand";
 import { OVERLAY_PORT, type ChunkInfo, type StartReply, type ToBg, type ToOverlay } from "@/lib/messages";
 import { getSettings, setSettings, SIZE_PX, type Size, type Source } from "@/lib/settings";
@@ -14,7 +14,7 @@ import { createWave } from "@/lib/wave";
 // Like the web app's Live card: a phrase that can't be signed (the safety gate says caption_only / needs_confirmation)
 // isn't played. No popup, no hint: the signer just stays still and the transcript still shows the words.
 
-type Job = { res: SignResponse };
+type Job = { res: SignResponse; mode?: PlaybackMode };
 type View = "ready" | "starting" | "listening" | "signing" | "offline" | "error";
 type Tone = "live" | "sign" | "off" | "idle";
 const SRC_LABEL: Record<Source, string> = { mic: "Mic", tab: "Tab" };
@@ -35,6 +35,25 @@ const wave = createWave($("wv") as HTMLCanvasElement);
 
 let s = await getSettings();
 let client = createSignClient(s.apiUrl, { timeoutMs: 12_000 });
+
+// ── The instant 3D signer (app/core Signer3D on puppet/src/player.ts): one per server, loaded once, kept warm ──
+const layer3d = $("s3d");
+let signer3d: Signer3D | null = null;
+function get3d(): Signer3D {
+  if (!signer3d || !signer3d.canvas.isConnected) {
+    signer3d?.stop();
+    layer3d.replaceChildren();
+    const canvas = document.createElement("canvas");
+    canvas.width = 540;
+    canvas.height = 720;
+    layer3d.appendChild(canvas);
+    signer3d = new Signer3D({ load: () => import("@signlayer/signer-player"), modelUrl: client.modelUrl(), canvas });
+  }
+  return signer3d;
+}
+const restUrl = () => `${client.base}${ROUTES.motion}neutral.json`;
+function setMode(m: "clips" | "3d") { if (stage.dataset.mode !== m) stage.dataset.mode = m; }
+let gen3d = 0;
 
 // ── Talking to the frame around us (float.ts, in the page) ──
 const toFrame = (m: object) => parent.postMessage({ sl: 1, ...m }, "*"); // nothing private: sizes, drag deltas, state
@@ -151,6 +170,9 @@ function openServerForm() {
   urlIn.select();
 }
 gear.addEventListener("click", () => (form.hidden ? openServerForm() : setForm(false)));
+const always3d = $("always3d") as HTMLInputElement;
+always3d.checked = s.always3d;
+always3d.addEventListener("change", () => { s.always3d = always3d.checked; setSettings({ always3d: always3d.checked }); });
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const v = urlIn.value.trim().replace(/\/+$/, "");
@@ -160,6 +182,7 @@ form.addEventListener("submit", (e) => {
   setSettings({ apiUrl: v });
   client = createSignClient(v, { timeoutMs: 12_000 });
   neutralId = null; stillDone = false;
+  signer3d?.stop(); signer3d = null; layer3d.replaceChildren(); setMode("clips");
   setForm(false);
   checkHealth();
 });
@@ -345,8 +368,9 @@ function load(v: HTMLVideoElement, url: string) {
 }
 
 function peek(): PlaylistItem | undefined {
-  if (job && idx + 1 < job.res.playlist.length) return job.res.playlist[idx + 1];
-  return jobs.find((j) => j.res.playlist.length)?.res.playlist[0];
+  if (job && job.mode !== "3d" && idx + 1 < job.res.playlist.length) return job.res.playlist[idx + 1];
+  const j = jobs.find((x) => x.res.playlist.length);
+  return j && j.mode !== "3d" ? j.res.playlist[0] : undefined; // a 3D phrase has no clip to preload
 }
 
 /** Seconds of signing still queued (drives catch-up speed so the signer stays near real time). */
@@ -384,6 +408,7 @@ function advance() {
     }
   }
   if (!job) { renderCaptions(); render(); return; }
+  if (job.mode === "3d") { play3d(job); return; }
   const item = job.res.playlist[idx]!;
   const back = vids[1 - front]!, cur = vids[front]!;
   load(back, item.url);
@@ -397,6 +422,7 @@ function advance() {
   const swap = () => {
     if (swapped) return;
     swapped = true;
+    setMode("clips"); // after a 3D phrase: the canvas fades out over the first clip
     cur.classList.remove("top");
     back.classList.add("top", "on");
     front = 1 - front;
@@ -418,6 +444,34 @@ function advance() {
   });
   render();
   renderCaptions();
+}
+
+/** A whole phrase on the 3D signer (rest -> signs -> rest); captions follow the sign being made. */
+function play3d(j: Job) {
+  const g = ++gen3d;
+  idx = -1;
+  render();
+  renderCaptions();
+  const mine = () => g === gen3d && job === j;
+  get3d().play(j.res.playlist, {
+    restUrl: j.res.rest_motion_url,
+    onIndex: (k) => {
+      if (!mine()) return;
+      setMode("3d");
+      if (k >= 0 && k !== idx) { idx = k; renderCaptions(); }
+    },
+  }).then((finished) => {
+    if (!finished || !mine()) return;
+    idx = j.res.playlist.length - 1;
+    advance();
+  }).catch((e) => {
+    if (!mine()) return;
+    console.warn("[signlayer] 3D signer failed", e);
+    // Can't load the 3D signer (network, WebGL): a phrase that has every clip still plays photoreal; else skip it.
+    if (j.res.playlist.every((x) => x.url)) { j.mode = "clips"; job = null; idx = -1; jobs.unshift(j); advance(); return; }
+    idx = j.res.playlist.length - 1;
+    advance();
+  });
 }
 
 document.addEventListener("visibilitychange", () => {
@@ -455,6 +509,8 @@ function clearVideo() {
 }
 /** Never a stale clip under a caption: both videos stop and drop their source. */
 function stopVideo() {
+  gen3d++;
+  signer3d?.stop();
   front = 0;
   swapToken++;
   swapping = false;
@@ -528,7 +584,8 @@ function sign(text: string) {
   const t = clean(text);
   if (!t) return;
   const id = ++seq;
-  const p = client.sign({ text: t });
+  // motion: this card plays the instant 3D signer, so signs without a photoreal clip are signable too.
+  const p = client.sign({ text: t, motion: true });
   p.catch(() => {});
   if (!job && !holdTimer) {
     heardText = t;
@@ -549,8 +606,12 @@ function sign(text: string) {
     if (isOffline) { isOffline = false; render(); }
     dbg.phrases.push({ text: t, status: res.safety?.status ?? "?", glosses: res.playlist.map((x) => x.gloss).join(" ") });
     if (id < seq - 2) return; // overtaken while waiting: keep up with the speech
+    // One style per phrase: photoreal clips when every sign has one, else the whole phrase on the 3D signer.
+    const mode = choosePlayback(res, { always3d: s.always3d });
+    if (mode === "none") res = { ...res, playlist: [], markers: [] };
+    if (mode === "3d") get3d().prefetch(res.playlist, res.rest_motion_url);
     // Phrases that can't be signed queue in order like the rest (they just don't play).
-    enqueue({ res });
+    enqueue({ res, mode });
   });
 }
 
@@ -568,7 +629,9 @@ setInterval(() => { if (isOffline && !document.hidden) checkHealth(); }, 10_000)
 
 async function checkHealth() {
   try {
-    await client.health();
+    const h = await client.health();
+    // Keep the 3D signer warm: load its bundle + avatar in the background once the server has one.
+    if (h.motion?.model) void get3d().warm(restUrl()).catch(() => {});
     if (isOffline) { isOffline = false; render(); }
     showNeutral();
   } catch (e) {

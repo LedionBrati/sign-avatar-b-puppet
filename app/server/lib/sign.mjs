@@ -33,6 +33,8 @@ export function planToPlaylist(plan, clips) {
   return { words, playlist, unsupported, fingerspell, markers };
 }
 
+// motion_url only in 3D-capable answers (index.mjs withMotion); url is "" there when the sign has no photoreal clip.
 const entry = (clip, gloss, word_index) => ({
   motion_id: clip.motion_id, gloss, url: clip.url, duration_s: clip.duration_s, word_index,
+  ...(clip.motion_url ? { motion_url: clip.motion_url } : {}),
 });

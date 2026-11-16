@@ -125,6 +125,7 @@ export default defineConfig({
       "@sl/safety": path.resolve(repo, "app/server/lib/semantic-safety.mjs"),
       // translate/semantic.mjs imports it lazily; the artifact never runs the semantic layer.
       "@huggingface/transformers": path.resolve(here, "src/artifact/stub-transformers.ts"),
+      "@signlayer/signer-player": path.resolve(here, "src/artifact/stub-signer-player.ts"),
     },
   },
   define: { __ARTIFACT__: "true", __MP_VERSION__: JSON.stringify(mpVersion) },

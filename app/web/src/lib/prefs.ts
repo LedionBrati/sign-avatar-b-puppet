@@ -7,6 +7,8 @@ export interface Prefs {
   theme: Theme; captions: boolean; v?: number;
   /** Sign -> voice: closed demo vocabulary with a personal model ("Train my signs"); profile "demo" = the generic one. */
   closedVocab?: boolean; signProfile?: string; signVocab?: string[];
+  /** Speak -> Sign: play every phrase on the instant 3D signer, even when photoreal clips exist (demo, slow network). */
+  always3d?: boolean;
 }
 
 const KEY = "sl-prefs";

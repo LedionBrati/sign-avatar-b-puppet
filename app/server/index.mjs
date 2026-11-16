@@ -12,6 +12,10 @@
 //                             markers, plan, safety, translator: "local"|"agent", paraphrase?, generating?, timings
 //   GET  /api/sign.mp4?text=  the playlist joined into one mp4 (ffmpeg stream copy), for sharing / download
 //   GET  /clips/<file>        clips from the manifests, with HTTP Range (206) for Safari / iOS / expo-video
+//   POST /api/sign {motion: true}   the client can play the instant 3D signer: signs with extracted motion but no clip
+//                             are signable too; every playlist item carries motion_url ("" url = no photoreal clip)
+//   GET  /motion/<stem>.json  slim motion file for the 3D signer (lib/motions.mjs; MOTION_DIRS, MOTION_V2_DIRS, MOTION=off)
+//   GET  /models/signer.glb   the 3D signer's avatar (SIGNER_MODEL, default puppet/models/signer.glb)
 //   POST /api/transcribe      raw audio chunk (audio/webm, ...) -> {text, model, timings}; same OpenAI key (lib/transcribe.mjs)
 //   POST /api/recognize?mode=sign|spell   float32 landmarks + X-Frames, proxied to app/recognizer (RECOGNIZER_URL, default :8788)
 //                             &profile=&vocab=A,B (+ X-Fps): closed demo vocabulary with a personal model, answer has signs[]
@@ -37,6 +41,7 @@ import { assessSigning } from "./lib/semantic-safety.mjs";
 import { createAgent } from "./lib/agent.mjs";
 import { loadApiKey, loadFalKey, redactor } from "./lib/secrets.mjs";
 import { createOnDemand, onDemandConfig, prepareClipsDir } from "./lib/ondemand.mjs";
+import { createMotionLibrary, motionConfig } from "./lib/motions.mjs";
 import { virtualClips } from "./lib/eval-vocab.mjs";
 import { TRANSCRIBE_ROUTE, createTranscribeHandler, transcriberFromEnv } from "./lib/transcribe.mjs";
 import { COMPOSE_ROUTE, createComposer, parseContext, parseSigns } from "./lib/compose.mjs";
@@ -54,6 +59,7 @@ const MIME = {
   ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
   ".ico": "image/x-icon", ".woff2": "font/woff2", ".woff": "font/woff", ".wasm": "application/wasm", ".task": "application/octet-stream",
   ".tflite": "application/octet-stream", ".mp4": "video/mp4", ".txt": "text/plain; charset=utf-8", ".map": "application/json",
+  ".glb": "model/gltf-binary",
 };
 const ms = (x) => Math.round(x * 100) / 100;
 
@@ -75,6 +81,9 @@ class HttpError extends Error {
  * @param {object|null} [o.ondemand]  generate-on-use options for lib/ondemand.mjs createOnDemand (tests inject fake steps);
  *                                    null = off. Default: from the environment (ONDEMAND=on, FAL_KEY_FILE / FAL_KEY, MOTION_DIRS),
  *                                    never under node --test
+ * @param {object|null} [o.motion]    3D signer motion library settings for lib/motions.mjs createMotionLibrary
+ *                                    ({dirs, v2Dirs, rest, model, minHandPct}); null = off. Default: from the environment
+ *                                    (MOTION_DIRS, MOTION_V2_DIRS, MOTION_REST, SIGNER_MODEL; MOTION=off), never under node --test
  * @param {object|null} [o.transcriber]  speech-to-text override ({transcribe(audio, opts)}, see lib/transcribe.mjs); null = off
  * @param {object|null} [o.composer]  sign -> sentence override ({compose(signs, context)}, see lib/compose.mjs); null = off
  * @param {object|null} [o.speaker]   text -> speech override ({speak(text, {voice})}, see lib/speak.mjs); null = off
@@ -97,13 +106,23 @@ export function createApp(o = {}) {
   const clipsDirs = [...(o.clipsDirs ?? withV2Clips(parseClipsDirs())), ...(odConfig.enabled ? [odConfig.clipsDir] : [])];
   if (odConfig.enabled) prepareClipsDir(odConfig.clipsDir);
 
+  // The 3D signer's motion library (signs with extracted motion). Off in eval mode (virtual clips).
+  const motionCfg = o.motion !== undefined ? o.motion : motionConfig();
+  const motions = motionCfg && !evalVocab ? createMotionLibrary(motionCfg) : null;
+  if (motions) log(`3d signer: ${motions.size} signs with motion${motions.model ? "" : " (no signer.glb: set SIGNER_MODEL)"}${motions.rest ? "" : " (no rest pose)"}`);
+
   // Planning vocab + the clip set the playlist builder and the safety gate check against (the real clips, except in eval mode).
   // All three are reloaded when on-demand generation adds clips (reloadClips), so new signs work without a restart.
-  let clips, planClips, vocab;
+  // motionSet / motionVocab: the same for clients that can play the 3D signer (clips + signs that only have motion).
+  let clips, planClips, vocab, motionSet = null, motionVocab = null;
   const loadClips = () => {
     clips = loadClipSets(clipsDirs);
     planClips = evalVocab ? virtualClips(loadVocab(evalVocab)) : clips;
     vocab = [...planClips.signs.values()].map(({ motion_id, gloss }) => ({ motion_id, gloss }));
+    if (motions?.size) {
+      motionSet = withMotion(planClips, motions);
+      motionVocab = [...motionSet.signs.values()].map(({ motion_id, gloss }) => ({ motion_id, gloss }));
+    }
   };
   loadClips();
   clips.warnings.forEach((w) => log(`warning: ${w}`));
@@ -134,6 +153,17 @@ export function createApp(o = {}) {
     }
     return extVocab;
   };
+  /** 3D mode: the phrase plays on the 3D signer now; signs it had no clip for are made photoreal for next time. */
+  function generateFor3d(playlist) {
+    if (!ondemand.enabled) return [];
+    try {
+      ondemand.rescan();
+      return ondemand.request(playlist.filter((p) => !p.url && ondemand.has(p.motion_id)).map((p) => ({ motion_id: p.motion_id })));
+    } catch (error) {
+      log(`ondemand: request failed: ${error.message}`);
+      return [];
+    }
+  }
   /** Signs the sentence needs that have motion but no clip yet: queue them; the response says which are generating. */
   function generateMissing(text, chosen, trace, opts) {
     if (!ondemand.enabled || chosen.safety.status === "fully_supported") return [];
@@ -151,7 +181,7 @@ export function createApp(o = {}) {
   }
 
   const semanticWanted = o.semantic ?? process.env.SEMANTIC !== "0";
-  const state = { semantic: semanticWanted ? "loading" : "off", warm_ms: null, agent: agent ? "ready" : "off" };
+  const state = { semantic: semanticWanted ? "loading" : "off", warm_ms: null, agent: agent ? "ready" : "off", semantic_motion: "off" };
   const matcher = semanticWanted ? (o.matcher ?? createNodeMatcher()) : null;
   const ready = !matcher ? Promise.resolve(false) : (async () => {
     const t0 = performance.now();
@@ -169,13 +199,29 @@ export function createApp(o = {}) {
       return false;
     }
   })();
+  // The 3D vocab (~1,800 more glosses) is embedded once in the background, after the clip vocab (disk-cached by translate/).
+  const motionReady = ready.then(async (ok) => {
+    if (!ok || !motionVocab) return false;
+    state.semantic_motion = "loading";
+    const t0 = performance.now();
+    try {
+      await translate("exhausted", motionVocab, { matcher, englishWords: englishWords ?? undefined });
+      state.semantic_motion = "ready";
+      log(`semantic model ready for the 3d vocab (${Math.round(performance.now() - t0)} ms)`);
+      return true;
+    } catch (error) {
+      state.semantic_motion = "off";
+      log(`semantic 3d vocab failed (${error.message}); rules only for 3d-only signs`);
+      return false;
+    }
+  });
 
   /** One playlist builder + safety gate for every translator: a blocked plan never returns a playable prefix
    *  (strict mode). SIGNING_MODE=relaxed keeps whatever valid signs a plan has: partial sentences sign what they can
    *  and agent paraphrases play without confirmation. A malformed plan stays blocked in both modes. */
-  function finish(text, plan) {
-    const out = planToPlaylist(plan, planClips);
-    const safety = assessSigning(text, plan, planClips);
+  function finish(text, plan, set = planClips) {
+    const out = planToPlaylist(plan, set);
+    const safety = assessSigning(text, plan, set);
     const invalid = safety.reasons?.some((r) => r.code === "invalid_plan");
     if (safety.status !== "fully_supported" && !(RELAXED && !invalid && out.playlist.length)) {
       out.playlist = [];
@@ -187,19 +233,29 @@ export function createApp(o = {}) {
   async function sign(body) {
     const t0 = performance.now();
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "bad_request", "body must be a JSON object {text, semantic?, agent?}");
-    const { text, semantic = true, agent: mode = "auto" } = body;
+    const { text, semantic = true, agent: mode = "auto", motion = false } = body;
     if (typeof text !== "string") throw new HttpError(400, "bad_text", "text must be a string");
     if (!text.trim()) throw new HttpError(400, "empty_text", "text is empty");
     if (text.length > MAX_TEXT) throw new HttpError(413, "text_too_long", `text is ${text.length} characters; the limit is ${MAX_TEXT}`);
     if (typeof semantic !== "boolean") throw new HttpError(400, "bad_semantic", "semantic must be a boolean");
     if (!AGENT_MODES.includes(mode)) throw new HttpError(400, "bad_agent", `agent must be one of ${AGENT_MODES.join(", ")}`);
+    if (typeof motion !== "boolean") throw new HttpError(400, "bad_motion", "motion must be a boolean");
     const opts = { englishWords: englishWords ?? undefined };
+    // motion: the client plays the 3D signer, so signs with motion but no clip are signable (same safety gate).
+    const set = motion && motionSet ? motionSet : planClips;
+    const planVocab = set === planClips ? vocab : motionVocab;
+    const semReady = semantic && state.semantic === "ready";
     const t1 = performance.now();
-    const plan = semantic && state.semantic === "ready"
-      ? await translate(text, vocab, { ...opts, matcher })
-      : translateRules(text, vocab, opts);
+    const plan = semReady && (set === planClips || state.semantic_motion === "ready")
+      ? await translate(text, planVocab, { ...opts, matcher })
+      : translateRules(text, planVocab, opts);
+    let local = finish(text, plan, set);
+    if (set !== planClips && semReady && state.semantic_motion !== "ready" && local.safety.status !== "fully_supported") {
+      // The 3D vocab is still being embedded: the clip vocab's semantic plan may still sign it.
+      const alt = finish(text, await translate(text, vocab, { ...opts, matcher }), set);
+      if (better(alt, local)) local = alt;
+    }
     const translate_ms = ms(performance.now() - t1);
-    const local = finish(text, plan);
 
     // Hybrid: the local translator answers instantly; the agent is asked only when that is not fully supported
     // (or agent: "always"). Its plan goes through the same gate and wins only if the gate rates it better.
@@ -211,7 +267,7 @@ export function createApp(o = {}) {
       try { r = await agent.plan(text, vocab, opts); } catch (error) { r = { ok: false, code: "internal", error: redact(error) }; }
       agent_ms = ms(performance.now() - t2);
       if (r.ok) {
-        const proposed = finish(text, r.plan);
+        const proposed = finish(text, r.plan, set);
         const wins = mode === "always" || (RELAXED ? signsMore(proposed, local) : better(proposed, local));
         trace = { used: wins, status: proposed.safety.status, local_status: local.safety.status, paraphrase: r.paraphrase, notes: r.notes,
           model: r.model, cached: Boolean(r.cached), latency_ms: r.latency_ms, usage: r.usage ?? null, rejected: r.rejected ?? [] };
@@ -224,7 +280,7 @@ export function createApp(o = {}) {
         log(`agent failed (${r.code}): ${redact(r.error ?? "")}`);
       }
     }
-    const generating = generateMissing(text, chosen, trace, opts);
+    const generating = set === planClips ? generateMissing(text, chosen, trace, opts) : generateFor3d(chosen.out.playlist);
     // Relaxed: anything with signs plays. Clients only play "fully_supported", so report that, and keep the strict
     // verdict + reasons (skipped words stay in the captions via `unsupported`).
     let safety = chosen.safety;
@@ -233,6 +289,7 @@ export function createApp(o = {}) {
     }
     return {
       text, ...chosen.out, safety, plan: chosen.plan, translator,
+      ...(set !== planClips && motions.rest ? { rest_motion_url: motions.rest } : {}),
       ...(translator === "agent" ? { paraphrase: trace.paraphrase } : {}),
       ...(trace ? { agent: trace } : {}),
       ...(warnings.length ? { warnings } : {}),
@@ -251,7 +308,8 @@ export function createApp(o = {}) {
     if (path === "/api/health") {
       only(req, "GET", "HEAD");
       return json(res, 200, { ok: true, signs: clips.signs.size, semantic: state.semantic, agent: state.agent, transcribe: transcriber ? "ready" : "off", compose: composer ? "ready" : "off", speak: speaker ? "ready" : "off", recognizer: await recognizerStatus(),
-        ...(odConfig.wanted || ondemand.enabled ? { ondemand: ondemand.health() } : {}) });
+        ...(odConfig.wanted || ondemand.enabled ? { ondemand: ondemand.health() } : {}),
+        ...(motions ? { motion: { signs: motions.size, model: Boolean(motions.model), semantic: state.semantic_motion } } : {}) });
     }
     if (path === "/api/ondemand") {
       only(req, "GET", "HEAD");
@@ -318,6 +376,19 @@ export function createApp(o = {}) {
       only(req, "GET", "HEAD");
       return sendWebApp(req, res, path);
     }
+    if (path.startsWith("/motion/")) {
+      only(req, "GET", "HEAD");
+      let stem;
+      try { stem = decodeURIComponent(path.slice("/motion/".length)).replace(/\.json$/, ""); } catch { stem = null; }
+      const entry = stem && motions ? motions.get(stem) : null;
+      if (!entry) throw new HttpError(404, "no_motion", `no motion ${stem ?? path}`);
+      return sendMotion(req, res, entry);
+    }
+    if (path === "/models/signer.glb") {
+      only(req, "GET", "HEAD");
+      if (!motions?.model) throw new HttpError(404, "no_model", "no 3D signer model on this server (set SIGNER_MODEL or copy puppet/models/signer.glb)");
+      return sendFile(req, res, motions.model, { cache: "public, max-age=86400", type: MIME[".glb"] });
+    }
     if (path.startsWith("/clips/")) {
       only(req, "GET", "HEAD");
       let rel;
@@ -326,7 +397,7 @@ export function createApp(o = {}) {
       if (!file) throw new HttpError(404, "no_clip", `no clip ${rel ?? path}`);
       return sendFile(req, res, file);
     }
-    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "GET|POST|DELETE /api/enroll", "POST /api/train", "/api/profiles", "POST /api/compose", "POST /api/speak", "/app/"] });
+    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "GET|POST|DELETE /api/enroll", "POST /api/train", "/api/profiles", "POST /api/compose", "POST /api/speak", "/motion/<stem>.json", "/models/signer.glb", "/app/"] });
     throw new HttpError(404, "not_found", `no route ${req.method} ${path}`);
   }
 
@@ -434,7 +505,37 @@ export function createApp(o = {}) {
     });
   });
   server.on("close", () => ondemand.stop());
-  return { server, get clips() { return clips; }, get vocab() { return vocab; }, state, ready, sign, agent, transcriber, composer, speaker, ondemand, reloadClips, recognizerUrl, webDist };
+  return { server, get clips() { return clips; }, get vocab() { return vocab; }, motions, motionReady, state, ready, sign, agent, transcriber, composer, speaker, ondemand, reloadClips, recognizerUrl, webDist };
+}
+
+/** Clip set + motion library -> the set a 3D-capable client can sign: every clip sign (with motion_url when it also has
+ *  motion) plus every sign that only has motion (url ""). Same shape as loadClipSets(), so the playlist builder and the
+ *  safety gate need no special case. Letters likewise (fingerspelling plays on the 3D signer when every letter has motion). */
+export function withMotion(clipSet, motions) {
+  const merge = (fromClips, fromMotion) => {
+    const out = new Map();
+    for (const [k, c] of fromClips) {
+      const m = fromMotion.get(k);
+      out.set(k, m ? { ...c, motion_url: m.url } : c);
+    }
+    for (const [k, m] of fromMotion) {
+      if (out.has(k)) continue;
+      out.set(k, { motion_id: m.motion_id, gloss: m.gloss, url: "", motion_url: m.url, get duration_s() { return m.duration_s; } });
+    }
+    return out;
+  };
+  return { ...clipSet, signs: merge(clipSet.signs, motions.signs), letters: merge(clipSet.letters, motions.letters) };
+}
+
+/** Slim motion JSON (gzip when the client takes it), cached a day, ETag, CORS like /clips. */
+function sendMotion(req, res, entry) {
+  const gz = /\bgzip\b/.test(String(req.headers["accept-encoding"] ?? ""));
+  const body = gz ? entry.gz : entry.json;
+  const headers = { "content-type": "application/json", "cache-control": "public, max-age=86400", etag: entry.etag,
+    "last-modified": entry.mtimeDate.toUTCString(), vary: "accept-encoding", "content-length": body.length, ...(gz ? { "content-encoding": "gzip" } : {}) };
+  if (req.headers["if-none-match"] === entry.etag) { delete headers["content-length"]; res.writeHead(304, headers); return res.end(); }
+  res.writeHead(200, headers);
+  res.end(req.method === "HEAD" ? undefined : body);
 }
 
 /** On-demand settings: explicit options (tests), null = off, or the environment (never under node --test). */

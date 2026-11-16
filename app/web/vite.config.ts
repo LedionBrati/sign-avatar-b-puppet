@@ -14,7 +14,8 @@ export default defineConfig(({ mode }) => ({
   // Relative base: the same build runs at / and at /app/ (app/server serves dist there for the phone WebView).
   base: "./",
   plugins: [react(), ...(mode === "mock" ? [mockApi()] : [])],
-  resolve: { alias: { "@signlayer/core": path.resolve(here, "../core/src/index.ts") } },
+  // The instant 3D signer (puppet/src/player.ts, three.js) is bundled from source as a lazy chunk (lib/signer3d.ts).
+  resolve: { alias: { "@signlayer/core": path.resolve(here, "../core/src/index.ts"), "@signlayer/signer-player": path.resolve(here, "../../puppet/src/player.ts") } },
   define: { __MP_VERSION__: JSON.stringify(mpVersion), __ARTIFACT__: "false", ...(mode === "mock" ? { "import.meta.env.VITE_API_URL": JSON.stringify("same-origin") } : {}) },
   server: { port: 5173, host: true, fs: { allow: [path.resolve(here, "..")] } },
   build: { target: "es2022" },

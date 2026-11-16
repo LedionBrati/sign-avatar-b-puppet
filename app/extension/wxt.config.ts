@@ -4,7 +4,9 @@ import pinned from "./manifest-key.json";
 
 // Flux Chrome extension (Manifest V3): a floating, draggable glass card on top of the page. See README.md.
 export default defineConfig({
-  alias: { "@signlayer/core": resolve(__dirname, "../core/src/index.ts") },
+  // The instant 3D signer (puppet/src/player.ts + three.js) is bundled from source as a lazy chunk of the card
+  // (an extension page, so WebGL works); its avatar (signer.glb) and motions come from the server.
+  alias: { "@signlayer/core": resolve(__dirname, "../core/src/index.ts"), "@signlayer/signer-player": resolve(__dirname, "../../puppet/src/player.ts") },
   manifest: {
     name: "Flux",
     short_name: "Flux",
