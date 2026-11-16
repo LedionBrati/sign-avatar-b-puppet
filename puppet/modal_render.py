@@ -15,6 +15,8 @@ CPU containers cost a few cents per render; see the experiment log for sizes.
 
     modal run puppet/modal_render.py --motions demo3.clean.json --avatar signer --passes rgb,depth,normal
     modal run puppet/modal_render.py --motions demo3.clean.json --avatar vrm          # the old anime puppet
+    modal run puppet/modal_render.py::main --motions demo3.clean.json --placement fk --tag fk --passes rgb
+        # hand placement off (arm rotations copied, the behaviour before src/place.ts) -> demo3-signer-fk.mp4
     modal volume get signlayer-renders /renders out/modal
 
 3. Frame grids (old vs new, same frames) and the speed benchmark:
@@ -84,24 +86,32 @@ def _node(args: list[str], cwd: Path) -> str:
 
 @app.function(volumes={"/vol": vol}, cpu=CPU, memory=8192, timeout=3600)
 def render_one(motion: str, avatar: str = "signer", passes: str = "rgb,depth,normal", lite: bool = True,
-               extra: list[str] | None = None, gpu: bool = False) -> dict:
-    """Render /vol/motion/<motion> to /vol/renders/<stem>-<avatar>.mp4 (+ .depth/.normal/.seg mp4 and the .json report)."""
+               extra: list[str] | None = None, gpu: bool = False, tag: str = "", placement: str = "auto") -> dict:
+    """Render /vol/motion/<motion> to /vol/renders/<stem>-<avatar>[-<tag>].mp4 (+ .depth/.normal/.seg mp4 and the .json report)."""
     w = _workdir()
     stem = motion.removesuffix(".json").removesuffix(".clean")  # x.v2.json -> x.v2, so v1 and v2 renders differ
-    out = Path(f"/vol/renders/{stem}-{avatar}.mp4")
+    out = Path(f"/vol/renders/{stem}-{avatar}{'-' + tag if tag else ''}.mp4")
     out.parent.mkdir(parents=True, exist_ok=True)
     args = [str(w / "render.mjs"), "--motion", f"/vol/motion/{motion}", "--view", "vrm", "--out", str(out)]
     if avatar == "signer":
         args += ["--avatar", "signer", "--passes", passes, "--aa", "0"] + (["--lite"] if lite and not gpu else [])
     if gpu:
         args.append("--gpu")
+    if placement != "auto":
+        args += ["--placement", placement]
     args += extra or []
     t0 = time.time()
     log = _node(args, w)
     vol.commit()
     rep = json.loads(Path(str(out).removesuffix(".mp4") + ".json").read_text())
+    loc = rep.get("location") or {}
     return {"motion": motion, "out": str(out), "wall_s": round(time.time() - t0, 1), "s_per_frame": rep.get("seconds_per_frame"),
-            "webgl": rep.get("webgl"), "frames": rep.get("frames"), "hand_limits": rep.get("hand_limits"), "log_tail": log[-600:]}
+            "webgl": rep.get("webgl"), "frames": rep.get("frames"), "hand_limits": rep.get("hand_limits"),
+            "placement": (rep.get("avatar") or {}).get("placement"),
+            "location": {k: loc.get(k) for k in ("mean_err", "max_err", "contacts_src", "contacts_lost", "contact_gap3d_mean")},
+            "occlusion": rep.get("occlusion"),
+            "quality": {k: (rep.get("quality") or {}).get(k) for k in ("bad_frames", "bad_frames_hand", "bad_frames_arm", "palm_flips")},
+            "log_tail": log[-600:]}
 
 
 @app.function(volumes={"/vol": vol}, cpu=4.0, timeout=600)
@@ -144,11 +154,16 @@ def probe_gpu_remote(motion: str) -> str:
 
 
 @app.local_entrypoint()
-def main(motions: str, avatar: str = "signer", passes: str = "rgb,depth,normal", lite: bool = True, gpu: bool = False):
-    """--motions a.clean.json,b.v2.json (names on the volume, under /motion). --avatar signer|vrm."""
+def main(motions: str, avatar: str = "signer", passes: str = "rgb,depth,normal", lite: bool = True, gpu: bool = False,
+         tag: str = "", placement: str = "auto", extra: str = ""):
+    """--motions a.clean.json,b.v2.json (names on the volume, under /motion). --avatar signer|vrm.
+    --placement auto|fk|ik (render.mjs --placement), --tag x: outputs named <stem>-<avatar>-x.mp4,
+    --extra "--swivel 0": more render.mjs arguments (space-separated)."""
     names = [m for m in motions.split(",") if m]
     t0 = time.time()
-    rows = list(render_one.map(names, kwargs={"avatar": avatar, "passes": passes, "lite": lite, "gpu": gpu}, return_exceptions=True))
+    rows = list(render_one.map(names, kwargs={"avatar": avatar, "passes": passes, "lite": lite, "gpu": gpu, "tag": tag, "placement": placement,
+                                                      "extra": extra.split() if extra else None},
+                               return_exceptions=True))
     for r in rows:
         print(json.dumps(r if isinstance(r, dict) else {"error": str(r)[-1500:]}))
     print(json.dumps({"renders": len(rows), "errors": sum(1 for r in rows if not isinstance(r, dict)), "wall_s": round(time.time() - t0, 1)}))
