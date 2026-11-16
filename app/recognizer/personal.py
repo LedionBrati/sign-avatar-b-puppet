@@ -7,8 +7,9 @@ model (the face is never stored by enrollment). Pieces:
   shoulder frame, the 20 other hand points relative to the wrist / hand size, wrist velocity; resampled to L frames.
   Same idea as templates.py, so DTW templates and the classifier share one representation.
 - Model: multinomial logistic regression on the flattened features (numpy, Adam, L2), trained on the generic WLASL
-  demo clips + the person's own reps (weighted up) + a "none" class (other signs, transitions, idle hands). Each
-  training clip is augmented (speed, trim, small rotation / scale / shift). Fits in about a second on a laptop CPU.
+  demo clips + the person's own reps (weighted up) + a "none" class (other signs, transitions, idle hands).
+  Augmenting the clips (speed, trim, rotation / scale / shift: augment(), AUG) measured worse, so it is off.
+  Fits in a few seconds on a laptop CPU.
 - DTW against the same clips (templates.dtw): d(label) = distance to that label's nearest template.
 - Fusion: p(label) ~ p_lr(label)^A * g(label)^B * exp(-DTW_W * d(label)), with g = GISLR's probability for the labels
   it knows and an even share of its "everything else" mass for the ones it doesn't. Only the active vocabulary is
@@ -42,7 +43,7 @@ A, B, DTW_W = 1.0, 0.75, 2.0
 REJECT = float(os.environ.get("PERSONAL_REJECT", "0.6"))
 DTW_FAR = float(os.environ.get("PERSONAL_DTW_FAR", "1.0"))
 OWN_WEIGHT = 3.0  # a person's own rep counts this many generic clips
-AUG = 8  # augmented copies per training clip
+AUG = 0  # augmented copies per training clip (leave-signer-out: 0 beat 8, 86% vs 83% top-1; augment() stays for tests)
 
 
 def text_of(label: str) -> str:

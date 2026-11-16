@@ -250,7 +250,7 @@ def isolated(args):
         "dtw 1-nn (hand features)": {"model": "dtw"},
         "logreg (hand features) + dtw": {"model": "lr", "fuse": False},
         "logreg + dtw + gislr prior": {"model": "lr", "fuse": True},
-        "logreg + dtw + gislr prior, no augmentation": {"model": "lr", "fuse": True, "aug": 0},
+        "logreg + dtw + gislr prior, 8x augmentation": {"model": "lr", "fuse": True, "aug": 8},
     }
     if args.quick:
         variants = {k: v for k, v in variants.items() if k in ("logreg + dtw + gislr prior",)}
@@ -318,7 +318,7 @@ def isolated(args):
         if any(r[2] for r in rows):
             line += f" | accepted {len(acc)}/{len(rows)} ({len(acc) / len(rows):.0%}), right when accepted {np.mean(acc) if acc else 0:.0%}"
         print(line)
-    print(f"  train time per fold (logreg, {P.AUG} aug): median {statistics.median(train_ms):.0f} ms" if train_ms else "")
+    print(f"  train time per fold (logreg): median {statistics.median(train_ms):.0f} ms" if train_ms else "")
     print(f"\nOPEN SET: {len(neg_test)} other WLASL signs (not in the demo vocabulary)")
     print(f"  main: said a demo word for {fa_main}/{len(neg_test)} ({fa_main / len(neg_test):.0%})")
     for name, rows in openset.items():

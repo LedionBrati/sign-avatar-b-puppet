@@ -76,6 +76,35 @@ itself, from the raw json converted to the 543 x 3 layout the server receives; d
 it to work best for distinctive signs and to need the confirm chips otherwise. Glosses without extracted motion
 (BELIEF, CAREFUL, COP, DURING, EXPECT, HOST, LOCAL, MEANING, PAST, POTENTIAL, REALIZE, SHARE, SIMILAR, TALE, TRUE) are not in the bank.
 
+## Demo vocabulary + "Train my signs" (closed vocabulary, personal model)
+
+For the finals the web app reads only the 20 demo signs (HELLO YES NO PLEASE THANK_YOU WATER HUNGRY SICK HOME HELP
+NAME NICE MEET YOU ME WHERE FINE HAPPY BYE SORRY), with a model that can learn the presenter's own signing.
+
+- `segment.py` (mirror of `app/core/src/segment.ts`, same numbers, a shared fixture test keeps them equal): cuts
+  continuous signing into signs. Hand up / rest with hysteresis, motion energy over 3 frames (jitter does not count),
+  ends on rest / hands gone / a 260 ms hold, 300 ms minimum, the hands going back down is not a sign, 3.5 s maximum
+  (cut at the slowest moment).
+- `personal.py`: per-segment hand features (shoulder frame, 24 frames), multinomial logistic regression (numpy, on
+  the top 128 principal components) + DTW distance to each sign's nearest template + the GISLR prior, only over the
+  active vocabulary. A "none" class (other WLASL signs, transitions between signs, idle hands, the person's own "no
+  sign" rep) and three gates (none wins, fused top-1 < 0.6, DTW > 1.0) give "unsure" instead of a wrong word.
+  `decode()` splits a long segment at speed valleys when two or more signs explain it better than one.
+- `enroll.py`: reps stored in `out/enroll/<profile>/<LABEL>/*.npy` (gitignored, **hands + pose only, the face is
+  removed**), `model.npz` per profile; training adds the reps (weight 3) to the generic WLASL data, ~2-5 s on CPU.
+- `build_demo_model.py`: the generic data and model (`models/demo_generic.npz`, `models/demo_model.npz`, derived
+  features only) from WLASL clips of the demo signs; profile `demo` uses it before anyone enrolls.
+
+```bash
+.venv/Scripts/python fetch_wlasl_demo.py --wlasl <path-to>/WLASL_v0.3.json --extract   # 89 more clips, ~25 min CPU, out/wlasl-demo/
+.venv/Scripts/python build_demo_model.py                                              # ~15 s
+.venv/Scripts/python eval_demo.py all                                                 # isolated + continuous, ~30 min
+```
+
+Routes (proxied by app/server under `/api/...`): `POST /recognize?mode=sign&profile=P&vocab=A,B` (+ `X-Fps`) answers
+with `signs: [{start, end, options, reject}]`; `GET|POST|DELETE /enroll?profile=P[&label=L]`, `POST /train?profile=P`,
+`GET /profiles`. Without `profile` the sign path is unchanged. Results: `experiments/2026-11-16-sign-enrollment.md`.
+
 ## Evaluate
 
 ```bash

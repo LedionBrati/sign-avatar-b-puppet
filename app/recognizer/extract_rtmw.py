@@ -41,17 +41,22 @@ def to_layout(kp: np.ndarray, sc: np.ndarray, w: int, h: int, hand_min: float) -
 
 
 def videos() -> list[tuple[str, Path, int, int]]:
+    """Demo clips, signers with the most clips first (RTMW is slow on CPU: a partial run still allows leave-signer-out)."""
     out = []
     idx = OUT / "index.json"
     if idx.exists():
         for e in json.loads(idx.read_text()):
-            out.append((Path(e["file"]).stem, OUT / "videos" / e["file"], e["frame_start"], e["frame_end"]))
+            out.append((Path(e["file"]).stem, OUT / "videos" / e["file"], e["frame_start"], e["frame_end"], str(e["signer"])))
     lib = json.loads((LIB / "index.json").read_text()) if (LIB / "index.json").exists() else {}
     for g in ("hello yes no please water hungry sick home help name nice meet you me i where fine happy bye goodbye sorry".split() + ["thank you"]):
         if g in lib:
             p = LIB / lib[g]["file"]
-            out.append((p.stem, p, 1, -1))
-    return out
+            out.append((p.stem, p, 1, -1, str(lib[g].get("signer_id"))))
+    n = {}
+    for v in out:
+        n[v[4]] = n.get(v[4], 0) + 1
+    out.sort(key=lambda v: (-n[v[4]], v[4], v[0]))
+    return [v[:4] for v in out]
 
 
 def main():
