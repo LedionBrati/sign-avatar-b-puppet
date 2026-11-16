@@ -35,6 +35,8 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
 
   return {
     base,
+    /** Absolute URL of the 3D signer's avatar on this server. */
+    modelUrl: () => abs(ROUTES.model),
     health: () => request<HealthResponse>(ROUTES.health),
     vocab: () => request<VocabResponse>(ROUTES.vocab),
     /** Translate text and get the playlist. Clip URLs are made absolute. */
@@ -46,8 +48,10 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
         next_actions: ["Update the sign server before signing this message."],
       };
       // An older or inconsistent server must never make a partial playlist playable.
-      const playlist = safety.status === "fully_supported" ? res.playlist.map((p) => ({ ...p, url: abs(p.url) })) : [];
-      return { ...res, safety, playlist, markers: playlist.length ? res.markers : [] };
+      const playlist = safety.status === "fully_supported"
+        ? res.playlist.map((p) => ({ ...p, url: p.url ? abs(p.url) : "", ...(p.motion_url ? { motion_url: abs(p.motion_url) } : {}) })) : [];
+      return { ...res, safety, playlist, markers: playlist.length ? res.markers : [],
+        ...(res.rest_motion_url ? { rest_motion_url: abs(res.rest_motion_url) } : {}) };
     },
     /** Sign -> voice: send one segment of packed landmark frames (landmarks.ts packSegment). With a profile (sign
      *  mode): the closed demo vocabulary and the person's own model; the answer lists every sign in the segment. */

@@ -5,8 +5,10 @@
 export interface PlaylistItem {
   motion_id: string; // catalog ID, e.g. "THANK_YOU"
   gloss: string; // display gloss, e.g. "THANK YOU"
-  url: string; // clip URL (absolute, or relative to the API base)
+  url: string; // clip URL (absolute, or relative to the API base); "" = no photoreal clip (only with SignRequest.motion)
   duration_s: number;
+  /** With SignRequest.motion: the sign's motion file for the 3D signer (GET /motion/<stem>.json), absent if none. */
+  motion_url?: string;
   /** Index into `words` of the spoken word this sign translates, -1 if none (for "Signing X for 'word'"). */
   word_index: number;
 }
@@ -22,6 +24,11 @@ export interface SignRequest {
    * With the agent on, the sentence text is sent to OpenAI.
    */
   agent?: AgentMode;
+  /**
+   * This client can play the instant 3D signer (signer3d.ts). Signs that have motion but no photoreal clip are then
+   * signable (url "", motion_url set) instead of caption-only; the safety gate is the same. Default false.
+   */
+  motion?: boolean;
 }
 
 export type AgentMode = "auto" | "always" | "off";
@@ -99,6 +106,8 @@ export interface SignResponse {
    */
   generating?: GeneratingSign[];
   timings: { translate_ms: number; agent_ms?: number; total_ms: number };
+  /** With SignRequest.motion: the rest pose a 3D phrase starts and ends in (GET /motion/neutral.json). */
+  rest_motion_url?: string;
 }
 
 /** A sign being generated on demand (`SignResponse.generating`). */
@@ -128,6 +137,8 @@ export interface HealthResponse {
   compose?: "ready" | "off";
   /** POST /api/speak (text -> natural voice, audio/mpeg): "ready" when an OpenAI key is configured. Older servers omit it. */
   speak?: "ready" | "off";
+  /** The instant 3D signer: signs with motion, whether the avatar (GET /models/signer.glb) is there. Older servers omit it. */
+  motion?: { signs: number; model: boolean; semantic?: "ready" | "loading" | "off" };
   /** Generate-on-use (server ONDEMAND=on). Omitted when the server has it off. */
   ondemand?: OnDemandHealth;
 }
@@ -231,6 +242,8 @@ export const ROUTES = {
   sign: "/api/sign", // POST SignRequest -> SignResponse
   ondemand: "/api/ondemand", // GET generate-on-use status (queue, spend, recent batches)
   clips: "/clips/", // GET /clips/<file>.mp4 (static)
+  motion: "/motion/", // GET /motion/<stem>.json (slim motion for the 3D signer; inflateMotion() before playing)
+  model: "/models/signer.glb", // GET the 3D signer's avatar
   transcribe: "/api/transcribe", // POST audio/webm chunk -> TranscribeResponse
   compose: "/api/compose", // POST ComposeRequest -> ComposeResponse (signs -> sentence, OpenAI)
   speak: "/api/speak", // POST SpeakRequest -> audio/mpeg (natural text-to-speech, OpenAI)
