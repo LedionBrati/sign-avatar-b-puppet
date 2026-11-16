@@ -258,6 +258,8 @@ def isolated(args):
     openset = defaultdict(list)
     train_ms = []
     folds = sorted(signers)
+    if args.smoke:
+        folds = folds[:2]
     for s in folds:
         test = [c for c in demo if c.signer == s]
         train = [c for c in demo if c.signer != s]
@@ -375,6 +377,8 @@ def main():
     ap.add_argument("--json")
     ap.add_argument("--rtmw", help="extractor: folder of the other extractor's .npy landmarks")
     ap.add_argument("--stride", type=int, default=2)
+    ap.add_argument("--smoke", action="store_true", help="2 folds / 4 sentences: checks the setup in a minute")
+    ap.add_argument("--sentences", type=int, default=60, help="continuous: pseudo-sentences")
     a = ap.parse_args()
     if a.what == "extractor":
         return extractor(a)

@@ -88,7 +88,7 @@ NAME NICE MEET YOU ME WHERE FINE HAPPY BYE SORRY), with a model that can learn t
 - `personal.py`: per-segment hand features (shoulder frame, 24 frames), multinomial logistic regression (numpy, on
   the top 128 principal components) + DTW distance to each sign's nearest template + the GISLR prior, only over the
   active vocabulary. A "none" class (other WLASL signs, transitions between signs, idle hands, the person's own "no
-  sign" rep) and three gates (none wins, fused top-1 < 0.6, DTW > 1.0) give "unsure" instead of a wrong word.
+  sign" rep) gives `reject` (no sign, dropped); fused top-1 < 0.6 or DTW > 1.0 gives `unsure` (kept, with a hint).
   `decode()` splits a long segment at speed valleys when two or more signs explain it better than one.
 - `enroll.py`: reps stored in `out/enroll/<profile>/<LABEL>/*.npy` (gitignored, **hands + pose only, the face is
   removed**), `model.npz` per profile; training adds the reps (weight 3) to the generic WLASL data, ~2-5 s on CPU.
@@ -98,7 +98,9 @@ NAME NICE MEET YOU ME WHERE FINE HAPPY BYE SORRY), with a model that can learn t
 ```bash
 .venv/Scripts/python fetch_wlasl_demo.py --wlasl <path-to>/WLASL_v0.3.json --extract   # 89 more clips, ~25 min CPU, out/wlasl-demo/
 .venv/Scripts/python build_demo_model.py                                              # ~15 s
-.venv/Scripts/python eval_demo.py all                                                 # isolated + continuous, ~30 min
+.venv/Scripts/python eval_demo.py all                                                 # isolated + continuous: heavy, use Modal
+modal run app/recognizer/modal_sign_eval.py::upload --signs-dir <signs>              # from the repo root, then:
+modal run app/recognizer/modal_sign_eval.py --jobs isolated,continuous,rtmw
 ```
 
 Routes (proxied by app/server under `/api/...`): `POST /recognize?mode=sign&profile=P&vocab=A,B` (+ `X-Fps`) answers
@@ -116,4 +118,4 @@ Takes WLASL clips from the library (`--lib <path-to>/signs` or `SIGN_DICTIONARY=
 
 ## Files
 
-`recognizer.py` (models, validation, spell column mapping, decoding) · `server.py` (HTTP) · `fetch_models.py` · `eval_wlasl.py` · `tests/`
+`recognizer.py` (models, validation, spell column mapping, decoding) · `server.py` (HTTP) · `fetch_models.py` · `eval_wlasl.py` · `segment.py` · `personal.py` · `enroll.py` · `build_demo_model.py` · `fetch_wlasl_demo.py` · `demo_data.py` · `eval_demo.py` + `eval_continuous.py` · `extract_rtmw.py` · `modal_sign_eval.py` · `tests/`

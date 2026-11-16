@@ -21,7 +21,7 @@ import templates as T
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-DEMO_DIR = REPO / "out" / "wlasl-demo"
+DEMO_DIR = Path(os.environ.get("DEMO_DIR") or REPO / "out" / "wlasl-demo")  # modal_sign_eval.py points it at a volume
 
 
 def _motion_dir() -> Path:

@@ -154,6 +154,7 @@ def test_http_enroll_train_recognize(base):
     assert s == 200 and out["trained"], out
     s, out = call("POST", f"{base}/recognize?mode=sign&profile=t1&vocab=HELLO,YES,NO", sign("YES", rng))
     assert s == 200 and out["signs"] and out["options"][0]["label"] in PATHS and out["personal"] == "t1"
+    assert set(out["signs"][0]) >= {"start", "end", "options", "reject", "unsure"}
     s, out = call("POST", f"{base}/recognize?mode=sign", sign("YES", rng))  # no profile: the open GISLR path
     assert s == 200 and "signs" not in out
     s, out = call("POST", f"{base}/enroll?profile=t1&label=NOPE", sign("YES", rng))
@@ -164,3 +165,15 @@ def test_http_enroll_train_recognize(base):
     assert s == 200
     s, out = call("GET", f"{base}/profiles")
     assert out["profiles"] == []
+
+
+def test_continuous_eval_helpers():
+    """eval_continuous: one-to-one IoU matching, word edit distance, and main's old segmenter port."""
+    import eval_continuous as C
+
+    assert C.match([(0, 10), (12, 20)], [(0, 9, "A"), (13, 20, "B"), (30, 40, "C")])[0] == 2
+    assert C.match([(0, 40)], [(0, 9, "A"), (13, 20, "B")])[0] == 0  # one long cut over two signs matches neither well
+    assert C.edit(["A", "B"], ["A", "B"]) == 0 and C.edit(["A"], ["A", "B"]) == 1 and C.edit(["B", "A"], ["A", "B"]) == 2
+    rng = np.random.default_rng(6)
+    x = np.concatenate([sign("HELLO", rng), np.stack([frame(None) for _ in range(20)]), sign("NO", rng)])
+    assert len(C.old_segments(x, FPS)) >= 1

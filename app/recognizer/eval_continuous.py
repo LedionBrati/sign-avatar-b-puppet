@@ -182,7 +182,7 @@ def continuous(args):
     for c in demo:
         by[c.signer].append(c)
     rng = random.Random(7)
-    n_sent = getattr(args, "sentences", 0) or 60
+    n_sent = 4 if getattr(args, "smoke", False) else (getattr(args, "sentences", 0) or 60)
     signers = [s for s, v in by.items() if len({c.label for c in v}) >= 3]
     sentences = []
     for k in range(n_sent):

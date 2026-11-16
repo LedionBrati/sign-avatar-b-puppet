@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -22,8 +23,8 @@ import cv2
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE.parents[1] / "out" / "wlasl-demo"
-LIB = Path.home() / "Desktop" / "hackathon-archive" / "ai-summit" / "data" / "signs"
+OUT = Path(os.environ.get("DEMO_DIR") or HERE.parents[1] / "out" / "wlasl-demo")
+LIB = Path(os.environ.get("SIGN_LIB") or Path.home() / "Desktop" / "hackathon-archive" / "ai-summit" / "data" / "signs")  # holds index.json + videos/
 BODY = {0: 0, 5: 11, 6: 12, 7: 13, 8: 14, 9: 15, 10: 16}
 
 
@@ -64,15 +65,21 @@ def main():
     ap.add_argument("--mode", default="lightweight", choices=["lightweight", "balanced", "performance"])
     ap.add_argument("--hand-min", type=float, default=0.35)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--only", default="", help="comma-separated clip names (modal_sign_eval.py splits the clips this way)")
+    ap.add_argument("--list", action="store_true", help="print the clip names in order and stop")
     ap.add_argument("--stride", type=int, default=1, help="every n-th frame (the eval compares MediaPipe at the same stride)")
     a = ap.parse_args()
+    if a.list:
+        print(",".join(v[0] for v in videos()))
+        return
     from rtmlib import Wholebody
 
     model = Wholebody(mode=a.mode, backend="onnxruntime", device="cpu")
     dest = OUT / f"rtmw-{a.mode}-s{a.stride}"
     dest.mkdir(parents=True, exist_ok=True)
     ms, n = [], 0
-    vids = videos()[: a.limit or None]
+    only = set(filter(None, a.only.split(",")))
+    vids = [v for v in videos() if not only or v[0] in only][: a.limit or None]
     for name, path, fs, fe in vids:
         if (dest / f"{name}.npy").exists() or not path.exists():
             continue
