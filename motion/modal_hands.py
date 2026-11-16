@@ -39,7 +39,7 @@ GPU = "L4"  # ViT-L at 256x192: an L4 is plenty; the job is mostly video decode 
 VOLUME = "signlayer-hands"
 
 image = (
-    modal.Image.debian_slim(python_version="3.10")
+    modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "wget", "libgl1", "libglib2.0-0")
     .pip_install("torch==2.4.1", "torchvision==0.19.1", index_url="https://download.pytorch.org/whl/cu121")
     .pip_install("numpy==1.26.4", "scipy", "opencv-python-headless", "timm==0.9.16", "einops", "yacs",
@@ -48,7 +48,7 @@ image = (
     # numpy removed, so patch them out after installing.
     .run_commands("pip install --no-build-isolation git+https://github.com/mattloper/chumpy",
                   "sed -i 's/from numpy import bool, int, float, complex, object, unicode, str, nan, inf/"
-                  "from numpy import nan, inf/' /usr/local/lib/python3.10/site-packages/chumpy/__init__.py")
+                  "from numpy import nan, inf/' /usr/local/lib/python3.11/site-packages/chumpy/__init__.py")
     .run_commands(f"git clone https://github.com/rolpotamias/WiLoR.git /opt/WiLoR && cd /opt/WiLoR && git checkout {WILOR_COMMIT}",
                   f"wget -q -O /opt/WiLoR/pretrained_models/wilor_final.ckpt {HF}/wilor_final.ckpt")
     .add_local_dir(str(HERE), "/root/motion", ignore=[".venv", "models", "__pycache__", "tests", ".pytest_cache"])
