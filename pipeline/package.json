@@ -8,7 +8,9 @@
   },
   "scripts": {
     "test:e0": "node --test e0/harness.test.mjs",
-    "e0": "node e0.mjs"
+    "e0": "node e0.mjs",
+    "race": "node race.mjs",
+    "finger": "node finger-fidelity.mjs"
   },
   "dependencies": {
     "@fal-ai/client": "^1.2.0",
