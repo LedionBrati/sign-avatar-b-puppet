@@ -170,7 +170,7 @@ def gather_jobs() -> int:
     return len(json.loads(Path(f"{GEN}/jobs.json").read_text()))
 
 
-@app.function(volumes={"/vol": vol}, cpu=8.0, memory=16384, timeout=3 * 3600)
+@app.function(volumes={"/vol": vol}, cpu=16.0, memory=32768, timeout=3 * 3600)
 def generic_eval(args: str, log: str) -> str:
     """eval_generic.py <args> (the generic-model experiments), log -> /vol/logs/<log>."""
     vol.reload()

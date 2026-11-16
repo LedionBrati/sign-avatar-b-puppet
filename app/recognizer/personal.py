@@ -45,6 +45,16 @@ REJECT = float(os.environ.get("PERSONAL_REJECT", "0.6"))
 DTW_FAR = float(os.environ.get("PERSONAL_DTW_FAR", "1.0"))
 OWN_WEIGHT = 3.0  # a person's own rep counts this many generic clips
 AUG = 0  # augmented copies per training clip (leave-signer-out: 0 beat 8, 86% vs 83% top-1; augment() stays for tests)
+# Signer-invariance options of features() (eval_generic.py measures each leave-signer-out; a model stores the ones it
+# was trained with in info["feat"], so old models keep reading the old way):
+#   rot:    rotate every frame so the shoulder line is level (head / camera tilt), scale by the full shoulder distance
+#   arclen: resample by the dominant hand's path length (+ ARC_T of time) instead of time: speed normalisation
+FEAT: dict = {"rot": False, "arclen": False}
+ARC_T = 0.3  # share of the resampling "clock" that is plain time (holds do not vanish completely)
+# Open-set rejection: reject ("no sign") when log(p_lr(best sign)) - log(p_lr(none)) - REJ_DTW * DTW(best) < REJ_T.
+# REJ_DTW = REJ_T = 0 is the old rule (the none class wins).
+REJ_DTW = float(os.environ.get("PERSONAL_REJ_DTW", "0"))
+REJ_T = float(os.environ.get("PERSONAL_REJ_T", "0"))
 
 
 def text_of(label: str) -> str:
@@ -66,13 +76,39 @@ def _med(a: np.ndarray):
     return np.median(a[ok], 0) if ok.any() else np.full(a.shape[1:], np.nan, np.float32)
 
 
-def _body_frame(x: np.ndarray):
+def _shoulder_angle(x: np.ndarray) -> float:
+    """Median angle of the shoulder line (subject's right -> left shoulder, image coords), 0 when level / unknown."""
+    pose = x[:, T.POSE:T.POSE + 33, :2]
+    v = pose[:, 11] - pose[:, 12]
+    with np.errstate(all="ignore"):
+        a = _med(np.arctan2(v[:, 1], v[:, 0]))
+    a = float(a) if np.ndim(a) == 0 else float("nan")
+    return a if np.isfinite(a) and abs(a) < 0.6 else 0.0
+
+
+def _rotate(x: np.ndarray, a: float) -> np.ndarray:
+    """Rotate x / y of every point by -a around the shoulder midpoint (levels the shoulder line)."""
+    if abs(a) < 1e-4:
+        return x
+    pose = x[:, T.POSE:T.POSE + 33, :2]
+    with np.errstate(all="ignore"):
+        c = _med((pose[:, 11] + pose[:, 12]) / 2)
+    if not np.all(np.isfinite(c)):
+        return x
+    ca, sa = np.cos(-a), np.sin(-a)
+    R = np.array([[ca, -sa], [sa, ca]], np.float32)
+    y = x.copy()
+    y[..., :2] = (x[..., :2] - c) @ R.T + c
+    return y
+
+
+def _body_frame(x: np.ndarray, full: bool = False):
     pose = x[:, T.POSE:T.POSE + 33, :2]
     lsh, rsh, nose = pose[:, 11], pose[:, 12], pose[:, 0]
     mid = (lsh + rsh) / 2
     with np.errstate(all="ignore"):
         c = _med(mid)
-        sx = float(_med(np.abs(lsh[:, 0] - rsh[:, 0])))
+        sx = float(_med(np.linalg.norm(lsh - rsh, axis=-1) if full else np.abs(lsh[:, 0] - rsh[:, 0])))
         sy = float(_med(mid[:, 1] - nose[:, 1]))
     if not np.all(np.isfinite(c)):
         c = np.nanmean(x[:, [T.LH, T.RH], :2].reshape(-1, 2), 0)
@@ -100,12 +136,23 @@ def active_span(x: np.ndarray, body=None) -> tuple[int, int] | None:
     return int(idx[0]), int(idx[-1])
 
 
-def features(x: np.ndarray, n: int = L, mirror: bool | None = None) -> np.ndarray | None:
-    """[frames, 543, 3] -> [n, 88] (2 hands x (wrist 2 + shape 40 + velocity 2)), dominant hand last; None without hands."""
+def _resample_at(a: np.ndarray, src: np.ndarray) -> np.ndarray:
+    i0 = np.clip(np.floor(src).astype(int), 0, len(a) - 1)
+    i1 = np.minimum(i0 + 1, len(a) - 1)
+    w = (src - i0).reshape(-1, *([1] * (a.ndim - 1)))
+    return a[i0] * (1 - w) + a[i1] * w
+
+
+def features(x: np.ndarray, n: int = L, mirror: bool | None = None, cfg: dict | None = None) -> np.ndarray | None:
+    """[frames, 543, 3] -> [n, 88] (2 hands x (wrist 2 + shape 40 + velocity 2)), dominant hand last; None without hands.
+    cfg: signer-invariance options (FEAT keys), default FEAT."""
+    cfg = {**FEAT, **(cfg or {})}
     x = np.asarray(x, np.float32)
     if mirror is None:
         mirror = T.left_dominant(x)
-    c, scale = _body_frame(x)
+    if cfg.get("rot"):
+        x = _rotate(x, _shoulder_angle(x))
+    c, scale = _body_frame(x, full=bool(cfg.get("rot")))
     span = active_span(x, (c, scale))
     if span is None:
         return None
@@ -128,10 +175,17 @@ def features(x: np.ndarray, n: int = L, mirror: bool | None = None) -> np.ndarra
         blocks.append((wrist, shape))
     if mirror:
         blocks = [(w * [-1, 1], s * [-1, 1]) for w, s in blocks[::-1]]
+    src = None
+    if cfg.get("arclen") and len(blocks[1][0]) > 2:
+        step = np.linalg.norm(np.diff(blocks[1][0], axis=0), axis=-1)  # dominant wrist (last block)
+        tot = step.sum()
+        if tot > 1e-3:
+            clock = np.concatenate([[0.0], np.cumsum((1 - ARC_T) * step / tot + ARC_T / len(step))])
+            src = np.interp(np.linspace(0, clock[-1], n), clock, np.arange(len(clock)))
     out = []
     for h, (wrist, shape) in enumerate(blocks):
-        w = T._resample(wrist, n)
-        s = T._resample(shape, n)
+        w = T._resample(wrist, n) if src is None else _resample_at(wrist, src)
+        s = T._resample(shape, n) if src is None else _resample_at(shape, src)
         v = np.gradient(w, axis=0) * (n / 8)
         out.append(np.concatenate([w * T.W_POS, s.reshape(n, -1) * (T.W_SHAPE / np.sqrt(20)), v * T.W_VEL], 1) * T.W_HAND[h])
     return np.concatenate(out, 1).astype(np.float32)
@@ -248,24 +302,26 @@ class Model:
 
     def __init__(self, labels, lr, bank, bank_idx, info):
         self.labels, self.lr, self.bank, self.bank_idx, self.info = labels, lr, bank, bank_idx, info
+        self.feat = {"rot": False, "arclen": False, **info.get("feat", {})}  # models without it: the original features
+        self.rej = info.get("reject", {"dtw": REJ_DTW, "t": REJ_T})
 
     def classify(self, x: np.ndarray, vocab: list[str] | None = None, gislr_p: dict[str, float] | None = None) -> dict:
         """-> {options: [{label, text, confidence}], reject, none, dtw}. Only labels in vocab (default: all trained)."""
-        f = features(x)
+        f = features(x, cfg=self.feat)
         if f is None:
-            return {"options": [], "reject": True, "none": 1.0, "dtw": None}
+            return {"options": [], "reject": True, "unsure": True, "none": 1.0, "dtw": None, "margin": -9.0}
         p = self.lr.proba(f.reshape(1, -1))[0]
         labels = self.labels
         keep = [i for i, l in enumerate(labels) if l != NONE and (vocab is None or l in vocab)]
         none_p = float(p[labels.index(NONE)]) if NONE in labels else 0.0
         if not keep:
-            return {"options": [], "reject": True, "none": none_p, "dtw": None}
+            return {"options": [], "reject": True, "unsure": True, "none": none_p, "dtw": None, "margin": -9.0}
         sub = p[keep] / max(p[keep].sum(), 1e-9)
         names = [labels[i] for i in keep]
         # DTW distance per label: its nearest template, both hand readings.
         dl = np.full(len(labels), np.inf)
         if len(self.bank):
-            fm = features(x, mirror=not T.left_dominant(x))
+            fm = features(x, mirror=not T.left_dominant(x), cfg=self.feat)
             dd = dtw_dist(f, self.bank)
             if fm is not None:
                 dd = np.minimum(dd, dtw_dist(fm, self.bank) + T.MIRROR_PENALTY)
@@ -279,13 +335,17 @@ class Model:
         # reject = "no sign" (the none class wins: a transition, fidgeting, another sign). Merely unsure (low fused
         # confidence or far from every template) is kept with unsure: true: on continuous signing, dropping those
         # lost more right words than wrong ones (eval_demo.py continuous).
-        reject = bool(none_p > p[keep].max())
+        # margin: how much more the LR believes the best sign than "no sign", minus a DTW penalty (calibrated
+        # leave-signer-out against other WLASL signs, eval_generic.py); the old rule is margin < 0 with no penalty.
+        margin = float(np.log(max(p[keep].max(), 1e-9)) - np.log(max(none_p, 1e-9)) - self.rej["dtw"] * (d if d is not None else 3.0))
+        reject = bool(margin < self.rej["t"])
         unsure = bool(fused[top] < REJECT or (d is not None and d > DTW_FAR))
-        return {"options": options, "reject": reject, "unsure": unsure, "none": round(none_p, 4), "dtw": None if d is None else round(d, 4)}
+        return {"options": options, "reject": reject, "unsure": unsure, "none": round(none_p, 4), "dtw": None if d is None else round(d, 4),
+                "margin": round(margin, 4)}
 
 
 def build_training(clips: list[tuple[np.ndarray, str, float]], negatives: list[np.ndarray], labels: list[str],
-                   aug: int = AUG, seed: int = 0, extra: dict | None = None):
+                   aug: int = AUG, seed: int = 0, extra: dict | None = None, feat: dict | None = None):
     """clips: (frames, label, weight). negatives: frames (or features) for the NONE class. extra: generic features
     already computed {X: [n, L, 88], labels: [n], orig: [n] (True = not augmented, also a DTW template)}, weight 1.
     -> X, y, w, bank feats, bank label idx."""
@@ -300,36 +360,40 @@ def build_training(clips: list[tuple[np.ndarray, str, float]], negatives: list[n
             if orig:
                 bank.append(f); bidx.append(li[label])
     for x, label, weight in clips:
-        f = features(x)
+        f = features(x, cfg=feat)
         if f is None:
             continue
         bank.append(f)
         bidx.append(li[label])
         X.append(f.reshape(-1)); y.append(li[label]); w.append(weight)
         for _ in range(aug):
-            fa = features(augment(x, rng))
+            fa = features(augment(x, rng), cfg=feat)
             if fa is not None:
                 X.append(fa.reshape(-1)); y.append(li[label]); w.append(weight)
     if NONE in li:
         for x in negatives:  # frames, or features already computed ([L, 88])
-            f = x if x.ndim == 2 and x.shape[0] == L else features(x)
+            f = x if x.ndim == 2 and x.shape[0] == L else features(x, cfg=feat)
             if f is not None:
                 X.append(f.reshape(-1)); y.append(li[NONE]); w.append(1.0)
     return (np.array(X, np.float32), np.array(y), np.array(w, np.float32), np.array(bank, np.float32), np.array(bidx))
 
 
 def train(clips, negatives, labels: list[str] | None = None, aug: int = AUG, l2: float = 1e-2, steps: int = 300, seed: int = 0,
-          extra: dict | None = None) -> Model:
+          extra: dict | None = None, feat: dict | None = None, reject: dict | None = None, none_w: float = 1.0) -> Model:
+    """feat: features() options (default FEAT; must match extra's features). reject: {dtw, t} (default REJ_*).
+    none_w: total weight of the none class relative to one sign's."""
     t = time.perf_counter()
+    feat = {**FEAT, **(feat or (extra or {}).get("feat") or {})}
     labels = labels or sorted({l for _, l, _ in clips}) + ([NONE] if negatives else [])
-    X, y, w, bank, bidx = build_training(clips, negatives, labels, aug, seed, extra)
-    # Balance: every class gets the same total weight (the none class is large).
+    X, y, w, bank, bidx = build_training(clips, negatives, labels, aug, seed, extra, feat)
+    # Balance: every class gets the same total weight (the none class is large), the none class none_w times that.
     for k in range(len(labels)):
         s = w[y == k].sum()
         if s > 0:
-            w[y == k] /= s
+            w[y == k] /= s / (none_w if labels[k] == NONE else 1.0)
     lr = LogReg(l2=l2, steps=steps).fit(X, y, len(labels), w)
-    info = {"labels": labels, "samples": int(len(X)), "train_ms": round((time.perf_counter() - t) * 1000)}
+    info = {"labels": labels, "samples": int(len(X)), "train_ms": round((time.perf_counter() - t) * 1000), "feat": feat,
+            "reject": reject or {"dtw": REJ_DTW, "t": REJ_T}}
     return Model(labels, lr, bank, bidx, info)
 
 
@@ -370,7 +434,7 @@ def decode(model: Model, x: np.ndarray, fps: float, vocab: list[str] | None = No
     keep = [i for i, l in enumerate(model.labels) if l != NONE and (vocab is None or l in vocab)]
 
     def score(a: int, b: int) -> float:
-        f = features(x[a:b])
+        f = features(x[a:b], cfg=model.feat)
         if f is None:
             return -9.0
         p = model.lr.proba(f.reshape(1, -1))[0]

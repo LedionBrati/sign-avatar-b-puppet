@@ -147,9 +147,11 @@ class Store:
 def load_generic() -> dict | None:
     if not GENERIC.exists():
         return None
+    import json
+
     z = np.load(GENERIC, allow_pickle=False)
     return {"X": z["X"].astype(np.float32), "labels": [str(s) for s in z["labels"]], "orig": z["orig"],
-            "neg": list(z["neg"].astype(np.float32))}
+            "neg": list(z["neg"].astype(np.float32)), "feat": json.loads(str(z["feat"])) if "feat" in z else {"rot": False, "arclen": False}}
 
 
 def leave_one_out(signs: list, generic: dict | None, limit: int = 40) -> dict | None:
@@ -157,7 +159,8 @@ def leave_one_out(signs: list, generic: dict | None, limit: int = 40) -> dict | 
     neighbour). A sign that keeps landing on another label needs more (or clearer) reps."""
     if len(signs) < 4:
         return None
-    feats = [(P.features(x), l) for x, l, _ in signs]
+    feat = (generic or {}).get("feat")
+    feats = [(P.features(x, cfg=feat), l) for x, l, _ in signs]
     feats = [(f, l) for f, l in feats if f is not None][:limit]
     ok = 0
     for i, (f, l) in enumerate(feats):
