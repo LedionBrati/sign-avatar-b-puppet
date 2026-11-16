@@ -7,7 +7,8 @@
                                        -> {mode, options: [{label, text, confidence}], text?, frames, timings}
          &profile=<name>&vocab=A,B,..  sign mode, closed vocabulary (enroll.py / personal.py): + signs: [{start, end,
                                        options, reject}] (a long segment can hold several signs); profile=demo = the
-                                       generic demo model (models/demo_model.npz). Optional header X-Fps (default 30).
+                                       generic demo model (models/demo_model.npz), also used for
+                                       vocab without profile. Optional header X-Fps (default 30).
     "Train my signs":
     GET    /enroll?profile=P           {profile, reps: {LABEL: n}, trained, model?}
     POST   /enroll?profile=P&label=L   one rep (same body as /recognize); stored without face points
@@ -134,7 +135,9 @@ def make_handler(rec: Recognizer, info: dict, store: E.Store | None = None):
                 x = parse_frames(body, self.headers.get("x-frames"))
                 if url.path.endswith("/enroll"):
                     return self._json(200, store.add((q.get("profile") or [""])[0], (q.get("label") or [""])[0], x))
-                profile = (q.get("profile") or [None])[0]
+                # closed vocabulary when a profile or a vocab is asked for; no profile (or one without a model) = the
+                # generic demo model (models/demo_model.npz: WLASL signers, no enrollment)
+                profile = (q.get("profile") or [None])[0] or ("demo" if q.get("vocab") else None)
                 model = store.model(profile) if mode == "sign" and profile else None
                 if model is not None:
                     vocab = [v.strip().upper() for v in (q.get("vocab") or [""])[0].split(",") if v.strip()] or None

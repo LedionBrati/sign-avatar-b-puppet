@@ -155,8 +155,11 @@ def test_http_enroll_train_recognize(base):
     s, out = call("POST", f"{base}/recognize?mode=sign&profile=t1&vocab=HELLO,YES,NO", sign("YES", rng))
     assert s == 200 and out["signs"] and out["options"][0]["label"] in PATHS and out["personal"] == "t1"
     assert set(out["signs"][0]) >= {"start", "end", "options", "reject", "unsure"}
-    s, out = call("POST", f"{base}/recognize?mode=sign", sign("YES", rng))  # no profile: the open GISLR path
+    s, out = call("POST", f"{base}/recognize?mode=sign", sign("YES", rng))  # no profile, no vocab: the open GISLR path
     assert s == 200 and "signs" not in out
+    if E.DEFAULT_MODEL.exists():  # vocab without a profile: the generic demo model (no enrollment)
+        s, out = call("POST", f"{base}/recognize?mode=sign&vocab=HELLO,YES,NO", sign("YES", rng))
+        assert s == 200 and "signs" in out and out["personal"] == "demo", out
     s, out = call("POST", f"{base}/enroll?profile=t1&label=NOPE", sign("YES", rng))
     assert s == 400 and out["error"]["code"] == "bad_label"
     s, out = call("GET", f"{base}/enroll?profile=t1")

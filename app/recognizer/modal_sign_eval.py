@@ -38,15 +38,19 @@ DEMO_GLOSSES = ["hello", "yes", "no", "please", "thank you", "water", "hungry", 
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .apt_install("libgl1", "libglib2.0-0")
-    .pip_install("numpy>=1.26,<3", "ai-edge-litert>=2.0", "opencv-python-headless", "rtmlib==0.0.16", "onnxruntime")
+    .apt_install("libgl1", "libglib2.0-0", "libegl1", "libgles2", "libgl1-mesa-dri")
+    .pip_install("numpy>=1.26,<3", "ai-edge-litert>=2.0", "opencv-python-headless", "rtmlib==0.0.16", "onnxruntime",
+                 "mediapipe==1.2.3", "yt-dlp")
+    .run_commands("python -c \"import urllib.request as u; u.urlretrieve('https://storage.googleapis.com/mediapipe-models/holistic_landmarker/'"
+                  "'holistic_landmarker/float16/latest/holistic_landmarker.task', '/opt/holistic_landmarker.task')\"")
     # RTMW weights (rtmlib downloads them on first use): bake them in so containers do not each fetch them
     .run_commands("python -c \"from rtmlib import Wholebody; Wholebody(mode='lightweight', backend='onnxruntime', device='cpu')\"")
     .add_local_dir(str(HERE), "/root/recognizer", ignore=[".venv", "__pycache__", ".pytest_cache", "models/fs.tflite"])
 )
 vol = modal.Volume.from_name(VOLUME, create_if_missing=True)
 app = modal.App("signlayer-signeval", image=image)
-ENV = {"DEMO_DIR": DEMO, "SIGN_LIB": LIB, "OPENBLAS_NUM_THREADS": "8", "OMP_NUM_THREADS": "8", "PYTHONUNBUFFERED": "1"}
+GEN = "/vol/wlasl-gen"  # gather_wlasl.py output: every reachable WLASL instance of the demo signs + negatives
+ENV = {"DEMO_DIR": DEMO, "SIGN_LIB": LIB, "GEN_DIR": GEN, "HOLISTIC_TASK": "/opt/holistic_landmarker.task", "OPENBLAS_NUM_THREADS": "8", "OMP_NUM_THREADS": "8", "PYTHONUNBUFFERED": "1"}
 
 
 def _run(args: list[str], log: str) -> str:
@@ -144,3 +148,60 @@ def upload(signs_dir: str, demo_dir: str = ""):
                 b.put_file(str(f), f"/lib/{e['file']}")
                 n += 1
     print(f"uploaded {n} files to volume {VOLUME} (caches, {len(list((dd / 'videos').glob('*')))} clips, {len(sub)} library clips)")
+
+
+# ── Generic model (no enrollment): gather more signers + negatives, then eval_generic.py ──
+
+@app.function(volumes={"/vol": vol}, cpu=2.0, memory=3072, timeout=2 * 3600, retries=1)
+def gather_chunk(lo: int, hi: int) -> str:
+    """Fetch + extract jobs[lo:hi] of /vol/wlasl-gen/jobs.json (resumable: done jobs have a meta file)."""
+    vol.reload()
+    out = _run(["gather_wlasl.py", "--run", f"{lo},{hi}"], f"gather/{lo:05d}.log")
+    return out.strip().splitlines()[-1] if out.strip() else "(no output)"
+
+
+@app.function(volumes={"/vol": vol}, timeout=600)
+def gather_jobs() -> int:
+    import json
+
+    vol.reload()
+    Path("/vol/logs/gather").mkdir(parents=True, exist_ok=True)
+    print(_run(["gather_wlasl.py", "--jobs", "--wlasl", "/vol/meta/WLASL_v0.3.json", "--dict", "/vol/meta/index.json"], "gather/jobs.log"))
+    return len(json.loads(Path(f"{GEN}/jobs.json").read_text()))
+
+
+@app.function(volumes={"/vol": vol}, cpu=16.0, memory=32768, timeout=3 * 3600)
+def generic_eval(args: str, log: str) -> str:
+    """eval_generic.py <args> (the generic-model experiments), log -> /vol/logs/<log>."""
+    vol.reload()
+    return _run(["eval_generic.py", *args.split()], log)
+
+
+@app.local_entrypoint()
+def gather(chunk: int = 20, lo: int = 0, hi: int = 0):
+    """modal run --detach app/recognizer/modal_sign_eval.py::gather  (after upload_gen). --lo/--hi: a job range only."""
+    n = gather_jobs.remote()
+    hi = min(n, hi) if hi else n
+    parts = [(k, min(hi, k + chunk)) for k in range(lo, hi, chunk)]
+    print(f"{n} jobs in {len(parts)} containers")
+    for r in gather_chunk.starmap(parts, return_exceptions=True):
+        print(r)
+
+
+@app.local_entrypoint()
+def run_generic(args: str = "isolated", log: str = "generic.log"):
+    """modal run --detach app/recognizer/modal_sign_eval.py::run_generic --args "isolated --variants base,mirror" --log x.log"""
+    print(generic_eval.remote(args, log))
+
+
+@app.local_entrypoint()
+def upload_gen(wlasl: str, dict_index: str, demo_dir: str = ""):
+    """WLASL_v0.3.json + the dictionary index.json -> /vol/meta; the existing demo caches -> /vol/wlasl-demo."""
+    dd = Path(demo_dir) if demo_dir else REPO / "out" / "wlasl-demo"
+    with vol.batch_upload(force=True) as b:
+        b.put_file(wlasl, "/meta/WLASL_v0.3.json")
+        b.put_file(dict_index, "/meta/index.json")
+        b.put_file(str(dd / "index.json"), "/wlasl-demo/index.json")
+        for f in sorted(dd.glob("cache-*.npz")):
+            b.put_file(str(f), f"/wlasl-demo/{f.name}")
+    print("uploaded")

@@ -6,3 +6,4 @@ export * from "./landmarks";
 export * from "./compose";
 export * from "./segment";
 export * from "./signer3d";
+export * from "./context";
