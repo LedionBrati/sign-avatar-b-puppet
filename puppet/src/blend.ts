@@ -5,7 +5,7 @@
 // and the puppet re-solves rotations from the blended points every frame. If a rotation-space
 // format is added later, swap lerpPoints for a slerp on quaternions.
 
-import type { Motion, MotionFrame, Vec3, Vec4 } from "./motion";
+import type { Hand3d, Motion, MotionFrame, Vec3, Vec4 } from "./motion";
 
 export interface ClipSpec {
   motion: Motion;
@@ -45,6 +45,31 @@ function lerpShapes(a: Record<string, number> | null | undefined, b: Record<stri
   return out;
 }
 
+/** normalised lerp of two quaternions [x, y, z, w], same hemisphere */
+function nlerpQ(a: number[], b: number[], w: number): number[] {
+  const s = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] < 0 ? -1 : 1;
+  const q = a.map((v, k) => v + (s * b[k] - v) * w);
+  const l = Math.hypot(...q) || 1;
+  return q.map((v) => v / l);
+}
+
+/**
+ * v2 anatomical hands (motion/FORMAT.md): joints lerped (wrist-relative, so the hand shape blends), joint rotations
+ * nlerped, confidence lerped. A hand missing on one side takes the other as is, like the v1 points.
+ */
+export function lerpHand3d(a: Hand3d | null | undefined, b: Hand3d | null | undefined, w: number): Hand3d | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  const out: Hand3d = { joints: lerpPoints(a.joints, b.joints, w) as Vec3[], conf: (a.conf ?? 0) + ((b.conf ?? 0) - (a.conf ?? 0)) * w, src: w < 0.5 ? a.src : b.src };
+  if (a.rot && b.rot && a.rot.length === b.rot.length) out.rot = a.rot.map((q, k) => nlerpQ(q, b.rot![k], w));
+  return out;
+}
+
+function lerpHands3d(a: MotionFrame["hands3d"], b: MotionFrame["hands3d"], w: number): MotionFrame["hands3d"] {
+  if (!a && !b) return undefined;
+  return { left: lerpHand3d(a?.left, b?.left, w), right: lerpHand3d(a?.right, b?.right, w) };
+}
+
 /** Interpolate every part of two frames (w = 0 gives a, w = 1 gives b). */
 export function lerpFrame(a: MotionFrame, b: MotionFrame, w: number): MotionFrame {
   return {
@@ -58,6 +83,7 @@ export function lerpFrame(a: MotionFrame, b: MotionFrame, w: number): MotionFram
     leftHandWorld: lerpPoints(a.leftHandWorld, b.leftHandWorld, w),
     rightHand: lerpPoints(a.rightHand, b.rightHand, w),
     rightHandWorld: lerpPoints(a.rightHandWorld, b.rightHandWorld, w),
+    ...(a.hands3d || b.hands3d ? { hands3d: lerpHands3d(a.hands3d, b.hands3d, w) } : {}),
   };
 }
 
@@ -112,8 +138,10 @@ export function concatClips(clips: ClipSpec[], opts: BlendOptions = {}): { motio
   frames = frames.map((f, i) => ({ ...f, i, t: Math.round((i / fps) * 1e4) / 1e4 }));
   const first = clips[0].motion;
   const glosses = clips.map((c) => c.motion.gloss).filter(Boolean);
+  // any v2 clip makes the sentence v2: its frames carry hands3d (FORMAT.md v2), the others' frames have none
+  const v2 = clips.find((c) => c.motion.version === 2 || c.motion.frames.some((f) => f.hands3d));
   const motion: Motion = {
-    version: 1,
+    version: v2 ? 2 : 1,
     name: clips.map((c) => c.motion.name).join("+"),
     motion_id: null, // a blend is a sentence, not a catalog sign
     gloss: glosses.length ? glosses.join(" ") : null,
@@ -128,5 +156,6 @@ export function concatClips(clips: ClipSpec[], opts: BlendOptions = {}): { motio
     cleanup: { blend_s: blendS, clips: clips.map((c) => ({ name: c.motion.name, speed: c.speed ?? 1, holdStart: c.holdStart ?? 0, holdEnd: c.holdEnd ?? 0 })) },
     frames,
   };
+  if (v2) (motion as Motion & { hands3d_meta?: unknown }).hands3d_meta = { ...((v2.motion as { hands3d_meta?: object }).hands3d_meta ?? {}), composed_from: clips.map((c) => c.motion.name) };
   return { motion, segments };
 }

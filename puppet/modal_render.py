@@ -110,6 +110,7 @@ def render_one(motion: str, avatar: str = "signer", passes: str = "rgb,depth,nor
             "placement": (rep.get("avatar") or {}).get("placement"),
             "location": {k: loc.get(k) for k in ("mean_err", "max_err", "contacts_src", "contacts_lost", "contact_gap3d_mean")},
             "occlusion": rep.get("occlusion"),
+            "quality": {k: (rep.get("quality") or {}).get(k) for k in ("bad_frames", "bad_frames_hand", "bad_frames_arm", "palm_flips")},
             "log_tail": log[-600:]}
 
 

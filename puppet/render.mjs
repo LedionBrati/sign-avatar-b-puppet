@@ -26,7 +26,9 @@
 // --placement auto|fk|ik   hand placement (src/place.ts). ik: wrists placed relative to the avatar's own face and
 //                   shoulders, arms solved with IK; fk: arm rotations copied. auto (default): ik for --avatar signer,
 //                   fk for the .vrm. The report's "location" block compares hand-to-face/shoulder distances,
-//                   "occlusion" counts face points the arms cover. --swivel 0: ik without the elbow swivel search.
+//                   "occlusion" counts face points the arms cover. --swivel 0: ik without the face-visibility steps (hand turn, elbow swivel).
+// --handclean 0     anatomic hands frame by frame (no palm-flip rejection or gap filling, src/handtrack.ts).
+//                   The report's "quality" block counts bad frames and palm flips.
 //
 // The puppet is smoothed by default (src/track.ts: tracker glitches out, dropouts bridged, light zero-phase
 // smoothing, hair/cloth physics); frame i of the video is still motion frame i, nothing lags.
@@ -150,6 +152,7 @@ if (!aa) params.set("aa", "0");
 if (lite) params.set("lite", "1");
 if (placement !== "auto") params.set("place", placement);
 if (String(arg("swivel", "1")) === "0") params.set("swivel", "0");
+if (String(arg("handclean", "1")) === "0") params.set("handclean", "0");
 const panels = view === "sidebyside" ? (srcTpl ? 3 : 2) : passes.length;
 const pageW = W * panels;
 
@@ -339,19 +342,21 @@ try {
     }
     const location = summarizeLocation(reports);
     const occlusion = summarizeOcclusion(reports);
+    const quality = summarizeBadFrames(reports);
     const rep = {
-      motion: motionPath, avatar: info.avatar ?? null, location, occlusion, view, solver, model: model ?? "VRM1_Constraint_Twist_Sample.vrm", frames: N, fps, passes,
+      motion: motionPath, avatar: info.avatar ?? null, quality, location, occlusion, view, solver, model: model ?? "VRM1_Constraint_Twist_Sample.vrm", frames: N, fps, passes,
       seconds: +secs.toFixed(2), seconds_per_frame: +(secs / N).toFixed(4), webgl: software ? "software" : "hardware", capture, aa,
       smoothing: info.smoothing ?? null,
       tracking_failures_frames: tracking,
       hand_limits: limits,
       retarget_threshold_deg: 30,
       retarget_error: summary,
-      per_frame: reports.map((r, i) => r && { i, tracking: r.tracking, retarget: r.retarget, limits: r.limits, loc: roundLoc(r.loc), occ: r.occ, err: Object.fromEntries(Object.entries(r.err).map(([k, v]) => [k, v === null ? null : +v.toFixed(1)])) }),
+      per_frame: reports.map((r, i) => r && { i, tracking: r.tracking, retarget: r.retarget, limits: r.limits, loc: roundLoc(r.loc), occ: r.occ, hand: r.hand, palmN: r.palmN, err: Object.fromEntries(Object.entries(r.err).map(([k, v]) => [k, v === null ? null : +v.toFixed(1)])) }),
     };
     writeFileSync(out.replace(/\.mp4$/i, "") + ".json", JSON.stringify(rep, null, 1));
     console.log(`tracking failures (frames): ${JSON.stringify(tracking)}`);
     console.log(`hand joint-limit violations: ${limits.violations} in ${limits.frames_with_violation} of ${limits.hand_frames} tracked hand-frames; overlapping fingers: ${limits.overlaps}`);
+    console.log(`bad frames: ${quality.bad_frames}/${reports.length} (hands ${quality.bad_frames_hand}, arms ${quality.bad_frames_arm}); palm flips (> 90 deg in one frame): ${quality.palm_flips}; hand frames ${JSON.stringify(quality.hand_status)}`);
     if (location) {
       console.log(`hand placement: ${info.avatar?.placement ?? "?"}`);
       console.log(`location error (frontal, shoulder widths): mean ${location.mean_err}  max ${location.max_err} @ frame ${location.max_err_frame} (${location.max_err_pair}), ${location.hand_frames} hand-frames`);
@@ -416,7 +421,7 @@ function roundLoc(loc) {
 /**
  * Face occlusion by the arms (src/place.ts faceSamples, faceOcclusion): per frame, how many of the 8 face points
  * (eyes, nose, mouth, chin, forehead, cheeks) an upper arm or forearm covers in the render camera. Hands are not
- * counted: a hand touching the face is meant to be there, and face points within 7 cm of a wrist are left to it.
+ * counted: a hand touching the face is meant to be there, and face points within 3.5 cm of a finger joint are left to it. Forearm = elbow to wrist, cuff included.
  */
 function summarizeOcclusion(reports) {
   const rows = reports.filter((r) => r?.occ);
@@ -431,4 +436,36 @@ function summarizeOcclusion(reports) {
     max_fraction: +frac(worst).toFixed(3), max_frame: worst.frame,
     contact_frames: contact.length, contact_mean_fraction: mean(contact),
   };
+}
+
+/**
+ * Bad frames (thresholds from the lead's review): a palm or hand direction more than 60 deg from the landmarks,
+ * fingers more than 50 deg, an upper arm or forearm more than 45 deg. Arms are counted apart: with hand placement
+ * (--placement ik) the arm leaves the tracker's direction on purpose to reach the location. Palm flips: frames where
+ * the avatar's own palm normal turned more than 90 deg since the previous frame (no landmarks involved).
+ */
+function summarizeBadFrames(reports) {
+  const T = { palm: 60, "hand dir": 60, fingers: 50, "upper arm": 45, forearm: 45 };
+  const over = (r, keys) => keys.some((k) => ["L", "R"].some((S) => (r.err[`${S} ${k}`] ?? -1) > T[k]));
+  let bad = 0, badHand = 0, badArm = 0, flips = 0;
+  const flipFrames = [], badList = [], status = { L: {}, R: {} };
+  let prev = null;
+  for (const r of reports) {
+    if (!r) { prev = null; continue; }
+    const h = over(r, ["palm", "hand dir", "fingers"]), a = over(r, ["upper arm", "forearm"]);
+    if (h) badHand++;
+    if (a) badArm++;
+    if (h || a) { bad++; if (badList.length < 40) badList.push(r.frame); }
+    for (const S of ["L", "R"]) { const st = r.hand?.[S] ?? "none"; status[S][st] = (status[S][st] ?? 0) + 1; }
+    if (prev?.palmN && r.palmN) {
+      const flipped = ["L", "R"].some((S) => {
+        const a1 = prev.palmN[S], b1 = r.palmN[S];
+        if (!a1 || !b1) return false;
+        return a1[0] * b1[0] + a1[1] * b1[1] + a1[2] * b1[2] < 0; // more than 90 deg
+      });
+      if (flipped) { flips++; if (flipFrames.length < 40) flipFrames.push(r.frame); }
+    }
+    prev = r;
+  }
+  return { thresholds_deg: T, bad_frames: bad, bad_frames_hand: badHand, bad_frames_arm: badArm, bad_frame_list: badList, palm_flips: flips, palm_flip_frames: flipFrames, hand_status: status };
 }

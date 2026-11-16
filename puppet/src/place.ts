@@ -49,15 +49,34 @@ export function frameScale(f: MotionFrame, m: Motion): number | null {
   return i > 1 ? w / i : null;
 }
 
-const scaleCache = new WeakMap<Motion, number | null>();
-/** the clip's metres per pixel (median over frames): the camera does not move, the per-frame value is noisy */
-export function clipScale(m: Motion): number | null {
-  if (scaleCache.has(m)) return scaleCache.get(m)!;
-  const v = m.frames.map((f) => frameScale(f, m)).filter((x): x is number => x !== null && isFinite(x)).sort((a, b) => a - b);
-  const s = v.length ? v[v.length >> 1] : null;
-  scaleCache.set(m, s);
-  return s;
+const median = (v: number[]) => { const s = v.filter((x) => isFinite(x)).sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
+const scaleCache = new WeakMap<Motion, (number | null)[]>();
+/** a sentence joined from several source videos (src/blend.ts): each part has its own camera */
+const isComposed = (m: Motion) => m.source?.dataset === "blend" || Array.isArray((m.cleanup as { clips?: unknown } | null)?.clips);
+
+/**
+ * Metres per pixel at frame i. One clip: the median over the clip (the camera does not move, the per-frame value
+ * is noisy). A composed sentence: the median over +-0.5 s around the frame, since every part had its own camera.
+ */
+export function scaleAt(m: Motion, i: number): number | null {
+  let arr = scaleCache.get(m);
+  if (!arr) {
+    const per = m.frames.map((f) => frameScale(f, m));
+    if (isComposed(m)) {
+      const r = Math.max(1, Math.round(m.fps / 2));
+      arr = per.map((_, k) => median(per.slice(Math.max(0, k - r), k + r + 1).filter((x): x is number => x !== null)));
+    } else { const c = median(per.filter((x): x is number => x !== null)); arr = per.map(() => c); }
+    scaleCache.set(m, arr);
+  }
+  return arr[Math.max(0, Math.min(arr.length - 1, i))] ?? null;
 }
+
+/** the clip's metres per pixel (median over frames) */
+export function clipScale(m: Motion): number | null {
+  return median(m.frames.map((f) => frameScale(f, m)).filter((x): x is number => x !== null));
+}
+
+const frameIndex = (f: MotionFrame, m: Motion) => (m.frames[f.i] === f ? f.i : Math.max(0, m.frames.indexOf(f)));
 
 /**
  * Source landmarks in location space: x, y from the image (pixels times the clip scale, y up), z from poseWorld
@@ -66,7 +85,7 @@ export function clipScale(m: Motion): number | null {
  */
 export function sourceAnchors(f: MotionFrame, m: Motion): Anchors | null {
   const P = f.poseWorld, I = f.pose;
-  const s = clipScale(m) ?? frameScale(f, m);
+  const s = scaleAt(m, frameIndex(f, m)) ?? frameScale(f, m);
   if (!P || !I || !s) return null;
   const pose = (k: number): V3 => [I[k][0] * m.width * s, -I[k][1] * m.height * s, -P[k][2]];
   const a: Partial<Anchors> = { shL: pose(11), shR: pose(12) };
@@ -98,7 +117,7 @@ export function sourceAnchors(f: MotionFrame, m: Motion): Anchors | null {
  */
 export function sourceHand(f: MotionFrame, m: Motion, side: Side): V3[] | null {
   const P = f.poseWorld;
-  const s = clipScale(m) ?? frameScale(f, m);
+  const s = scaleAt(m, frameIndex(f, m)) ?? frameScale(f, m);
   const img = side === "left" ? f.leftHand : f.rightHand;
   if (!P || !s || !img) return null;
   const wz = -P[side === "left" ? 15 : 16][2];
@@ -111,7 +130,7 @@ export function sourceHand(f: MotionFrame, m: Motion, side: Side): V3[] | null {
 /** the wrist alone (pose landmark), for a tracked arm whose hand was not found */
 export function sourceWrist(f: MotionFrame, m: Motion, side: Side): V3 | null {
   const P = f.poseWorld, I = f.pose;
-  const s = clipScale(m) ?? frameScale(f, m);
+  const s = scaleAt(m, frameIndex(f, m)) ?? frameScale(f, m);
   if (!P || !I || !s) return null;
   const k = side === "left" ? 15 : 16;
   return [I[k][0] * m.width * s, -I[k][1] * m.height * s, -P[k][2]];
@@ -288,10 +307,16 @@ export function faceSamples(av: Anchors): V3[] {
   return [av.eyeL, av.eyeR, av.nose, mouth, av.chin, forehead, cheek(av.earL, av.eyeL), cheek(av.earR, av.eyeR)];
 }
 
-/** face points nearer than this (frontal plane, metres) to a wrist are the hand's to cover, not the arm's */
-export const HAND_ZONE = 0.07;
+/**
+ * Face points nearer than this (frontal plane, metres) to a FINGER joint are the hand's to cover, not the arm's: a
+ * finger on the eye hides the eye. The palm and wrist do not excuse anything (a wrist across the mouth is the
+ * forearm's fault), and the zone is small, so a forearm crossing the nose still counts.
+ */
+export const HAND_ZONE = 0.035;
+/** MediaPipe hand indices of the finger joints (everything but the wrist and the knuckles: the fingers proper) */
+export const FINGER_JOINTS = [2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 20];
 /** the face points no hand is at (see HAND_ZONE) */
-export const visibleFace = (face: V3[], wrists: V3[]) => face.filter((f) => wrists.every((w) => len2(sub(f, w)) > HAND_ZONE));
+export const visibleFace = (face: V3[], handPts: V3[]) => face.filter((f) => handPts.every((h) => len2(sub(f, h)) > HAND_ZONE));
 
 /** an arm segment as a capsule (world, metres) */
 export interface Seg { a: V3; b: V3; r: number }
@@ -363,19 +388,19 @@ export function swivelIK(s: V3, t: V3, l1: number, l2: number, pole: V3, cost: (
 
 /** arm capsule radii (metres, sleeve included) for the face-occlusion test */
 export const ARM_RADIUS = { upper: 0.045, fore: 0.038 };
-/** the arms as capsules: shoulder -> elbow, elbow -> 80% of the forearm (the wrist end belongs with the hand) */
+/** the arms as capsules: shoulder -> elbow -> wrist (the sleeve cuff at the wrist included) */
 export function armSegs(s: V3, e: V3, w: V3): Seg[] {
-  const f = 0.8;
-  return [{ a: s, b: e, r: ARM_RADIUS.upper }, { a: e, b: [e[0] + (w[0] - e[0]) * f, e[1] + (w[1] - e[1]) * f, e[2] + (w[2] - e[2]) * f], r: ARM_RADIUS.fore }];
+  return [{ a: s, b: e, r: ARM_RADIUS.upper }, { a: e, b: w, r: ARM_RADIUS.fore }];
 }
 
 /**
  * Cost of an elbow position for an arm from shoulder `s` to wrist `w`: the arm covering the face in the camera
  * (dominant), then what a signer touching the face does not do: elbow above the shoulder, behind the shoulder
- * plane, or in toward the body's midline (`out` = unit vector from the sternum to this shoulder).
+ * plane, or in toward the body's midline (`out` = unit vector from the sternum to this shoulder). `handPts`: the
+ * hand's finger joints at the target (face points under them are the hand's, see HAND_ZONE).
  */
-export function elbowCost(face: V3[], proj: Project, s: V3, w: V3, l1: number, out: V3) {
-  face = visibleFace(face, [w]);
+export function elbowCost(face: V3[], proj: Project, s: V3, w: V3, l1: number, out: V3, handPts: V3[] = [w]) {
+  face = visibleFace(face, handPts);
   return (e: V3) => {
     const d = sub(e, s);
     return 20 * faceOcclusion(face, armSegs(s, e, w), proj, 6).soft
