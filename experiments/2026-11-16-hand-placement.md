@@ -59,3 +59,49 @@ New report block `location`. For each tracked hand-frame it compares the frontal
 - When the hand is at the eye, the forearm sometimes crosses in front of the lower face (phr-3 frames 63, 140). The elbow pole could be lifted out to the side when the target is near the face.
 - Chest contacts use only the shoulder-based base. A chest surface anchor (and push-out, like the head) would make hand-on-chest signs exact.
 - Re-run the fal race on the new demo3 passes and compare.
+
+## Follow-up (same day): face stays visible, no palm flips, WiLoR v2 hands
+
+**Question:** after the first fix, the forearm crossed the nose and mouth when a hand touched the eye (phr-3 frames 63, 140), and the owner saw wrong frames. Can we keep the face visible and remove palm flips?
+
+### What changed
+- **Arm out of the face.** Two things together:
+  - Near the face, the hand is turned so wrist-to-knuckles points where the source's does relative to the face. The tracker's 3D hand direction is least reliable there, and copied as is it left the wrist and forearm across the nose.
+  - The elbow swivel is searched around the IK circle. The cost is the arm covering the face in the render camera, plus penalties for an elbow above or behind the shoulder or inside toward the midline. The solver is pulled toward the tracked swivel and the previous frame's.
+  - `--swivel 0` turns both off (= ik v1).
+- **No palm flips** (`puppet/src/handtrack.ts`). Each hand's orientation over the clip is cleaned as one sequence:
+  - one quaternion hemisphere;
+  - short runs that jump more than 90 degrees from both neighbours, where the neighbours agree with each other, are rejected as tracker flips;
+  - turns are limited to 720 degrees per second;
+  - untracked spans are filled by slerp (finger angles linearly) with a one-frame hold at each edge, up to 1 s;
+  - next to longer gaps the last good pose is held for 0.25 s.
+  - `--handclean 0` gives the old frame-by-frame hands.
+- **WiLoR v2 motions.** The renderer already prefers `hands3d`. `blend.ts` now carries `hands3d` through the cross-blend, so `compose.mjs` keeps it. demo3 was rebuilt from the v2 files of its three signs: `out/motion/wlasl3d/hands3d/{hello-aaf4c6,water-6d5a45,thank_you-897a1c}.v2.json` -> `out/modal/renders-fixed/demo3-v2.clean.json` (122 frames; the old demo3 used other takes of the same signs, 133 frames).
+- **New report blocks.**
+  - `quality`: bad frames over the lead's thresholds (palm or hand direction > 60, fingers > 50, upper arm or forearm > 45 degrees), split into hand and arm. Palm flips = frames where the avatar's own palm normal turns more than 90 degrees from the previous frame.
+  - `occlusion`: how many of 8 face points (eyes, nose, mouth, chin, forehead, cheeks) an upper arm or forearm covers in the camera. Points within 3.5 cm of a finger are left to the hand.
+
+### Numbers (Modal)
+"base" is ik v1 with frame-by-frame hands on the v1 motions. It reproduces the lead's count of 91/17/48 bad frames.
+
+| clip | version | bad frames | of which hand | of which arm | palm flips | location err | contacts lost | arm covers face (frames) |
+|---|---|---|---|---|---|---|---|---|
+| phr-3 (v1 only) | base | 92 / 248 | 34 | 73 | 2 | 0.064 | 10 / 35 | 2 |
+| phr-3 (v1 only) | v3 | 88 / 248 | 39 | 62 | **0** | 0.066 | 8 / 35 | **0** |
+| HELLO | base (v1) | 17 / 41 | 3 | 14 | 1 | 0.061 | 0 / 13 | 0 |
+| HELLO | v3 (v2 file) | **7 / 41** | **0** | 7 | **0** | 0.062 | 0 / 13 | 0 |
+| demo3 | base (v1) | 46 / 133 | 6 | 41 | 1 | 0.084 | 1 / 42 | 0 |
+| demo3 | v3 (from v2 signs) | 39 / 122 | **0** | 39 | **0** | 0.085 | 1 / 42 | 0 |
+
+- **Palm flips are 0 everywhere.** With v2 hands, no bad hand frames remain. HELLO f37-38 fingers drop from 60-94 to 7 degrees.
+- **Remaining "arm" bad frames are mostly by design.** IK placement leaves the tracker's arm direction to reach the location, so the 45-degree arm threshold flags it. It is not a visual error; the location error shows whether the arm is right.
+- **Remaining hand bad frames in phr-3 are against wrong landmarks.** phr-3 has no v2 file. At f96-100 its left-hand landmarks are themselves inside out: the solver detects this, and the avatar's palm stays continuous (0 flips). The "177 degrees" is measured against those wrong landmarks. f141 and f233 are rejected tracker flips, filled from the neighbours.
+- **The occlusion metric is coarse.** It is a few points and two capsules, so it understates how bad v1 looked (2 frames). The frame strip shows the change better.
+
+### Files (`out/modal/renders-fixed/`)
+- Strip, old VRM / ik v1 / v3, phr-3 frames 36, 63, 100, 140, 200: `phr-3-strip-vrm-ikv1-v3.jpg`. At 63 and 140 the forearm now comes up from the side, the hand is at the eye, and the face is clear.
+- v3 renders:
+  - `phr-3-signer-v3.mp4` / `.depth.mp4`
+  - `hello-aaf4c6.v2-signer-v3.mp4` / `.depth.mp4`
+  - `demo3-v2-signer-v3.mp4` / `.depth.mp4` / `.normal.mp4`
+- Reports: the matching `.json` next to each video, `*-signer-base.json` for the baseline.
