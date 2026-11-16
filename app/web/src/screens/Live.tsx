@@ -3,7 +3,7 @@
 // Captions toggle only hides that highlight). Drag the card anywhere on a desktop (lib/float.ts), its controls in the
 // header; on a phone it docks full width and the controls sit in a thumb-height row at the bottom.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createSignClient, generatingLabel, type SignResponse } from "@signlayer/core";
+import { choosePlayback, createSignClient, generatingLabel, type SignResponse } from "@signlayer/core";
 import { apiBase, apiLabel } from "../config";
 import { Captions } from "../components/Captions";
 import { CaptionsIcon, CloseIcon, KeyboardIcon, Mark, MicIcon, ReplayIcon, StopIcon, Wordmark } from "../components/Icons";
@@ -12,10 +12,12 @@ import { Segmented } from "../components/Segmented";
 import { SignerStage } from "../components/SignerStage";
 import { TypeBox } from "../components/TypeBox";
 import { Wave } from "../components/Wave";
-import { prefetchClip, type GaplessPlayer } from "../lib/player";
+import { prefetchClip } from "../lib/player";
+import type { HybridPlayer } from "../lib/hybrid";
+import { getSigner3D, restMotionUrl } from "../lib/signer3d";
 import { saveHeard } from "../lib/heard";
 import { addTurn } from "../lib/chat";
-import { setPrefs, usePrefs } from "../lib/prefs";
+import { getPrefs, setPrefs, usePrefs } from "../lib/prefs";
 import { sessionView, splitWords, type Phrase } from "../lib/session";
 import { createListener, speechSupported } from "../lib/speech";
 import { captureSupported, createCapture, type CapturePhase } from "../lib/capture";
@@ -29,7 +31,8 @@ const MIN_LISTEN_MS = 1400;
 
 export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome(): void; onRestart(s: LiveStart): void }) {
   const client = useMemo(() => createSignClient(apiBase()), []);
-  const player = useRef<GaplessPlayer | null>(null);
+  const player = useRef<HybridPlayer | null>(null);
+  const [loading3d, setLoading3d] = useState(false);
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [playing, setPlaying] = useState(-1);
   const [total, setTotal] = useState(0);
@@ -84,7 +87,8 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
     addTurn("them", text); // the session's conversation, sent with every compose call
     setStopped(false);
     setPhrases((ps) => [...ps, { id, text, res: null, offset: -1 }]);
-    const req = client.sign({ text });
+    // motion: this app plays the instant 3D signer, so signs without a photoreal clip are signable too.
+    const req = client.sign({ text, motion: true });
     // Appends happen in phrase order, after the card has formed.
     chain.current = chain.current.then(async () => {
       let res: SignResponse;
@@ -99,7 +103,11 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
       }
       if (!alive.current) return;
       setBanner(null);
-      res.playlist.forEach((x) => void prefetchClip(x.url)); // warm the clips while the card forms
+      // One style per phrase: photoreal clips when every sign has one, else the whole phrase on the 3D signer.
+      const mode = choosePlayback(res, { always3d: !!getPrefs().always3d });
+      if (mode === "none") res = { ...res, playlist: [], markers: [] };
+      if (mode === "clips") res.playlist.forEach((x) => void prefetchClip(x.url)); // warm the clips while the card forms
+      if (mode === "3d") getSigner3D().prefetch(res.playlist, res.rest_motion_url);
       const wait = id === 1 && start.kind === "typed" ? Math.max(0, MIN_LISTEN_MS + splitWords(text).length * WORD_MS - (performance.now() - t0.current)) : 0;
       if (wait) await new Promise((r) => setTimeout(r, wait));
       if (!alive.current) return;
@@ -113,8 +121,8 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
         return;
       }
       patch(id, { res, offset });
-      if (p && res.playlist.length) {
-        p.append(res.playlist.map((x) => ({ url: x.url, duration_s: x.duration_s })));
+      if (p && res.playlist.length && mode !== "none") {
+        p.append(res.playlist, mode, res.rest_motion_url);
         setTotal(p.length);
       }
     });
@@ -199,15 +207,26 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
     return () => clearTimeout(t);
   }, [heardShown, firstWords, revealed, start.kind]);
 
+  // Keep the 3D signer warm: load its bundle + avatar in the background once the server says it has one.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void client.health().then((h) => { if (alive.current && h.motion?.model) void getSigner3D().warm(restMotionUrl()).catch(() => {}); }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [client]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onHome(); };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [onHome]);
 
-  const onPlayer = useCallback((p: GaplessPlayer | null) => {
+  const onPlayer = useCallback((p: HybridPlayer | null) => {
     player.current = p;
-    if (p) p.onIndex = (i) => alive.current && setPlaying(i);
+    if (p) {
+      p.onIndex = (i) => alive.current && setPlaying(i);
+      p.onLoading = (on) => alive.current && setLoading3d(on);
+    }
   }, []);
 
   const view = useMemo(() => sessionView(phrases, playing, interim), [phrases, playing, interim]);
@@ -314,7 +333,8 @@ export function Live({ start, onHome, onRestart }: { start: LiveStart; onHome():
           <SignerStage onReady={onPlayer} on={revealed} label={blocked || latestError ? "Signing paused; caption shown" : "Signer"}
 >
             {revealed ? null : <span className="fc-idle" aria-hidden="true"><i /><i /><i /></span>}
-            {generating ? <span className="gen-chip" role="status">{generating}</span> : null}
+            {loading3d ? <span className="gen-chip" role="status">Loading the 3D signer…</span>
+              : generating ? <span className="gen-chip" role="status">{generating}</span> : null}
           </SignerStage>
         </div>
 

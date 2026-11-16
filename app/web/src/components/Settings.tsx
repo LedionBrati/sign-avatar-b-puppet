@@ -41,6 +41,10 @@ export function Settings({ onClose }: { onClose(): void }) {
             <span id="cap-l">Highlight signed words</span>
             <button type="button" className="switch" role="switch" aria-labelledby="cap-l" aria-checked={prefs.captions} onClick={() => setPrefs({ captions: !prefs.captions })} />
           </div>
+          <div className="row">
+            <span id="a3d-l">Always 3D signer</span>
+            <button type="button" className="switch" role="switch" aria-labelledby="a3d-l" aria-checked={!!prefs.always3d} onClick={() => setPrefs({ always3d: !prefs.always3d })} />
+          </div>
         </div>
 
         {ARTIFACT ? null : (<>
