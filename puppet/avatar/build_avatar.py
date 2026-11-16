@@ -40,19 +40,20 @@ A = lambda *p: os.path.join(args.assets, *p)
 # bob01 with its side fringe removed, darkened in the player like the long hair), medium dark brows.
 # Weights are MakeHuman modifier values (0..1). Chosen by eye against avatar-closeup.jpg on Modal previews.
 LOOK_BOB = {
-    "hair": "bob01", "eyebrows": "eyebrow012", "skin_tint": (0.96, 0.86, 0.75),
+    "hair": "bob01", "eyebrows": "eyebrow011", "skin_tint": None,
     "macro": {"age": 0.58, "race": {"asian": 0.05, "caucasian": 0.83, "african": 0.12}},
     "targets": {"head-oval": 0.55, "head-scale-horiz-decr": 0.12, "chin-width-decr": 0.25, "chin-prominent-incr": 0.15,
                 "l-cheek-bones-incr": 0.35, "r-cheek-bones-incr": 0.35, "l-cheek-volume-decr": 0.2, "r-cheek-volume-decr": 0.2,
                 "nose-scale-vert-incr": 0.2, "nose-point-width-decr": 0.15, "nose-hump-decr": 0.2,
                 "mouth-angles-up": 0.35, "mouth-scale-horiz-incr": 0.08, "mouth-upperlip-volume-decr": 0.15,
-                "eyebrows-angle-down": 0.15, "l-eye-scale-decr": 0.1, "r-eye-scale-decr": 0.1},
+                "eyebrows-angle-up": 0.1, "l-eye-scale-decr": 0.1, "r-eye-scale-decr": 0.1},
 }
 if args.look == "bob":
     if args.hair == "long01":
         args.hair = LOOK_BOB["hair"]
     args.eyebrows = args.eyebrows or LOOK_BOB["eyebrows"]
-    args.skin_tint = args.skin_tint or ",".join(map(str, LOOK_BOB["skin_tint"]))
+    if LOOK_BOB["skin_tint"]:
+        args.skin_tint = args.skin_tint or ",".join(map(str, LOOK_BOB["skin_tint"]))
 brows = args.eyebrows or "eyebrow001"
 targets = dict(LOOK_BOB["targets"]) if args.look == "bob" else {}
 for kv in filter(None, args.targets.split(",")):
@@ -161,6 +162,22 @@ if args.skin_tint:
     px[:, :3] *= np.array(tint, dtype=np.float32)
     img.pixels.foreach_set(px.ravel())
     img.update()
+
+# the player tints hair dark brown by multiplying (src/vrm.ts), which assumes a light texture like long01's;
+# bob01's texture is already dark, so it went black. Make it a grey of mean 0.45, which the player tint turns into the photo's near-black brown.
+if args.look == "bob" or args.hair.startswith("bob01"):
+    import numpy as np
+    himg = objs["Hair"].data.materials[0].node_tree.nodes["Image Texture"].image
+    hp = np.empty(len(himg.pixels), dtype=np.float32)
+    himg.pixels.foreach_get(hp)
+    hp = hp.reshape(-1, 4)
+    lum = hp[:, :3] @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    on = hp[:, 3] > 0.3
+    scale = 0.45 / max(1e-3, float(lum[on].mean()))
+    hp[:, :3] = np.clip(lum * scale, 0, 1)[:, None]
+    himg.pixels.foreach_set(hp.ravel())
+    himg.update()
+    print("LOOK hair texture normalised, scale", round(scale, 2))
 
 # the long-sleeve top: faces that belong mostly to the torso and arms get a black fabric material;
 # hands, neck and head keep the skin. Only the rig's deform weights count, so the cuff sits at the wrist joint.
