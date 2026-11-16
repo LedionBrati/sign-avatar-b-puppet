@@ -13,6 +13,9 @@
 //   GET  /clips/<file>        clips from the manifests, with HTTP Range (206) for Safari / iOS / expo-video
 //   POST /api/transcribe      raw audio chunk (audio/webm, ...) -> {text, model, timings}; same OpenAI key (lib/transcribe.mjs)
 //   POST /api/recognize?mode=sign|spell   float32 landmarks + X-Frames, proxied to app/recognizer (RECOGNIZER_URL, default :8788)
+//                             &profile=&vocab=A,B (+ X-Fps): closed demo vocabulary with a personal model, answer has signs[]
+//   GET|POST|DELETE /api/enroll?profile=[&label=]   "Train my signs": reps stored by app/recognizer (out/enroll/, no face)
+//   POST /api/train?profile=  fit the profile's model;  GET /api/profiles
 //   POST /api/compose         {signs: [{text, options?, reject?}], context?: {said?, heard?, history?}} -> {makes_sense, sentence, picked}: recognized signs ->
 //                             spoken English (same OpenAI key; lib/compose.mjs; COMPOSE=off disables)
 //   POST /api/speak           {text, voice?} -> audio/mpeg, natural text-to-speech (same OpenAI key; lib/speak.mjs; SPEAK=off)
@@ -302,6 +305,12 @@ export function createApp(o = {}) {
       only(req, "POST");
       return recognize(req, res, url);
     }
+    if (path === "/api/enroll" || path === "/api/train" || path === "/api/profiles") {
+      if (path === "/api/enroll") only(req, "GET", "POST", "DELETE");
+      else if (path === "/api/train") only(req, "POST");
+      else only(req, "GET");
+      return enrollProxy(req, res, url);
+    }
     if (path === "/app") { res.writeHead(301, { location: "/app/" + url.search }); return res.end(); }
     if (path.startsWith("/app/")) {
       only(req, "GET", "HEAD");
@@ -315,7 +324,7 @@ export function createApp(o = {}) {
       if (!file) throw new HttpError(404, "no_clip", `no clip ${rel ?? path}`);
       return sendFile(req, res, file);
     }
-    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "POST /api/compose", "POST /api/speak", "/app/"] });
+    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "GET|POST|DELETE /api/enroll", "POST /api/train", "/api/profiles", "POST /api/compose", "POST /api/speak", "/app/"] });
     throw new HttpError(404, "not_found", `no route ${req.method} ${path}`);
   }
 
@@ -333,12 +342,39 @@ export function createApp(o = {}) {
     const frames = req.headers["x-frames"];
     if (!frames || !/^\d+$/.test(String(frames))) throw new HttpError(400, "bad_frames", "X-Frames header must be a positive integer");
     const body = await readRaw(req, MAX_RECOGNIZE_BODY);
+    const q = new URLSearchParams({ mode });
+    for (const k of ["profile", "vocab"]) { const v = url.searchParams.get(k); if (v) q.set(k, v.slice(0, 400)); }
+    const fps = req.headers["x-fps"];
     let upstream;
     try {
-      upstream = await fetch(`${recognizerUrl}/recognize?mode=${mode}`, {
-        method: "POST", body, headers: { "content-type": "application/octet-stream", "x-frames": String(frames) },
+      upstream = await fetch(`${recognizerUrl}/recognize?${q}`, {
+        method: "POST", body, headers: { "content-type": "application/octet-stream", "x-frames": String(frames), ...(fps && /^[\d.]+$/.test(String(fps)) ? { "x-fps": String(fps) } : {}) },
         signal: AbortSignal.timeout(30_000),
       });
+    } catch {
+      throw new HttpError(503, "recognizer_down", `recognizer not reachable at ${recognizerUrl} (start it: cd app/recognizer && uv run python server.py)`);
+    }
+    const text = await upstream.text();
+    let out;
+    try { out = JSON.parse(text); } catch { throw new HttpError(502, "bad_upstream", "recognizer returned non-JSON"); }
+    return json(res, upstream.status, out);
+  }
+
+  // "Train my signs": enroll / train / profiles go straight to the recognizer (it owns the reps and the models).
+  async function enrollProxy(req, res, url) {
+    const q = new URLSearchParams();
+    for (const k of ["profile", "label"]) { const v = url.searchParams.get(k); if (v) q.set(k, v.slice(0, 64)); }
+    const headers = { "content-type": "application/octet-stream" };
+    let body;
+    if (req.method === "POST" && url.pathname === "/api/enroll") {
+      const frames = req.headers["x-frames"];
+      if (!frames || !/^\d+$/.test(String(frames))) throw new HttpError(400, "bad_frames", "X-Frames header must be a positive integer");
+      headers["x-frames"] = String(frames);
+      body = await readRaw(req, MAX_RECOGNIZE_BODY);
+    } else if (req.method === "POST") await readRaw(req, 1024);
+    let upstream;
+    try {
+      upstream = await fetch(`${recognizerUrl}${url.pathname.slice(4)}?${q}`, { method: req.method, body, headers, signal: AbortSignal.timeout(60_000) });
     } catch {
       throw new HttpError(503, "recognizer_down", `recognizer not reachable at ${recognizerUrl} (start it: cd app/recognizer && uv run python server.py)`);
     }
@@ -460,7 +496,7 @@ function composerFromEnv(keyInfo, log) {
 
 function cors(req, res) {
   res.setHeader("access-control-allow-origin", "*");
-  res.setHeader("access-control-allow-methods", "GET, HEAD, POST, OPTIONS");
+  res.setHeader("access-control-allow-methods", "GET, HEAD, POST, DELETE, OPTIONS");
   res.setHeader("access-control-allow-headers", req.headers["access-control-request-headers"] ?? "content-type, range");
   res.setHeader("access-control-expose-headers", "content-length, content-range, accept-ranges, x-signlayer-unsupported");
   // Chrome Private Network Access: lets https pages / the extension reach this server on localhost or the LAN.

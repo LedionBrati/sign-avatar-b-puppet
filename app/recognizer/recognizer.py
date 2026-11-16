@@ -190,16 +190,20 @@ class Recognizer:
             out[mode] = round((time.perf_counter() - t) * 1000)
         return out
 
+    def gislr(self, x: np.ndarray) -> np.ndarray:
+        """GISLR probabilities [250] (kid prior applied), index -> label via index_to_label."""
+        with self._sign_lock:
+            logits = np.asarray(self._sign(inputs=x)["outputs"]).reshape(-1)
+        p = softmax(logits)
+        if not np.all(np.isfinite(p)):
+            p = np.full_like(p, 1 / len(p))
+        return apply_prior(p, self.index_to_label)
+
     def recognize(self, mode: str, x: np.ndarray, top: int = 5) -> dict:
         t0 = time.perf_counter()
         if mode == "sign":
-            with self._sign_lock:
-                logits = np.asarray(self._sign(inputs=x)["outputs"]).reshape(-1)
+            p = self.gislr(x)
             inference_ms = (time.perf_counter() - t0) * 1000
-            p = softmax(logits)
-            if not np.all(np.isfinite(p)):
-                p = np.full_like(p, 1 / len(p))
-            p = apply_prior(p, self.index_to_label)
             order = np.argsort(-p)[:top]
             options = [{"label": self.index_to_label[int(i)], "text": label_text(self.index_to_label[int(i)]),
                         "confidence": round(float(p[i]), 4)} for i in order]
