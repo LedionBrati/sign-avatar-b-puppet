@@ -13,6 +13,8 @@
 //   passes=rgb,depth,normal,seg   render passes side by side in the puppet panel (view=vrm)
 //   aa=0                no multisampling (faster on software WebGL)
 //   lite=1              cheap shading for software WebGL (Lambert, no environment map)
+//   place=auto|fk|ik    hand placement: ik puts the wrists where the source's hands are relative to face and
+//                       shoulders (src/place.ts); fk copies arm rotations. auto: ik for a .glb avatar, fk for a .vrm
 //   smooth=0            raw puppet: every frame as tracked (no clean-up, no in-between frames, no hair physics)
 //   render=1            offline mode for render.mjs: no controls, window.renderFrame(i) draws frame i
 //   srcframes=<tpl>     render mode: source frames as images, e.g. /__file/C:/tmp/src_%05d.png (1-based)
@@ -22,7 +24,7 @@ import { VrmPuppet, type Pass, type RetargetReport, type Solver } from "./vrm";
 
 declare global {
   interface Window {
-    puppetReady: Promise<{ frames: number; fps: number; width: number; height: number; warnings: string[]; smoothing: { glitch: number; bridged: number; eased: number } | null }>;
+    puppetReady: Promise<{ frames: number; fps: number; width: number; height: number; warnings: string[]; smoothing: { glitch: number; bridged: number; eased: number } | null; avatar: unknown }>;
     /** draw frame i; in smooth mode `at` (fractional frame, default i) poses the puppet between frames */
     renderFrame: (i: number, at?: number) => Promise<RetargetReport | null>;
     /** render mode: the current frame as a base64 PNG of all panels */
@@ -46,6 +48,7 @@ const SMOOTH = q.get("smooth") !== "0";
 const PASSES = (q.get("passes") ?? "rgb").split(",").filter(Boolean) as Pass[];
 const ANTIALIAS = q.get("aa") !== "0";
 const LITE = q.get("lite") === "1";
+const PLACE = (q.get("place") ?? "auto") as "auto" | "fk" | "ik";
 
 /** local paths go through the dev server's /__file/ route (see vite.config.ts) */
 export function resolveUrl(p: string): string {
@@ -106,7 +109,7 @@ async function main() {
     if (PASSES.length > 1) p.style.width = `${PW * PASSES.length}px`;
     const c = canvas(p);
     vrmOverlay = canvas(p, "overlay").getContext("2d")!;
-    puppet = new VrmPuppet(c, PW, PH, { solver, closeup, mannequin: MANNEQUIN, passes: PASSES, antialias: ANTIALIAS, lite: LITE });
+    puppet = new VrmPuppet(c, PW, PH, { solver, closeup, mannequin: MANNEQUIN, passes: PASSES, antialias: ANTIALIAS, lite: LITE, placement: PLACE });
     await puppet.load(MODEL);
     if (SMOOTH) puppet.bake(motion);
     (window as any).puppet = puppet; // for poking at from devtools
@@ -244,7 +247,12 @@ async function main() {
   // compile every shader (all passes) before the clock starts
   if (RENDER && puppet) drawFrame(0);
 
-  if (RENDER) return { motion, warnings, smoothing: smoothing() };
+  if (RENDER) {
+    // the avatar's own landmarks at rest (report), and whether its hands are placed by IK
+    puppet?.restPose(); puppet?.vrm?.update(0);
+    const avatar = puppet ? { placement: puppet.placesHands ? "ik" : "fk", landmarks: puppet.landmarkInfo() } : null;
+    return { motion, warnings, smoothing: smoothing(), avatar };
+  }
 
   // ---- interactive controls
   $("controls").hidden = false;
@@ -313,7 +321,7 @@ function tag(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, 
 }
 
 type Smoothing = { glitch: number; bridged: number; eased: number } | null;
-window.puppetReady = main().then(({ motion, warnings, smoothing }: { motion: Motion; warnings: string[]; smoothing: Smoothing }) => ({
-  frames: motion.frames.length, fps: motion.fps, width: motion.width, height: motion.height, warnings, smoothing,
+window.puppetReady = main().then(({ motion, warnings, smoothing, avatar }: { motion: Motion; warnings: string[]; smoothing: Smoothing; avatar?: unknown }) => ({
+  frames: motion.frames.length, fps: motion.fps, width: motion.width, height: motion.height, warnings, smoothing, avatar: avatar ?? null,
 }));
 window.puppetReady.catch((e) => { errorEl.textContent = String(e?.stack ?? e); console.error(e); });

@@ -27,7 +27,8 @@ import * as Kalidokit from "kalidokit";
 import type { Motion, MotionFrame, Vec3 } from "./motion";
 import { angleDeg, mirrorFrame, mpToThree, palmNormal, sub3 } from "./geom";
 import { cleanQuatChannel, cleanScalarChannel, DEFAULT_CLEAN, framePos, linkedSpikes, twistAbout, type ChannelParams, type CleanStats, type QuatChannel } from "./track";
-import { AvatarHand, buildSegmentation, fingerBones, mixamoTips, vrmFromGltf } from "./avatar";
+import { AvatarHand, buildSegmentation, faceLandmarks, fingerBones, mixamoTips, vrmFromGltf, type FacePoint } from "./avatar";
+import { CONTACT_POINTS, DEFAULT_PLACE, FACE_KEYS, baseWrist, faceDistance, headEllipsoid, headPushOut, keepHandContact, locDistances, shoulderWidth, sourceAnchors, sourceHand, sourceWrist, twoBoneIK, wristTarget, type Anchors } from "./place";
 import { FINGERS, RELAXED_DEG, countOverlaps, countViolations, dirToWorld, fk, palmFrameRobust, separateFingers, smoothSequence, solveHand, thumbPlaneNormal, type HandAngles, type PalmFrame, type V3 } from "./hand";
 
 /**
@@ -94,6 +95,13 @@ export interface PuppetOptions {
   lite?: boolean;
   /** WebGL multisampling (default true). Off is faster on software WebGL. */
   antialias?: boolean;
+  /**
+   * Hand placement. fk: arm rotations copied from the tracker (where the hands land depends on the avatar's
+   * proportions). ik: the wrists are put where the source's hands are relative to the face and shoulders
+   * (src/place.ts) and the arms solved with two-bone IK. auto (default): ik for a glTF avatar (signer.glb), fk for
+   * a .vrm (the anime puppet keeps its old behaviour).
+   */
+  placement?: "auto" | "fk" | "ik";
 }
 
 export interface RetargetReport {
@@ -106,6 +114,12 @@ export interface RetargetReport {
   err: Record<string, number | null>;
   /** per hand: finger joints of the shown avatar hand outside src/hand.ts LIMITS, and overlapping neighbour fingers */
   limits?: { L: number; R: number; overlapsL: number; overlapsR: number };
+  /**
+   * per tracked hand: hand location relative to face and shoulders (src/place.ts LOC_PAIRS, frontal plane, in
+   * shoulder widths) for the source and the avatar, the nearest hand point to the face (frontal) for both, and
+   * the avatar's 3D distance of that kind (is a contact a real touch or a hand hovering in front of the face?)
+   */
+  loc?: Partial<Record<"L" | "R", { src: number[]; av: number[]; srcFace: number; avFace: number; avFace3d: number }>>;
 }
 
 export const RETARGET_THRESHOLD_DEG = 30;
@@ -144,6 +158,7 @@ export class VrmPuppet {
       solver: opts.solver ?? "direct", mannequin: opts.mannequin ?? false, closeup: opts.closeup ?? false,
       background: opts.background ?? (opts.mannequin ? "#2b2b2f" : "#1d2026"), realistic: opts.realistic ?? false,
       passes: opts.passes?.length ? opts.passes : ["rgb"], antialias: opts.antialias ?? true, lite: opts.lite ?? false,
+      placement: opts.placement ?? "auto",
     };
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.opts.antialias, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
@@ -180,6 +195,12 @@ export class VrmPuppet {
     if (this.opts.mannequin) this.applyMannequin();
     for (const s of SIDES) {
       try { this.hands[s] = new AvatarHand(vrm, s, this.isGltfAvatar ? mixamoTips(vrm.scene, s) : {}); } catch { /* no finger bones */ }
+    }
+    // face points for hand placement and the location metric, kept in the head's own (normalized) frame
+    const face = faceLandmarks(vrm), headN = this.node("head");
+    if (face && headN) {
+      headN.updateWorldMatrix(true, false);
+      this.faceRest = Object.fromEntries(FACE_KEYS.map((k) => [k, headN.worldToLocal(face[k].clone())])) as Record<FacePoint, THREE.Vector3>;
     }
     // brow morphs are not VRM presets; VRoid models have Fcl_BRW_Surprised / Fcl_BRW_Angry
     vrm.scene.traverse((o) => {
@@ -264,6 +285,24 @@ export class VrmPuppet {
       };
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(pick) : pick(mesh.material);
     });
+  }
+
+  /** face points in the normalized head bone's frame (null: none found, no placement or location metric) */
+  faceRest: Record<FacePoint, THREE.Vector3> | null = null;
+
+  /** whether the wrists are placed with IK (see PuppetOptions.placement) */
+  get placesHands(): boolean {
+    return !!this.faceRest && (this.opts.placement === "ik" || (this.opts.placement === "auto" && this.isGltfAvatar));
+  }
+
+  /** the avatar's face and shoulder points as posed now (world, metres) */
+  avatarAnchors(): Anchors | null {
+    const head = this.node("head"), l = this.node("leftUpperArm"), r = this.node("rightUpperArm");
+    if (!this.faceRest || !head || !l || !r) return null;
+    head.updateWorldMatrix(true, false); l.updateWorldMatrix(true, false); r.updateWorldMatrix(true, false);
+    const a = { shL: l.getWorldPosition(new THREE.Vector3()).toArray(), shR: r.getWorldPosition(new THREE.Vector3()).toArray() } as Partial<Anchors>;
+    for (const k of FACE_KEYS) a[k] = head.localToWorld(this.faceRest[k].clone()).toArray() as V3;
+    return a as Anchors;
   }
 
   private node(name: VRMHumanBoneName): THREE.Object3D | null {
@@ -759,6 +798,70 @@ export class VrmPuppet {
         }
       }
     }
+    if (this.placesHands) this.placeHands(f, m);
+  }
+
+  // ---------------------------------------------------------------- hand placement (src/place.ts)
+  /**
+   * Move the wrists to where the source's hands are relative to the face and shoulders, then re-solve each arm
+   * with two-bone IK (elbow on the tracked elbow's side) and give the hand back its tracked orientation, so the
+   * handshape and palm direction are unchanged. Arms the direct solve left at rest are not touched.
+   */
+  private placeHands(f: MotionFrame, m: Motion) {
+    const src = sourceAnchors(f, m), av = this.avatarAnchors();
+    if (!src || !av || !f.pose) return;
+    const plan: Partial<Record<Side, { target: V3; srcPts: V3[] | null; offs: V3[]; all: V3[] }>> = {};
+    for (const side of SIDES) {
+      const [el, wr] = side === "left" ? [13, 15] : [14, 16];
+      if (Math.min(f.pose[el][3] ?? 1, f.pose[wr][3] ?? 1) < 0.3) continue; // same test as solveDirect
+      const ua = this.node(`${side}UpperArm`), hand = this.node(`${side}Hand`);
+      if (!ua || !hand) continue;
+      hand.updateWorldMatrix(true, true);
+      const S = ua.getWorldPosition(new THREE.Vector3()), W = hand.getWorldPosition(new THREE.Vector3());
+      const srcHand = sourceHand(f, m, side);
+      const srcWr = srcHand?.[0] ?? sourceWrist(f, m, side);
+      if (!srcWr) continue;
+      const base = baseWrist(srcWr, src, av, S.toArray() as V3, S.distanceTo(W), W.z >= S.z);
+      // the avatar's hand points relative to its wrist, as the hand is oriented now (kept through the IK)
+      const avPts = this.hands[side]?.points() ?? null;
+      const srcPts = srcHand && avPts ? CONTACT_POINTS.map((k) => srcHand[k]) : null;
+      const offs = srcPts && avPts ? CONTACT_POINTS.map((k) => [avPts[k][0] - W.x, avPts[k][1] - W.y, avPts[k][2] - W.z] as V3) : [];
+      const target = srcPts ? wristTarget(base, srcPts, offs, src, av).target : base;
+      const all = avPts ? avPts.map((p) => [p[0] - W.x, p[1] - W.y, p[2] - W.z] as V3) : [[0, 0, 0] as V3];
+      plan[side] = { target, srcPts, offs, all };
+    }
+    const L = plan.left, R = plan.right;
+    if (L?.srcPts && R?.srcPts) keepHandContact(L.srcPts, R.srcPts, L.offs, R.offs, L.target, R.target, src, av, DEFAULT_PLACE);
+    // a hand placed on the face rests on it, not in it
+    const head = headEllipsoid(av);
+    for (const side of SIDES) {
+      const p = plan[side];
+      if (!p) continue;
+      p.target[2] += headPushOut(p.target, p.all, head);
+      this.ikArm(side, new THREE.Vector3(...p.target));
+    }
+  }
+
+  /** two-bone IK of one arm to a wrist position; the hand keeps its world orientation (and so its fingers) */
+  private ikArm(side: Side, target: THREE.Vector3) {
+    const ua = this.node(`${side}UpperArm`), la = this.node(`${side}LowerArm`), hand = this.node(`${side}Hand`);
+    if (!ua || !la || !hand) return;
+    hand.updateWorldMatrix(true, false);
+    const S = ua.getWorldPosition(new THREE.Vector3()), E0 = la.getWorldPosition(new THREE.Vector3()), W0 = hand.getWorldPosition(new THREE.Vector3());
+    const handQ = hand.getWorldQuaternion(new THREE.Quaternion());
+    const { elbow, wrist } = twoBoneIK(S.toArray() as V3, target.toArray() as V3, S.distanceTo(E0), E0.distanceTo(W0), E0.toArray() as V3);
+    const E = new THREE.Vector3(...elbow);
+    const upper = E.clone().sub(S), fore = new THREE.Vector3(...wrist).sub(E);
+    // same upper-arm roll rule as solveDirect: the forearm swings toward the upper arm's rest front (+Z)
+    const un = upper.clone().normalize();
+    const bendW = fore.clone().sub(un.clone().multiplyScalar(fore.dot(un)));
+    const bendWeight = THREE.MathUtils.clamp(bendW.length() / (fore.length() * 0.35 + 1e-6), 0, 1);
+    this.aim(`${side}UpperArm`, `${side}LowerArm`, upper, new THREE.Vector3(0, 0, 1), bendW, bendWeight);
+    this.aim(`${side}LowerArm`, `${side}Hand`, fore);
+    la.updateWorldMatrix(true, false);
+    hand.quaternion.copy(la.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(handQ));
+    hand.updateMatrixWorld(true);
+    this.moveRollToForearm(side);
   }
 
   /** forearm.q *= roll, hand.q = roll^-1 * hand.q, with roll = the hand's twist about the forearm axis */
@@ -898,10 +1001,37 @@ export class VrmPuppet {
         r.limits[`overlaps${S}`] = countOverlaps(shown, side);
       }
     }
+    this.measureLocation(f, m, r);
     for (const [k, v] of Object.entries(r.err)) {
       const limit = k.endsWith("fingers") ? RETARGET_THRESHOLD_DEG * 0.75 : RETARGET_THRESHOLD_DEG;
       if (v !== null && v > limit) r.retarget.push(`${k} ${Math.round(v)}°`);
     }
+  }
+
+  /** hand location vs face and shoulders, source and avatar (src/place.ts), for every tracked hand */
+  private measureLocation(f: MotionFrame, m: Motion, r: RetargetReport) {
+    const src = sourceAnchors(f, m), av = this.avatarAnchors();
+    if (!src || !av || !f.pose) return;
+    for (const side of SIDES) {
+      const sh = sourceHand(f, m, side), ah = this.hands[side];
+      if (!sh || !ah) continue;
+      const [el, wr] = side === "left" ? [13, 15] : [14, 16];
+      if (Math.min(f.pose[el][3] ?? 1, f.pose[wr][3] ?? 1) < 0.3) continue; // arm at rest: not retargeted
+      const avh = ah.points();
+      r.loc ??= {};
+      r.loc[side === "left" ? "L" : "R"] = {
+        src: locDistances(src, sh), av: locDistances(av, avh),
+        srcFace: faceDistance(src, sh), avFace: faceDistance(av, avh), avFace3d: faceDistance(av, avh, 3),
+      };
+    }
+  }
+
+  /** the avatar's face and shoulder points and shoulder width as posed now (for the report) */
+  landmarkInfo() {
+    const a = this.avatarAnchors();
+    if (!a) return null;
+    const round = (v: number[]) => v.map((x) => +x.toFixed(4));
+    return { shoulder_width: +shoulderWidth(a).toFixed(4), points: Object.fromEntries(Object.entries(a).map(([k, v]) => [k, round(v)])) };
   }
 
   // ---------------------------------------------------------------- rendering

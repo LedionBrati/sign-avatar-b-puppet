@@ -169,3 +169,86 @@ export function buildSegmentation(vrm: VRM): THREE.Material {
   });
   return new THREE.MeshBasicMaterial({ vertexColors: true });
 }
+
+// ---------------------------------------------------------------- face landmarks (hand location, src/place.ts)
+export type FacePoint = "nose" | "chin" | "eyeL" | "eyeR" | "earL" | "earR";
+
+/**
+ * Face points of the avatar at rest (world), read off its meshes: eyes = the eye meshes' centres (front surface in
+ * depth), nose = the most forward skin point on the face's midline, chin = the lowest midline skin point that still
+ * faces forward, ears = the widest skin points of the head between chin and eyes. Only vertices skinned to the head
+ * (or bones under it) count, so the neck, hair and body are ignored. Null if the avatar has no head or no eyes.
+ */
+export function faceLandmarks(vrm: VRM): Record<FacePoint, THREE.Vector3> | null {
+  vrm.scene.updateMatrixWorld(true);
+  const head = vrm.humanoid.getRawBoneNode("head");
+  if (!head) return null;
+  const underHead = new Set<THREE.Object3D>();
+  head.traverse((o) => underHead.add(o));
+  const skin: THREE.Vector3[] = [], eyes: THREE.Vector3[] = [];
+  const v = new THREE.Vector3();
+  vrm.scene.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (!mesh.isMesh) return;
+    const g = mesh.geometry as THREE.BufferGeometry;
+    const pos = g.attributes.position;
+    if (!pos) return;
+    const mats = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) as THREE.Material[];
+    const kind = (m: THREE.Material | undefined) => {
+      const n = (m?.name ?? "").toLowerCase();
+      if (/eye/.test(n) && !/brow|lash|line|highlight/.test(n)) return "eye";
+      if (/skin/.test(n)) return "skin";
+      return null;
+    };
+    // vertex -> material kind (multi-material meshes: through the draw groups)
+    const kinds: (string | null)[] = new Array(pos.count).fill(Array.isArray(mesh.material) ? null : kind(mats[0]));
+    if (Array.isArray(mesh.material) && g.groups.length) {
+      const idx = g.index;
+      for (const gr of g.groups) {
+        const k = kind(mats[gr.materialIndex ?? 0]);
+        if (!k) continue;
+        for (let i = gr.start; i < gr.start + gr.count; i++) kinds[idx ? idx.getX(i) : i] = k;
+      }
+    }
+    const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    const onHead = (i: number) => {
+      if (!mesh.isSkinnedMesh || !si || !sw) { for (let p: THREE.Object3D | null = mesh; p; p = p.parent) if (underHead.has(p)) return true; return false; }
+      let best = -1, bone: THREE.Object3D | null = null;
+      for (let k = 0; k < 4; k++) { const wk = sw.getComponent(i, k); if (wk > best) { best = wk; bone = mesh.skeleton.bones[si.getComponent(i, k)] ?? null; } }
+      return !!bone && underHead.has(bone);
+    };
+    for (let i = 0; i < pos.count; i++) {
+      const k = kinds[i];
+      if (!k || !onHead(i)) continue;
+      mesh.getVertexPosition(i, v); // skinned at the current (rest) pose
+      (k === "eye" ? eyes : skin).push(mesh.localToWorld(v.clone()));
+    }
+  });
+  if (!skin.length) return null;
+  const hx = head.getWorldPosition(new THREE.Vector3()).x;
+  const eyeOf = (left: boolean) => {
+    const pts = eyes.filter((p) => (p.x > hx) === left); // avatar left = +X
+    if (!pts.length) return null;
+    const box = new THREE.Box3().setFromPoints(pts);
+    const c = box.getCenter(new THREE.Vector3());
+    c.z = box.max.z;
+    return c;
+  };
+  let eyeL = eyeOf(true), eyeR = eyeOf(false);
+  if (!eyeL || !eyeR) {
+    const bl = vrm.humanoid.getRawBoneNode("leftEye"), br = vrm.humanoid.getRawBoneNode("rightEye");
+    if (!bl || !br) return null;
+    eyeL = bl.getWorldPosition(new THREE.Vector3()); eyeR = br.getWorldPosition(new THREE.Vector3());
+  }
+  const ed = eyeL.distanceTo(eyeR), ey = (eyeL.y + eyeR.y) / 2;
+  const midline = skin.filter((p) => Math.abs(p.x - hx) < 0.12 * ed);
+  const pick = (pts: THREE.Vector3[], score: (p: THREE.Vector3) => number) => pts.reduce((a, b) => (score(b) > score(a) ? b : a), pts[0]);
+  const noseC = midline.filter((p) => p.y < ey && p.y > ey - 1.5 * ed);
+  if (!noseC.length) return null;
+  const nose = pick(noseC, (p) => p.z).clone();
+  const chinC = midline.filter((p) => p.y < nose.y && p.z > nose.z - 0.8 * ed);
+  const chin = (chinC.length ? pick(chinC, (p) => -p.y) : new THREE.Vector3(hx, nose.y - ed, nose.z - 0.4 * ed)).clone();
+  const band = skin.filter((p) => p.y < ey && p.y > chin.y + 0.3 * (ey - chin.y));
+  const earL = pick(band, (p) => p.x).clone(), earR = pick(band, (p) => -p.x).clone();
+  return { nose, chin, eyeL, eyeR, earL, earR };
+}
