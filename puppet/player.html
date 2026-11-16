@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Signer Player</title>
+  <link rel="icon" href="data:," />
+  <style>
+    html, body { margin: 0; background: #1b1d21; color: #e6e7ea; font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+    main { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; }
+    canvas { width: min(540px, 100vw - 24px); aspect-ratio: 3 / 4; height: auto; background: #33363a; border-radius: 8px; }
+    #status { color: #9aa0aa; min-height: 2.8em; text-align: center; white-space: pre-wrap; }
+    #sign { font-weight: 600; font-size: 20px; min-height: 1.4em; }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="c" width="540" height="720"></canvas>
+    <div id="sign"></div>
+    <div id="status">loading…</div>
+  </main>
+  <!-- ?signs=out/motion/wlasl/hello-aaf4c6.clean.json,out/motion/wlasl/you-8af56d.clean.json [&loop=1] [&model=/models/x.vrm] -->
+  <script type="module" src="/src/player-demo.ts"></script>
+</body>
+</html>

@@ -5,16 +5,20 @@
 //   view=sidebyside|skeleton|vrm   (default sidebyside)
 //   size=540x720        panel size in pixels
 //   closeup=1           hand close-up insets
-//   solver=direct|kalidokit
+//   solver=direct|kalidokit|anatomic   (default: direct for a .vrm, anatomic for a .glb avatar)
 //   mannequin=1         black top, skin-tone hands, dark wall
 //   labels=0|1          overlays (default 1, except view=vrm in render mode)
-//   model=<url>         VRM file (default /models/VRM1_Constraint_Twist_Sample.vrm)
+//   model=<url>         .vrm file or Mixamo-rigged .glb (default /models/VRM1_Constraint_Twist_Sample.vrm)
+//   avatar=signer       the realistic reference avatar, same as model=/models/signer.glb
+//   passes=rgb,depth,normal,seg   render passes side by side in the puppet panel (view=vrm)
+//   aa=0                no multisampling (faster on software WebGL)
+//   lite=1              cheap shading for software WebGL (Lambert, no environment map)
 //   smooth=0            raw puppet: every frame as tracked (no clean-up, no in-between frames, no hair physics)
 //   render=1            offline mode for render.mjs: no controls, window.renderFrame(i) draws frame i
 //   srcframes=<tpl>     render mode: source frames as images, e.g. /__file/C:/tmp/src_%05d.png (1-based)
 import { duration, frameIndexAt, loadMotion, missingStats, type Motion } from "./motion";
 import { drawSkeleton, COLORS } from "./skeleton";
-import { VrmPuppet, type RetargetReport, type Solver } from "./vrm";
+import { VrmPuppet, type Pass, type RetargetReport, type Solver } from "./vrm";
 
 declare global {
   interface Window {
@@ -32,10 +36,16 @@ const VIEW = (q.get("view") ?? "sidebyside") as "sidebyside" | "skeleton" | "vrm
 const [PW, PH] = (q.get("size") ?? "540x720").split("x").map(Number);
 const LABELS = q.has("labels") ? q.get("labels") !== "0" : !(RENDER && VIEW === "vrm");
 let closeup = q.get("closeup") === "1";
-let solver = (q.get("solver") ?? "direct") as Solver;
 const MANNEQUIN = q.get("mannequin") === "1";
-const MODEL = q.get("model") ?? "/models/VRM1_Constraint_Twist_Sample.vrm";
+// avatar=signer is the realistic reference avatar (puppet/models/signer.glb, anatomic hands by default)
+const MODEL = q.get("model") ?? (q.get("avatar") === "signer" ? "/models/signer.glb" : "/models/VRM1_Constraint_Twist_Sample.vrm");
+const GLTF_AVATAR = /\.(glb|gltf)$/i.test(MODEL.split("?")[0]);
+let solver = (q.get("solver") ?? (GLTF_AVATAR ? "anatomic" : "direct")) as Solver;
 const SMOOTH = q.get("smooth") !== "0";
+/** passes=rgb,depth,normal,seg: drawn side by side in the puppet panel (view=vrm) */
+const PASSES = (q.get("passes") ?? "rgb").split(",").filter(Boolean) as Pass[];
+const ANTIALIAS = q.get("aa") !== "0";
+const LITE = q.get("lite") === "1";
 
 /** local paths go through the dev server's /__file/ route (see vite.config.ts) */
 export function resolveUrl(p: string): string {
@@ -93,9 +103,10 @@ async function main() {
   let vrmOverlay: CanvasRenderingContext2D | null = null;
   if (VIEW !== "skeleton") {
     const p = panel();
+    if (PASSES.length > 1) p.style.width = `${PW * PASSES.length}px`;
     const c = canvas(p);
     vrmOverlay = canvas(p, "overlay").getContext("2d")!;
-    puppet = new VrmPuppet(c, PW, PH, { solver, closeup, mannequin: MANNEQUIN });
+    puppet = new VrmPuppet(c, PW, PH, { solver, closeup, mannequin: MANNEQUIN, passes: PASSES, antialias: ANTIALIAS, lite: LITE });
     await puppet.load(MODEL);
     if (SMOOTH) puppet.bake(motion);
     (window as any).puppet = puppet; // for poking at from devtools
@@ -173,19 +184,65 @@ async function main() {
   // render mode: composite all panel canvases into one image (faster and more exact than a page screenshot)
   const layers = [...panelsEl.querySelectorAll("canvas")] as HTMLCanvasElement[];
   const comp = document.createElement("canvas");
-  comp.width = PW * panelsEl.children.length; comp.height = PH;
+  const panelEls = [...panelsEl.children] as HTMLElement[];
+  const panelX = panelEls.map((_, k) => panelEls.slice(0, k).reduce((s, el) => s + (parseInt(el.style.width) || PW), 0));
+  comp.width = panelEls.reduce((s, el) => s + (parseInt(el.style.width) || PW), 0); comp.height = PH;
   const compCtx = comp.getContext("2d")!;
   window.captureFrame = async () => {
     compCtx.fillStyle = "#000"; compCtx.fillRect(0, 0, comp.width, comp.height);
     for (const c of layers) {
-      const k = [...panelsEl.children].indexOf(c.parentElement!);
-      compCtx.drawImage(c, k * PW, 0, PW, PH);
+      const k = panelEls.indexOf(c.parentElement!);
+      compCtx.drawImage(c, panelX[k], 0, c.width, PH);
     }
     const blob = await new Promise<Blob>((res) => comp.toBlob((b) => res(b!), "image/png"));
     const bytes = new Uint8Array(await blob.arrayBuffer());
     let s = ""; for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode(...bytes.subarray(k, k + 0x8000));
     return btoa(s);
   };
+  /**
+   * Fast render (view=vrm only): draw frames [from, to), read the WebGL pixels (RGBA, bottom-up, all passes side
+   * by side), and either POST them as binary to `sink` or return them base64-encoded (sink = null; render.mjs
+   * then pipes them into ffmpeg). No PNG encode or decode, one page call per chunk. Returns each frame's report.
+   */
+  (window as any).renderRange = async (from: number, to: number, sink: string | null, jpeg = 0) => {
+    if (!puppet) throw new Error("renderRange needs the puppet");
+    const gl = puppet.renderer.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    const buf = new Uint8Array(w * h * 4);
+    const reports: (RetargetReport | null)[] = [];
+    const frames: string[] = [];
+    let tDraw = 0, tRead = 0, tPost = 0;
+    for (let i = from; i < to; i++) {
+      const a = performance.now();
+      reports.push(drawFrame(i));
+      const b = performance.now();
+      if (jpeg) {
+        // the browser's own JPEG encoder: about 1/20 of the raw bytes to move, top-down rows
+        const blob = await new Promise<Blob>((res) => puppet!.canvas.toBlob((x) => res(x!), "image/jpeg", jpeg));
+        const c = performance.now();
+        frames.push(await toBase64(new Uint8Array(await blob.arrayBuffer())));
+        tDraw += b - a; tRead += c - b; tPost += performance.now() - c;
+        continue;
+      }
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      const c = performance.now();
+      if (sink) {
+        const res = await fetch(`${sink}?i=${i}`, { method: "POST", body: buf });
+        if (!res.ok) throw new Error(`sink: HTTP ${res.status}`);
+      } else frames.push(await toBase64(buf));
+      tDraw += b - a; tRead += c - b; tPost += performance.now() - c;
+    }
+    return { reports, frames, width: w, height: h, ms: { draw: tDraw, read: tRead, post: tPost } };
+  };
+  /** raw bytes -> base64 with the browser's native encoder (FileReader), much faster than btoa over a string */
+  const toBase64 = (bytes: Uint8Array) => new Promise<string>((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res((r.result as string).slice((r.result as string).indexOf(",") + 1));
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(new Blob([bytes as BlobPart]));
+  });
+  // compile every shader (all passes) before the clock starts
+  if (RENDER && puppet) drawFrame(0);
 
   if (RENDER) return { motion, warnings, smoothing: smoothing() };
 
