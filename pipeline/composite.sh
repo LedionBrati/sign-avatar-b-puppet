@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Needs bash (Git Bash on Windows). Not on the runtime path.
 # Put the cut-out person (from remove-bg.mjs) on the dark wall.
 #
 # Usage:

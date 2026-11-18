@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Needs bash (Git Bash on Windows). Not on the runtime path.
 # Extract -> clean -> report for the 4 How2Sign reference clips into out/motion/.
 # Usage (from the repo root or anywhere): bash motion/run_how2sign.sh [clip ...]
 # An existing .raw.json is reused (extraction is the slow step); FORCE=1 re-extracts.

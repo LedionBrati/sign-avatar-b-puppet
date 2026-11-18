@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Needs bash (Git Bash on Windows). Not on the runtime path.
 # Build the two shareable videos from the avatar video, the real signer clip
 # and the layers from render-layers.mjs.
 #
