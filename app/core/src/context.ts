@@ -1,24 +1,12 @@
 // Sign -> voice without a model call: pick, per sign, which of the recognizer's top guesses to use so the whole run
 // makes the most sense, with an optional tiny language-model prior (an add-k bigram over sign labels, bigram()).
-// Without a prior every sign keeps its most confident guess. Mirror of app/recognizer/context.py (same sentences, same
-// numbers; a shared fixture test keeps them equal: context.py uses bigram(DEMO_SENTENCES), the TS test passes it).
+// Without a prior every sign keeps its most confident guess. Mirror of app/recognizer/context.py (same numbers;
+// a shared fixture test keeps the picks equal).
 //
 // score(combination) = sum_i log(confidence_i) + LM_WEIGHT * sum_i log P(label_i | label_{i-1})   (with <s> and </s>)
 // Exact over the top TOP_K guesses per sign (Viterbi). A guess the signer fixed from the chips is the only option.
 // The server's sentence model (/api/compose) does the same with real English knowledge; this is the offline fallback,
-// and what the recognizer evals use to simulate compose (eval_generic.py).
-
-/** Short sentences over the closed DEMO_SIGNS vocabulary (api.ts), as sign labels in signing order (ASL order: WH-sign
- *  last). Not a default: pass {lm: bigram(DEMO_SENTENCES)} to use them as the prior. */
-export const DEMO_SENTENCES: readonly string[] = [
-  "HELLO", "HELLO NICE MEET YOU", "HELLO ME NAME", "HELLO YOU FINE", "HELLO HAPPY MEET YOU", "NICE MEET YOU",
-  "NICE MEET YOU BYE", "HAPPY MEET YOU", "YOU NAME", "ME NAME", "THANK_YOU", "THANK_YOU BYE", "THANK_YOU HELP",
-  "YES", "YES PLEASE", "YES ME FINE", "YES ME HUNGRY", "YES THANK_YOU", "NO", "NO THANK_YOU", "NO ME FINE", "ME FINE",
-  "ME FINE THANK_YOU", "ME HAPPY", "ME HUNGRY", "ME SICK", "ME SORRY", "SORRY", "SORRY ME SICK", "WATER PLEASE",
-  "ME WATER PLEASE", "YOU WATER", "YOU HUNGRY", "YOU SICK", "YOU FINE", "YOU HAPPY", "HELP PLEASE", "HELP ME PLEASE",
-  "PLEASE HELP ME", "HOME WHERE", "YOU HOME WHERE", "WATER WHERE", "ME HOME", "BYE", "BYE NICE MEET YOU",
-  "ME HUNGRY WATER PLEASE", "ME SICK HELP PLEASE", "SORRY ME HOME",
-];
+// and what the recognizer evals use to simulate compose (app/recognizer/eval/eval_generic.py).
 
 export const CONTEXT = { topK: 3, lmWeight: 0.5, addK: 0.5 } as const;
 

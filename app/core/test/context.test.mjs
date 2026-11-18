@@ -1,16 +1,17 @@
 // app/core/src/context.ts picks exactly like app/recognizer/context.py on the shared fixture
-// (written by: app/recognizer/.venv/Scripts/python app/recognizer/tests/test_context.py --write).
+// (written by: cd app/recognizer && uv run python tests/test_context.py --write).
 //   node --experimental-strip-types --test app/core/test/*.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DEMO_SENTENCES, bigram, contextLabels, contextPick } from "../src/context.ts";
+import { bigram, contextLabels, contextPick } from "../src/context.ts";
 
 const fx = JSON.parse(readFileSync(new URL("./fixtures/context-fixture.json", import.meta.url), "utf8"));
-const lm = bigram(DEMO_SENTENCES);   // the prior context.py uses by default
+// a tiny prior where "ME HUNGRY" happens and "ME BYE" never does
+const lm = bigram(["ME HUNGRY", "ME FINE", "YOU HUNGRY", "BYE", "THANK_YOU BYE"]);
 
 test("same picks as context.py on the fixture", () => {
-  for (const c of fx) assert.deepEqual(contextPick(c.signs, { lm }), c.picked);
+  for (const c of fx) assert.deepEqual(contextPick(c.signs), c.picked);
 });
 
 test("a sentence prior settles a close call, a sure guess stands; no prior keeps the top guess", () => {

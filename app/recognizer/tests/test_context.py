@@ -1,6 +1,6 @@
 """context.py (the offline compose pick) == app/core/src/context.ts: same numbers and picks.
 
-    python tests/test_context.py --write     # regenerate app/core/test/fixtures/context-fixture.json
+    uv run python tests/test_context.py --write     # regenerate app/core/test/fixtures/context-fixture.json
 """
 import json
 import random
@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-import context as C
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # run directly as well as under pytest
+import context as C  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 TS = ROOT / "app" / "core" / "src" / "context.ts"
