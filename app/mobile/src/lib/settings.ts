@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import { DEFAULT_PORT } from "@flux/core";
+import { DEFAULT_PORT, trimBase } from "@flux/core";
 
 const KEY = "flux.serverUrl";
 export const PLACEHOLDER = `http://192.168.x.x:${DEFAULT_PORT}`;
@@ -26,7 +26,7 @@ export function detectServerUrl(): string | null {
 }
 
 export const normalizeUrl = (u: string) => {
-  const t = u.trim().replace(/\/+$/, "");
+  const t = trimBase(u.trim());
   if (!t) return "";
   return /^https?:\/\//i.test(t) ? t : `http://${t}`;
 };

@@ -1,4 +1,5 @@
 // The gear menu: card size (S / M / L), the server URL, "Always use the 3D signer".
+import { trimBase } from "@flux/core";
 import { setSettings, type Size } from "@/lib/settings";
 import { always3d, form, gear, sizeSeg, urlIn } from "./dom";
 import { applySize, fitStage } from "./frame";
@@ -47,7 +48,7 @@ export function initMenu() {
   always3d.addEventListener("change", () => { s.always3d = always3d.checked; setSettings({ always3d: always3d.checked }); });
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const v = urlIn.value.trim().replace(/\/+$/, "");
+    const v = trimBase(urlIn.value.trim());
     if (!/^https?:\/\/\S+$/i.test(v)) { urlIn.setCustomValidity("http://host:port"); urlIn.reportValidity(); return; }
     urlIn.setCustomValidity("");
     setServer(v);

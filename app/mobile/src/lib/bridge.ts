@@ -4,7 +4,7 @@
 //   {type:"speak", text}     the user tapped Speak in the page (spoken with expo-speech)
 // plus {type:"env"} from our own injected script (is the page a secure context with getUserMedia?).
 import { Platform } from "react-native";
-import { ROUTES } from "@flux/core";
+import { ROUTES, trimBase, withTimeout } from "@flux/core";
 
 export type BridgeMsg =
   | { type: "sentence"; text: string }
@@ -38,7 +38,7 @@ export function signPageUrl(serverUrl: string): string {
     const o = new URLSearchParams(window.location.search).get("sign");
     if (o) return o;
   }
-  return `${serverUrl.replace(/\/+$/, "")}${ROUTES.webApp}#/sign?embed=1`;
+  return `${trimBase(serverUrl)}${ROUTES.webApp}#/sign?embed=1`;
 }
 
 /**
@@ -59,24 +59,23 @@ export type FrameError = { kind: "unreachable" | "not-served" | "page"; detail?:
 /** Quick check before loading the page, so a dead server or a missing /app/ gives a friendly screen. */
 export async function preflight(pageUrl: string, timeoutMs = 6000): Promise<FrameError | null> {
   const url = pageUrl.split("#")[0]!;
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    if (Platform.OS === "web") {
-      // Cross-origin from the preview: an opaque response still proves the server answers.
-      try {
-        const r = await fetch(url, { signal: ctl.signal });
-        return r.ok ? null : { kind: "not-served", detail: `HTTP ${r.status}` };
-      } catch {
-        await fetch(url, { mode: "no-cors", signal: ctl.signal });
-        return null;
+    // One timeout for the whole check (both fetches on web).
+    return await withTimeout(timeoutMs, null, async (signal): Promise<FrameError | null> => {
+      if (Platform.OS === "web") {
+        // Cross-origin from the preview: an opaque response still proves the server answers.
+        try {
+          const r = await fetch(url, { signal });
+          return r.ok ? null : { kind: "not-served", detail: `HTTP ${r.status}` };
+        } catch {
+          await fetch(url, { mode: "no-cors", signal });
+          return null;
+        }
       }
-    }
-    const r = await fetch(url, { signal: ctl.signal });
-    return r.ok ? null : { kind: "not-served", detail: `HTTP ${r.status}` };
+      const r = await fetch(url, { signal });
+      return r.ok ? null : { kind: "not-served", detail: `HTTP ${r.status}` };
+    });
   } catch (e) {
     return { kind: "unreachable", detail: e instanceof Error ? e.message : String(e) };
-  } finally {
-    clearTimeout(t);
   }
 }

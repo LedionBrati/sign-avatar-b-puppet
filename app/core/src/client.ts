@@ -8,19 +8,31 @@ export class SignApiError extends Error {
   }
 }
 
+/** A server base URL without trailing slashes ("http://host:8787/" -> "http://host:8787"). */
+export const trimBase = (url: string) => url.replace(/\/+$/, "");
+
+/** Run `f` with a signal that aborts after timeoutMs, or with the caller's own signal instead (no timeout then). */
+export async function withTimeout<T>(timeoutMs: number, signal: AbortSignal | null | undefined, f: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await f(signal ?? ctrl.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Works in browsers, the extension and React Native (all have fetch + AbortController). */
 export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { timeoutMs?: number } = {}) {
-  const base = baseUrl.replace(/\/$/, "");
+  const base = trimBase(baseUrl);
   const abs = (url: string) => (/^https?:/i.test(url) ? url : base + (url.startsWith("/") ? url : `/${url}`));
 
-  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
+  function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    return withTimeout(timeoutMs, init.signal, async (signal) => {
       const res = await fetch(base + path, {
         ...init,
         headers: { "content-type": "application/json", ...(init.headers ?? {}) },
-        signal: init.signal ?? ctrl.signal,
+        signal,
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
@@ -28,9 +40,7 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
         throw new SignApiError(res.status, err?.code ?? "http_error", err?.message ?? `HTTP ${res.status}`);
       }
       return body as T;
-    } finally {
-      clearTimeout(timer);
-    }
+    });
   }
 
   return {
@@ -79,20 +89,16 @@ export function createSignClient(baseUrl: string, { timeoutMs = 15_000 }: { time
     /** Sign -> voice: does this run of signs make sense yet, and as what English sentence. 503 compose_off without a key. */
     compose: (req: ComposeRequest, signal?: AbortSignal) => request<ComposeResponse>(ROUTES.compose, { method: "POST", body: JSON.stringify(req), signal }),
     /** Sign -> voice: the sentence as natural speech (audio/mpeg Blob). 503 speak_off without a key: use the device voice. */
-    async speak(text: string, { voice, signal }: { voice?: string; signal?: AbortSignal } = {}): Promise<Blob> {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    speak(text: string, { voice, signal }: { voice?: string; signal?: AbortSignal } = {}): Promise<Blob> {
       const body: SpeakRequest = { text, ...(voice ? { voice } : {}) };
-      try {
-        const res = await fetch(base + ROUTES.speak, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: signal ?? ctrl.signal });
+      return withTimeout(timeoutMs, signal, async (sig) => {
+        const res = await fetch(base + ROUTES.speak, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: sig });
         if (!res.ok) {
           const err = ((await res.json().catch(() => null)) as ApiError | null)?.error;
           throw new SignApiError(res.status, err?.code ?? "http_error", err?.message ?? `HTTP ${res.status}`);
         }
         return await res.blob();
-      } finally {
-        clearTimeout(timer);
-      }
+      });
     },
     /** Speech -> text for one short audio chunk (MediaRecorder webm/opus or mp4/aac). text is "" for silence. */
     transcribe(audio: Blob, { lang = "en", ms, signal }: { lang?: string; ms?: number; signal?: AbortSignal } = {}): Promise<TranscribeResponse> {
