@@ -1,9 +1,13 @@
-import { FRAMES_HEADER, ROUTES, type ApiError, type ComposeRequest, type ComposeResponse, type EnrollInfo, type HealthResponse, type RecognizeMode, type RecognizeOptions, type RecognizeResponse, type SignRequest, type SignResponse, type SpeakRequest, type TranscribeResponse, type VocabResponse } from "./api";
-import { LEGACY_POINTS } from "./landmarks";
+import { FRAMES_HEADER, ROUTES, type ApiError, type ComposeRequest, type ComposeResponse, type EnrollInfo, type HealthResponse, type RecognizeMode, type RecognizeOptions, type RecognizeResponse, type SignRequest, type SignResponse, type SpeakRequest, type TranscribeResponse, type VocabResponse } from "./api.ts";
+import { LEGACY_POINTS } from "./landmarks.ts";
 
 export class SignApiError extends Error {
-  constructor(public status: number, public code: string, message: string) {
+  status: number;
+  code: string;
+  constructor(status: number, code: string, message: string) {
     super(message);
+    this.status = status;
+    this.code = code;
     this.name = "SignApiError";
   }
 }
