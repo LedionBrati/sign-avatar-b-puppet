@@ -2,8 +2,8 @@
 
 Sources (all gitignored, WLASL is research use only; landmarks are biometric and never printed or committed):
 - out/wlasl-demo/ (fetch_wlasl_demo.py): extra instances downloaded from WLASL_v0.3.json, landmarks/*.npy
-- the motion library (MOTION_DIR, default out/motion/wlasl or the main checkout's): *.raw.json, one per gloss,
-  with signer ids from the WLASL library index (SIGN_DICTIONARY or --index)
+- the motion library (MOTION_DIR, default <repo>/out/motion/wlasl): *.raw.json, one per gloss, with signer ids from
+  the WLASL library index (SIGN_DICTIONARY=<path-to>/index.json; optional, without it signer ids come from the motion)
 Other (out-of-vocabulary) glosses from the motion library are the open-set negatives.
 """
 
@@ -26,15 +26,12 @@ DEMO_DIR = Path(os.environ.get("DEMO_DIR") or REPO / "out" / "wlasl-demo")  # mo
 def _motion_dir() -> Path:
     if os.environ.get("MOTION_DIR"):
         return Path(os.environ["MOTION_DIR"])
-    p = REPO / "out" / "motion" / "wlasl"
-    return p if p.exists() else Path.home() / "Desktop" / "sign-avatar-b-puppet" / "out" / "motion" / "wlasl"
+    return REPO / "out" / "motion" / "wlasl"
 
 
 def _index_path() -> Path | None:
-    if os.environ.get("SIGN_DICTIONARY"):
-        return Path(os.environ["SIGN_DICTIONARY"])
-    p = Path.home() / "Desktop" / "hackathon-archive" / "ai-summit" / "data" / "signs" / "index.json"
-    return p if p.exists() else None
+    p = Path(os.environ["SIGN_DICTIONARY"]) if os.environ.get("SIGN_DICTIONARY") else None
+    return p if p and p.exists() else None
 
 
 # WLASL gloss -> demo label

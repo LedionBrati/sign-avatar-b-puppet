@@ -7,7 +7,7 @@
 > Nothing below says whether any sign is *linguistically* right. The numbers only say where the tracker is missing, jumpy or inconsistent. Only a Deaf or fluent signer can judge the signs.
 
 ## Setup
-- **Inputs:** `references/how2sign/{judy,travis,dave,floyd}.mp4` (540x720, 24 fps, 142 / 147 / 202 / 277 frames; How2Sign CC BY-NC 4.0; signers 3, 3, 5, 5). Plus the first 20 signs of the WLASL library in `ai-summit/data/signs/` (25 fps, 414p to 720p, read in place, never copied).
+- **Inputs:** `references/how2sign/{judy,travis,dave,floyd}.mp4` (540x720, 24 fps, 142 / 147 / 202 / 277 frames; How2Sign CC BY-NC 4.0; signers 3, 3, 5, 5). Plus the first 20 signs of the WLASL library in `<signs>/` (25 fps, 414p to 720p, read in place, never copied).
 - **Tools:** `mediapipe` 1.2.3 `HolisticLandmarker` (`holistic_landmarker.task` float16), VIDEO running mode, every frame, face blendshapes on. Python 3.13 via `uv`. CPU only: Intel i7-1355U (10 cores / 12 threads), no GPU. Free, no API calls.
 - **Cleanup:** One Euro filter (hands `min_cutoff 1.0 Hz, beta 30, d_cutoff 2.0 Hz`; pose `1.0 / 10 / 2.0`; face `1.0 / 5 / 2.0`), restarted after every gap; gaps of up to 4 frames interpolated and listed in `cleanup.filled_frames`; longer gaps stay `null`.
 - **Commands** (from `motion/`):

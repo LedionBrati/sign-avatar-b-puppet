@@ -24,7 +24,10 @@ import numpy as np
 
 REPO = Path(__file__).resolve().parents[3]
 OUT = Path(os.environ.get("DEMO_DIR") or REPO / "out" / "wlasl-demo")
-LIB = Path(os.environ.get("SIGN_LIB") or Path.home() / "Desktop" / "hackathon-archive" / "ai-summit" / "data" / "signs")  # holds index.json + videos/
+# WLASL library folder (index.json + videos/): SIGN_LIB, else the folder of SIGN_DICTIONARY; optional (adds the
+# library clips of the demo signs to out/wlasl-demo's).
+_LIB = os.environ.get("SIGN_LIB") or (str(Path(os.environ["SIGN_DICTIONARY"]).parent) if os.environ.get("SIGN_DICTIONARY") else "")
+LIB = Path(_LIB) if _LIB else None
 BODY = {0: 0, 5: 11, 6: 12, 7: 13, 8: 14, 9: 15, 10: 16}
 
 
@@ -48,7 +51,7 @@ def videos() -> list[tuple[str, Path, int, int]]:
     if idx.exists():
         for e in json.loads(idx.read_text()):
             out.append((Path(e["file"]).stem, OUT / "videos" / e["file"], e["frame_start"], e["frame_end"], str(e["signer"])))
-    lib = json.loads((LIB / "index.json").read_text()) if (LIB / "index.json").exists() else {}
+    lib = json.loads((LIB / "index.json").read_text()) if LIB and (LIB / "index.json").exists() else {}
     for g in ("hello yes no please water hungry sick home help name nice meet you me i where fine happy bye goodbye sorry".split() + ["thank you"]):
         if g in lib:
             p = LIB / lib[g]["file"]

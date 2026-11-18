@@ -5,7 +5,7 @@
 **Why it matters:** The race demo needs text -> video in well under a second. An API call costs time and money, and it fails when the network is down. A local translator also makes the "can't sign this yet" list explicit: it never invents a sign.
 
 ## Setup
-- Inputs: the 9-sign clip set `sign-avatar-b-puppet/out/realtime/clips` (HELLO MY NAME THANK_YOU SEE YOU LATER WHERE HURT) and the full dictionary `ai-summit/data/signs/index.json` (1,945 WLASL glosses, motion_id = uppercase, non-alphanumerics -> `_`).
+- Inputs: the 9-sign clip set `out/realtime/clips` (HELLO MY NAME THANK_YOU SEE YOU LATER WHERE HURT) and the full dictionary `<signs>/index.json` (1,945 WLASL glosses, motion_id = uppercase, non-alphanumerics -> `_`).
 - Code: `translate/` (plain ESM, Node + browser core: `index.mjs`, `rules.mjs`, `semantic.mjs`; Node helpers `node.mjs`; `cli.mjs`), `pipeline/speak.mjs`, and `pipeline/lib/clips.mjs` (the `say` join logic, now shared with `sign-clips.mjs say`).
 - Layers, cheapest first:
   1. Rules: contractions, longest phrase first, lemmas (irregular table plus -s/-es/-ies/-ing/-ed/-est), a curated synonym table and a drop list (a, an, the, am/is/are/was/were/be, do/does/did, to, of, at, it, fillers).
@@ -18,7 +18,7 @@
   cd translate && npm install && npm test                 # 59 tests, all pass (rules-only: 48 pass, 11 skipped)
   node translate/cli.mjs "Where does it hurt?" --warm
   node translate/cli.mjs "I am exhausted." --vocab dictionary --offline --warm
-  C=../sign-avatar-b-puppet/out/realtime/clips
+  C=out/realtime/clips
   node pipeline/speak.mjs "Hello, my name is Maria." --clips $C --out out/speak/hello-my-name-maria.mp4 --partial
   node pipeline/speak.mjs "Thank you, see you later." --clips $C --out out/speak/thank-you-see-you-later.mp4
   node pipeline/speak.mjs "Where does it hurt?" --clips $C --out out/speak/where-does-it-hurt.mp4

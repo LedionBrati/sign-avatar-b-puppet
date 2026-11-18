@@ -12,7 +12,6 @@ Inputs (flag or env; nothing machine-specific is assumed):
     --motion / MOTION_DIR       extracted WLASL motion (*.raw.json), default <repo>/out/motion/wlasl
     --index  / SIGN_DICTIONARY  the WLASL library index.json (required to build)
     CLIPS_DIR=dirA,dirB         realtime clip sets whose manifests add glosses, default <repo>/out/realtime/clips*
-                                (a worktree without them falls back to the main checkout ../sign-avatar-b-puppet)
 """
 
 from __future__ import annotations
@@ -39,8 +38,6 @@ def clip_dirs() -> list[Path]:
     if os.environ.get("CLIPS_DIR"):
         return [Path(d.strip()) for d in re.split(r"[,;]", os.environ["CLIPS_DIR"]) if d.strip()]
     realtime = REPO / "out" / "realtime"
-    if not realtime.exists():
-        realtime = REPO.parent / "sign-avatar-b-puppet" / "out" / "realtime"
     return [realtime / d for d in ("clips", "clips-demo", "clips-phrases", "clips-mass")]
 
 
