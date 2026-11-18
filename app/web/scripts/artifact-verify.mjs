@@ -8,12 +8,13 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
+import { findChrome } from "../../../shared/find-chrome.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../../out/artifact-app");
 const shots = path.resolve(process.argv[2] ?? path.join(root, "../artifact-shots"));
 fs.mkdirSync(shots, { recursive: true });
-const CHROME = process.env.CHROME ?? ["C:/Program Files/Google/Chrome/Application/chrome.exe", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome"].find((p) => fs.existsSync(p));
+const CHROME = findChrome();
 
 const CSP = "default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; " +
   "font-src https://fonts.gstatic.com; media-src 'self' blob: data:; connect-src 'self'; img-src 'self' data: blob:; worker-src 'none'; manifest-src 'none'";

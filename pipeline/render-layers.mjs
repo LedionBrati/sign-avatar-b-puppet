@@ -12,12 +12,13 @@
 //   vtopA.png  1080x1920 transparent: "AI avatar" chip + white frame for the small window
 //   vtopB.png  1080x1920 transparent: "Real signer" chip on top of the small window
 //
-// Chrome path: set CHROME=/path/to/chrome if it is not the default macOS one.
+// Chrome path: set CHROME=/path/to/chrome if it is not at a standard location (shared/find-chrome.mjs).
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, mkdtempSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { findChrome } from "../shared/find-chrome.mjs";
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
@@ -33,7 +34,7 @@ const outDir = resolve(arg("out-dir"));
 const credit = arg("credit", "Signer clip: How2Sign (Duarte et al., CVPR 2021), CC BY-NC 4.0. Avatar is AI-generated with fal H3 Max Recast. Background changed.");
 const left = arg("left", "Real ASL signer");
 const right = arg("right", "AI avatar");
-const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chrome = findChrome();
 
 mkdirSync(outDir, { recursive: true });
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/'/g, "’");

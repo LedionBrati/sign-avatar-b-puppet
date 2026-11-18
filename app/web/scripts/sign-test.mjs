@@ -8,14 +8,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import puppeteer from "puppeteer-core";
+import { findChrome } from "../../../shared/find-chrome.mjs";
 
 const APP = process.env.APP_URL ?? "http://localhost:5173";
 const OUT = process.env.OUT ?? path.resolve(import.meta.dirname, "../docs");
-const CHROME = process.env.CHROME ?? [
-  "C:/Program Files/Google/Chrome/Application/chrome.exe",
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/usr/bin/google-chrome",
-].find((p) => fs.existsSync(p));
+const CHROME = findChrome();
 const clips = (process.env.CLIPS ?? "").split(",").filter(Boolean).map((s) => { const [label, file] = s.split("="); return { label, file: path.resolve(file) }; });
 if (!clips.length) { console.error('set CLIPS="label=file.y4m,..."'); process.exit(2); }
 const shots = process.env.SHOTS !== "0";

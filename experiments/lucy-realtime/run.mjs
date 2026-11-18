@@ -2,6 +2,7 @@
 // Usage: node run.mjs --model lucy-2-6 --clip judy [--loops 2] [--expand 1]
 // Needs token-server.mjs running on :8799. Recordings land in ./out/ via the page's /save calls.
 import puppeteer from "puppeteer-core";
+import { findChrome } from "../../shared/find-chrome.mjs";
 
 const arg = (k, d) => {
   const i = process.argv.indexOf(`--${k}`);
@@ -20,7 +21,7 @@ const params = new URLSearchParams({
 for (const k of ["prompt", "dry", "rec", "ref", "codec"]) if (arg(k)) params.set(k, arg(k));
 
 const browser = await puppeteer.launch({
-  executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  executablePath: findChrome(),
   headless: true,
   args: [
     "--use-fake-ui-for-media-stream",
