@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Flux local API: text -> playlist of pre-rendered sign clips (contract: app/core/src/api.ts).",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18"
   },
   "main": "index.mjs",
   "scripts": {
