@@ -4,7 +4,7 @@
   "assets": [
     {
       "name": "core",
-      "description": "sign clips, the 3D signer avatar, the recognizer's WLASL template bank",
+      "description": "sign clips, the 3D signer avatar, the recognizer's WLASL templates and sign models",
       "file": "flux-assets.tar.gz",
       "paths": [
         "out/realtime/clips",
@@ -13,10 +13,12 @@
         "out/realtime/clips-v2-sentences",
         "out/realtime/neutral.clean.json",
         "puppet/models/signer.glb",
-        "app/recognizer/models/templates.npz"
+        "app/recognizer/models/templates.npz",
+        "app/recognizer/models/demo_model.npz",
+        "app/recognizer/models/demo_generic.npz"
       ],
-      "sha256": "00a21222d0f7c04e419d997190489c34cd40beda369f881926c4717a8fe802d0",
-      "bytes": 203683817
+      "sha256": "fd4d1d9f49006224092a775a7013ab8c1558063471cd368632115019a1a24f1f",
+      "bytes": 205898134
     },
     {
       "name": "motion",
@@ -32,8 +34,8 @@
         "summary.csv",
         "**/*.v2.json"
       ],
-      "sha256": null,
-      "bytes": 0
+      "sha256": "b5a3742296315604fb8de5680b657825b52e27a0064566282c4b9810e45a2b3d",
+      "bytes": 373242019
     }
   ]
 }
