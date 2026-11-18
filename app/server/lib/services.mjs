@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { createAgent } from "./agent.mjs";
 import { createComposer } from "./compose.mjs";
 import { onDemandConfig } from "./config.mjs";
+import { NO_FFMPEG, hasTool } from "./ffmpeg.mjs";
 import { loadFalKey } from "./secrets.mjs";
 import { speakerFromEnv } from "./speak.mjs";
 import { transcriberFromEnv } from "./transcribe.mjs";
@@ -52,5 +53,8 @@ export function onDemandFromEnv(opt, cfg, env = process.env) {
   if (opt && typeof opt === "object") return { wanted: true, enabled: true, ...opt };
   if (!cfg.ondemandInTests) return { wanted: false, enabled: false, reason: "tests" };
   const key = loadFalKey(env);
-  return onDemandConfig(env, { falKey: key.key, keyError: key.error });
+  const od = onDemandConfig(env, { falKey: key.key, keyError: key.error });
+  // The batches cut and probe with ffmpeg / ffprobe: without them every batch would fail after the paid call.
+  if (od.enabled && !(hasTool("ffmpeg") && hasTool("ffprobe"))) Object.assign(od, { enabled: false, reason: `${NO_FFMPEG}; generate-on-use needs ffmpeg and ffprobe` });
+  return od;
 }

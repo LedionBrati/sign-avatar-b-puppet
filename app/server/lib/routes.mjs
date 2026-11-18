@@ -7,6 +7,7 @@ import { ROUTES } from "../../core/src/api.ts";
 import { LEGACY_POINTS, MAX_FRAMES } from "../../core/src/landmarks.ts";
 import { joinClips } from "../../../pipeline/lib/clips.mjs";
 import { parseContext, parseSigns } from "./compose.mjs";
+import { NO_FFMPEG, hasTool } from "./ffmpeg.mjs";
 import { HttpError, cors, json, only, readJson, readRaw } from "./http.mjs";
 import { parseSpeak } from "./speak.mjs";
 import { MIME, sendFile, sendMotion, sendWebApp } from "./static.mjs";
@@ -193,6 +194,7 @@ export function createRouter({ cfg, lib, pipeline, motions, ondemand, ondemandWa
   // GET /api/sign.mp4: the playlist joined into one mp4 with ffmpeg stream copy (pipeline/lib/clips.mjs joinClips).
   function sendJoined(req, res, result) {
     if (!result.playlist.length) throw new HttpError(422, "nothing_to_sign", `nothing in this text has a clip (unsupported: ${result.unsupported.join(", ") || "none"})`);
+    if (!hasTool("ffmpeg")) throw new HttpError(503, "no_ffmpeg", `${NO_FFMPEG}; /api/sign.mp4 joins the clips with it`);
     const ids = result.playlist.map((p, i) => `${p.motion_id}#${i}`);
     const byId = new Map([...lib.clips.signs.values(), ...lib.clips.letters.values()].map((c) => [c.motion_id, c]));
     const manifest = Object.fromEntries(result.playlist.map((p, i) => [ids[i], { file: byId.get(p.motion_id).path, seconds: p.duration_s }]));

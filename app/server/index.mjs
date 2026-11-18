@@ -1,6 +1,7 @@
 // Flux local API (contract: app/core/src/api.ts). Plain node:http, no framework.
 //
-//   node app/server/index.mjs            PORT=8787, CLIPS_DIR=dir[,dir2,...], SEMANTIC=0 to disable embeddings
+//   node app/server/index.mjs            HOST=127.0.0.1 (0.0.0.0 for phones on the LAN), PORT=8787,
+//                                        CLIPS_DIR=dir[,dir2,...], SEMANTIC=0 to disable embeddings
 //                                        (out/realtime/clips-v2-{demo,sentences,library} are added in front; CLIPS_V2=0 off)
 //                                        OPENAI_API_KEY / OPENAI_API_KEY_FILE enable the agent layer (AGENT=off disables)
 //                                        ONDEMAND=on + FAL_KEY_FILE + MOTION_DIRS: generate missing clips on use (lib/ondemand.mjs)
@@ -38,6 +39,7 @@ import { pathToFileURL } from "node:url";
 import { createNodeMatcher } from "../../translate/node.mjs";
 import { parseClipsDirs, withV2Clips } from "./lib/clips.mjs";
 import { motionConfig, serverConfig } from "./lib/config.mjs";
+import { hasTool } from "./lib/ffmpeg.mjs";
 import { HttpError, json } from "./lib/http.mjs";
 import { createMotionLibrary } from "./lib/motions.mjs";
 import { createOnDemand, prepareClipsDir } from "./lib/ondemand.mjs";
@@ -117,7 +119,9 @@ export function createApp(o = {}) {
     reloadClips: lib.reload, recognizerUrl: cfg.recognizerUrl, webDist: cfg.webDist };
 }
 
-export function lanUrls(port) {
+/** URLs to print for a server listening on host: every IPv4 address for 0.0.0.0, else just that host. */
+export function lanUrls(port, host = "0.0.0.0") {
+  if (host !== "0.0.0.0" && host !== "::") return [`http://${host.includes(":") ? `[${host}]` : host}:${port}`];
   const urls = [`http://localhost:${port}`];
   for (const list of Object.values(networkInterfaces())) {
     for (const a of list ?? []) if (a.family === "IPv4" && !a.internal) urls.push(`http://${a.address}:${port}`);
@@ -126,18 +130,20 @@ export function lanUrls(port) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { port } = serverConfig();
+  const { port, host } = serverConfig();
   const app = createApp();
-  app.server.listen(port, "0.0.0.0", () => {
-    const urls = lanUrls(port);
+  app.server.listen(port, host, () => {
+    const urls = lanUrls(port, host);
     console.log(`Flux server: ${app.clips.signs.size} signs from ${app.clips.dirs.map((d) => `${d.dir} (${d.signs})`).join(", ")}`);
     for (const u of urls) console.log(`  ${u}`);
+    if (urls.length === 1) console.log(`  (this machine only; HOST=0.0.0.0 to reach it from phones on the LAN)`);
     console.log(`semantic: ${app.state.semantic}`);
     console.log(`agent: ${app.state.agent}${app.agent?.model ? ` (${app.agent.model})` : ""}`);
     console.log(`ondemand: ${app.ondemand.enabled ? `on (${app.ondemand.clipsDir})` : "off"}`);
     console.log(`transcribe: ${app.transcriber?.model ?? "off"}`);
     console.log(`speak: ${app.speaker ? `${app.speaker.model} (${app.speaker.voice})` : "off"}`);
     console.log(`recognizer: ${app.recognizerUrl}`);
+    console.log(`ffmpeg: ${hasTool("ffmpeg") ? "ok" : "not on PATH (/api/sign.mp4 answers 503 no_ffmpeg)"}`);
     console.log(`web app: ${existsSync(join(app.webDist, "index.html")) ? `${urls.at(-1)}/app/` : `not built (${app.webDist})`}`);
   });
   app.server.on("error", (error) => { console.error(error.message); process.exit(1); });

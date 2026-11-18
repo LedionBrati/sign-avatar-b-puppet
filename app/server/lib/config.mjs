@@ -1,7 +1,7 @@
 // Every environment variable the server reads, with its default. createApp() options override them (tests).
 // Relative default paths are relative to the repo root (lib/paths.mjs).
 //
-//   PORT=8787                           listen port (all interfaces)
+//   PORT=8787  HOST=127.0.0.1           listen address; HOST=0.0.0.0 makes the server reachable from phones on the LAN
 //   RECOGNIZER_URL=http://127.0.0.1:8788   app/recognizer (sign -> voice)
 //   WEB_DIST=app/web/dist               the built web app served at /app/
 //   CLIPS_DIR=out/realtime/clips        clip dirs, comma separated (lib/clips.mjs); CLIPS_V2=0: no clips-v2-* in front
@@ -18,7 +18,7 @@
 //   ONDEMAND=on  FAL_KEY | FAL_KEY_FILE  FAL_DAILY_BUDGET_USD=20  ONDEMAND_MAX_QUEUE=30  ONDEMAND_MIN_HAND_PCT=80
 //     ONDEMAND_NEUTRAL=out/realtime/neutral.clean.json  ONDEMAND_AVATAR=assets/avatar/avatar-main.jpg
 //     PUPPET_RENDER=puppet/render.mjs  ONDEMAND_STATE_DIR=out/ondemand  ONDEMAND_CLIPS_DIR=out/realtime/clips-ondemand
-//                                       generate-on-use (onDemandConfig; also needs MOTION_DIRS)
+//                                       generate-on-use (onDemandConfig; also needs MOTION_DIRS, ffmpeg + ffprobe)
 //   SIGN_CLIPS_DIR, SIGN_DICTIONARY     translate/node.mjs (the EVAL_VOCAB dictionary)
 //   Under node --test nothing paid or slow starts from the environment; AGENT_IN_TESTS=1 (OpenAI services),
 //   ONDEMAND_IN_TESTS=1 and MOTION_IN_TESTS=1 opt back in.
@@ -28,6 +28,7 @@ import { resolve } from "node:path";
 import { DEFAULT_PORT } from "../../core/src/api.ts";
 import { fromRepo, list } from "./paths.mjs";
 
+export const DEFAULT_HOST = "127.0.0.1";
 export const DEFAULT_RECOGNIZER_URL = "http://127.0.0.1:8788";
 const offSwitch = (v) => v === "off" || v === "0";
 
@@ -35,6 +36,7 @@ const offSwitch = (v) => v === "off" || v === "0";
 export function serverConfig(o = {}, env = process.env) {
   return {
     port: Number(env.PORT ?? DEFAULT_PORT),
+    host: env.HOST || DEFAULT_HOST,
     recognizerUrl: (o.recognizerUrl ?? env.RECOGNIZER_URL ?? DEFAULT_RECOGNIZER_URL).replace(/\/+$/, ""),
     webDist: resolve(o.webDist ?? env.WEB_DIST ?? fromRepo("app/web/dist")),
     evalVocab: o.evalVocab ?? env.EVAL_VOCAB,
