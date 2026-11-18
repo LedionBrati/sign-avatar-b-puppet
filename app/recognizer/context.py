@@ -1,8 +1,11 @@
 """Python mirror of app/core/src/context.ts: pick, per sign, which of the top guesses to use so the whole run makes the
-most sense, with an add-k bigram prior over the demo sentences. Same sentences and numbers (tests/test_context.py
-checks the TS source and a shared fixture), so eval/eval_generic.py measures what the web app does offline.
+most sense, with an add-k bigram prior over example sentences. Same numbers (tests/test_context.py checks the TS source
+and a shared fixture), so eval/eval_generic.py measures what the web app does offline.
 
 score(combination) = sum_i log(conf_i) + LM_WEIGHT * sum_i log P(label_i | label_{i-1})   (with <s> and </s>)
+
+No sentences are built in: the default prior is flat, so every sign keeps its top guess (a fixed one stays fixed).
+Pass lm=Bigram(sentences) for a prior (eval/eval_generic.py does, with eval/demo_data.DEMO_SENTENCES).
 """
 
 from __future__ import annotations
@@ -10,21 +13,12 @@ from __future__ import annotations
 import math
 from collections import Counter
 
-DEMO_SENTENCES = [
-    "HELLO", "HELLO NICE MEET YOU", "HELLO ME NAME", "HELLO YOU FINE", "HELLO HAPPY MEET YOU", "NICE MEET YOU",
-    "NICE MEET YOU BYE", "HAPPY MEET YOU", "YOU NAME", "ME NAME", "THANK_YOU", "THANK_YOU BYE", "THANK_YOU HELP",
-    "YES", "YES PLEASE", "YES ME FINE", "YES ME HUNGRY", "YES THANK_YOU", "NO", "NO THANK_YOU", "NO ME FINE", "ME FINE",
-    "ME FINE THANK_YOU", "ME HAPPY", "ME HUNGRY", "ME SICK", "ME SORRY", "SORRY", "SORRY ME SICK", "WATER PLEASE",
-    "ME WATER PLEASE", "YOU WATER", "YOU HUNGRY", "YOU SICK", "YOU FINE", "YOU HAPPY", "HELP PLEASE", "HELP ME PLEASE",
-    "PLEASE HELP ME", "HOME WHERE", "YOU HOME WHERE", "WATER WHERE", "ME HOME", "BYE", "BYE NICE MEET YOU",
-    "ME HUNGRY WATER PLEASE", "ME SICK HELP PLEASE", "SORRY ME HOME",
-]
 TOP_K, LM_WEIGHT, ADD_K = 3, 0.5, 0.5
 BOS, EOS = "<s>", "</s>"
 
 
 class Bigram:
-    def __init__(self, sentences=DEMO_SENTENCES, k: float = ADD_K):
+    def __init__(self, sentences=(), k: float = ADD_K):
         self.pair, self.ctx, vocab = Counter(), Counter(), {EOS}
         for s in sentences:
             w = [BOS, *s.split(), EOS]
@@ -38,7 +32,7 @@ class Bigram:
         return math.log((self.pair[(prev, nxt)] + self.k) / (self.ctx[prev] + self.k * self.v))
 
 
-DEFAULT_LM = Bigram()
+DEFAULT_LM = Bigram()  # flat: no sentences, so the top guess wins
 
 
 def pick(signs: list[dict], lm: Bigram | None = None, lm_weight: float = LM_WEIGHT, top_k: int = TOP_K) -> list[int]:

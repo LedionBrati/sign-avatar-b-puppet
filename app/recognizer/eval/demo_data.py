@@ -39,6 +39,17 @@ GLOSS_LABEL = {"hello": "HELLO", "yes": "YES", "no": "NO", "please": "PLEASE", "
                "hungry": "HUNGRY", "sick": "SICK", "home": "HOME", "help": "HELP", "name": "NAME", "nice": "NICE",
                "meet": "MEET", "you": "YOU", "me": "ME", "i": "ME", "where": "WHERE", "fine": "FINE", "happy": "HAPPY",
                "bye": "BYE", "goodbye": "BYE", "sorry": "SORRY"}
+# Example sentences over the demo vocabulary (sign labels in signing order, ASL order: WH-sign last). Eval data only:
+# eval_generic.py builds its pseudo-sentences from them and fits the context.py bigram prior on them.
+DEMO_SENTENCES = [
+    "HELLO", "HELLO NICE MEET YOU", "HELLO ME NAME", "HELLO YOU FINE", "HELLO HAPPY MEET YOU", "NICE MEET YOU",
+    "NICE MEET YOU BYE", "HAPPY MEET YOU", "YOU NAME", "ME NAME", "THANK_YOU", "THANK_YOU BYE", "THANK_YOU HELP",
+    "YES", "YES PLEASE", "YES ME FINE", "YES ME HUNGRY", "YES THANK_YOU", "NO", "NO THANK_YOU", "NO ME FINE", "ME FINE",
+    "ME FINE THANK_YOU", "ME HAPPY", "ME HUNGRY", "ME SICK", "ME SORRY", "SORRY", "SORRY ME SICK", "WATER PLEASE",
+    "ME WATER PLEASE", "YOU WATER", "YOU HUNGRY", "YOU SICK", "YOU FINE", "YOU HAPPY", "HELP PLEASE", "HELP ME PLEASE",
+    "PLEASE HELP ME", "HOME WHERE", "YOU HOME WHERE", "WATER WHERE", "ME HOME", "BYE", "BYE NICE MEET YOU",
+    "ME HUNGRY WATER PLEASE", "ME SICK HELP PLEASE", "SORRY ME HOME",
+]
 # Related glosses kept out of the negatives (same or very close sign to a demo sign).
 NOT_NEGATIVE = set(GLOSS_LABEL) | {"hi", "thanks", "my", "mine", "your", "welcome", "excuse", "apologize", "drink",
                                    "house", "ill", "disease", "good", "fine", "glad", "cheerful", "introduce"}
