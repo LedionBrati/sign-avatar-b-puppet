@@ -7,6 +7,15 @@ export default defineConfig({
   // The instant 3D signer (puppet/src/player.ts + three.js) is bundled from source as a lazy chunk of the card
   // (an extension page, so WebGL works); its avatar (signer.glb) and motions come from the server.
   alias: { "@flux/core": resolve(__dirname, "../core/src/index.ts"), "@flux/signer-player": resolve(__dirname, "../../puppet/src/player.ts") },
+  hooks: {
+    // The typecheck (tsc --noEmit) sees the player through its declaration instead: the puppet sources are not
+    // written for this project's strict flags (noUncheckedIndexedAccess, ...), and the card only needs its shape.
+    "prepare:tsconfig": (_wxt, { tsconfig }) => {
+      const paths: Record<string, string[]> = tsconfig.compilerOptions.paths;
+      paths["@flux/signer-player"] = ["../../core/src/signer-player.d.ts"];
+      delete paths["@flux/signer-player/*"];
+    },
+  },
   manifest: {
     name: "Flux",
     short_name: "Flux",
