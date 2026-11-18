@@ -19,7 +19,11 @@ uv run python server.py                  # http://127.0.0.1:8788, loads + warms 
 uv run pytest -q                         # 42 tests
 ```
 
-`RECOGNIZER_PORT` / `RECOGNIZER_HOST` (default `127.0.0.1`), `RECOGNIZER_MODELS` (models folder). `fetch_models.py --from DIR` copies files you already have (`gislr.tflite`/`islr.tflite`, `map.json`, `fs.tflite`, `fs_args.json`).
+Environment (all optional): `RECOGNIZER_HOST` (`127.0.0.1`), `RECOGNIZER_PORT` (`8788`), `RECOGNIZER_MODELS`
+(`app/recognizer/models`), `ENROLL_DIR` (`<repo>/out/enroll`), `TEMPLATES` (`on`; `off` = GISLR only), `KID_PRIOR`
+(`0.35`), `MOTION_MIN` (`0.025`), `REJECT_CONF` (`0.2`), `PERSONAL_REJECT` (`0.6`), `PERSONAL_DTW_FAR` (`1.0`),
+`PERSONAL_REJ_DTW` / `PERSONAL_REJ_T` (`0`, off), `RECOG_DEBUG=1` (log top labels per answer, never landmarks),
+`OPENBLAS_NUM_THREADS` / `OMP_NUM_THREADS` (`4` unless set). `fetch_models.py --from DIR` copies files you already have (`gislr.tflite`/`islr.tflite`, `map.json`, `fs.tflite`, `fs_args.json`).
 
 Everything at once from the repo root: `node app/start.mjs` (this service + the Node API on :8787).
 
