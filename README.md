@@ -58,7 +58,7 @@ npm start
 
 Open **http://localhost:8787/app/**. Type or say a sentence to see it signed; open **Sign** to sign to the camera.
 
-`npm run setup` installs every package, builds the web app, downloads the recognizer models (about 52 MB) and the runtime assets (about 205 MB: sign clips, the 3D signer, recognizer templates; see [Licences and data](#licences-and-data)), and creates `.env`. Re-running it is safe. Options: `--3d` adds the motion library for the instant 3D signer (large), `--ondemand` adds what making new signs with fal needs, `--extension` builds the Chrome extension, `--no-assets` skips the download.
+`npm run setup` installs every package, builds the web app, downloads the recognizer models (about 52 MB) and the runtime assets (about 240 MB: sign clips, the 3D signer, recognizer templates; see [Licences and data](#licences-and-data)), and creates `.env`. Re-running it is safe. Options: `--3d` adds the motion library for the instant 3D signer (large), `--ondemand` adds what making new signs with fal needs, `--extension` builds the Chrome extension, `--no-assets` skips the download.
 
 **3. Optional: an OpenAI key.** Without one, Flux needs no paid API: the browser's speech recognition and voice, plus the local translator and recognizer. Put `OPENAI_API_KEY=...` in `.env` to turn on server-side transcription (also needed for tab audio in the extension), natural sentences for sign to voice, the natural voice and the planning layer.
 
