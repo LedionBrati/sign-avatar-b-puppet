@@ -1,45 +1,33 @@
 import type { ReactNode } from "react";
-import { ImageBackground, Platform, StyleSheet, View } from "react-native";
-import { Asset } from "expo-asset";
+import { StyleSheet, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Defs, Ellipse, RadialGradient, Stop } from "react-native-svg";
-import { liveGradient } from "../theme";
+import { blooms, colors } from "../theme";
 
-const noise = require("../../assets/noise.png");
-
-/** Film grain over everything below it (tiled PNG; the prototype uses SVG feTurbulence + soft-light). */
-export function Grain({ opacity = 0.55 }: { opacity?: number }) {
-  if (Platform.OS === "web") {
-    // react-native-web ignores resizeMode="repeat" on ImageBackground; tile with CSS instead.
-    const uri = Asset.fromModule(noise).uri;
-    return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity, backgroundImage: `url(${uri})`, backgroundRepeat: "repeat", backgroundSize: "160px 160px" } as object]} />;
-  }
-  return <ImageBackground source={noise} resizeMode="repeat" style={[StyleSheet.absoluteFill, { opacity }]} imageStyle={{ resizeMode: "repeat" }} pointerEvents="none" />;
-}
-
-/** The live/home field (".g.live"): cobalt top to periwinkle bottom, a soft glow in the upper middle, a deep pool bottom left, grain on top. */
+/** The app background, as the web app's light look (--bg-art): a soft paper wash, top to bottom, with pastel blooms
+ *  (peach, pink, violet along the bottom, cyan up the right edge, a faint ice haze right of centre). */
 export function Field({ children }: { children?: ReactNode }) {
   return (
     <View style={s.root}>
-      <LinearGradient colors={[...liveGradient]} locations={[0, 0.38, 0.7, 1]} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[...colors.bgWash]} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} />
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 100 100" pointerEvents="none">
         <Defs>
-          <RadialGradient id="glow" cx="50" cy="34" rx="60" ry="38" gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor="#7896ff" stopOpacity={0.55} />
-            <Stop offset="0.7" stopColor="#7896ff" stopOpacity={0} />
-          </RadialGradient>
-          <RadialGradient id="pool" cx="20" cy="100" rx="70" ry="40" gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor="#0c228f" stopOpacity={1} />
-            <Stop offset="0.7" stopColor="#0c228f" stopOpacity={0} />
-          </RadialGradient>
+          {blooms.map((b, i) => (
+            <RadialGradient key={i} id={`bloom${i}`} cx={b.x} cy={b.y} rx={b.rx} ry={b.ry} fx={b.x} fy={b.y} gradientUnits="userSpaceOnUse">
+              <Stop offset="0" stopColor={`rgb(${b.c})`} stopOpacity={b.a} />
+              <Stop offset="0.36" stopColor={`rgb(${b.c})`} stopOpacity={b.a * 0.55} />
+              <Stop offset="0.72" stopColor={`rgb(${b.c})`} stopOpacity={0} />
+            </RadialGradient>
+          ))}
         </Defs>
-        <Ellipse cx="50" cy="34" rx="60" ry="38" fill="url(#glow)" />
-        <Ellipse cx="20" cy="100" rx="70" ry="40" fill="url(#pool)" />
+        {[...blooms].reverse().map((b, j) => {
+          const i = blooms.length - 1 - j;   // first bloom on top, as in CSS
+          return <Ellipse key={i} cx={b.x} cy={b.y} rx={b.rx} ry={b.ry} fill={`url(#bloom${i})`} />;
+        })}
       </Svg>
-      <Grain />
       {children}
     </View>
   );
 }
 
-const s = StyleSheet.create({ root: { flex: 1, backgroundColor: "#1f3fd6", overflow: "hidden" } });
+const s = StyleSheet.create({ root: { flex: 1, backgroundColor: colors.bg, overflow: "hidden" } });

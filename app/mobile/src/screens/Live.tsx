@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { captionFrame, createSignClient, generatingLabel, playlistSeconds, type SignResponse } from "@flux/core";
 import { Field } from "../components/Field";
 import { Mark } from "../components/Mark";
-import { Pill } from "../components/Glass";
+import { Glass, Pill } from "../components/Glass";
 import { SignWave } from "../components/SignWave";
 import { SignerCard } from "../components/SignerCard";
 import { CaptionSheet } from "../components/CaptionSheet";
@@ -15,7 +15,7 @@ import { TypeBar } from "../components/TypeBar";
 import { appendResponse, emptySession, unsignedWords } from "../lib/session";
 import { canListen, startListening } from "../lib/speech";
 import { keepAwake, tap } from "../lib/feedback";
-import { copy, font, fontMedium } from "../theme";
+import { colors, copy, font, fontMedium, serif } from "../theme";
 
 interface Props {
   serverUrl: string;
@@ -123,10 +123,10 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={s.bar}>
             <View style={{ flex: 1 }}><Mark size={28} /></View>
-            <View style={s.island} testID="island">
-              <View style={s.islandDot} />
+            <Glass tint={colors.island} style={s.island} testID="island">
+              <View style={[s.islandDot, blocked && s.islandWarn]} />
               <Text style={s.islandTxt}>{island}</Text>
-            </View>
+            </Glass>
             <View style={{ flex: 1, alignItems: "flex-end" }}>
               {!done && <Pill label="Stop" onPress={stop} testID="stop" />}
             </View>
@@ -198,28 +198,28 @@ export function Live({ serverUrl, onExit, onSettings, typed }: Props) {
 
 const s = StyleSheet.create({
   bar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
-  island: { height: 34, paddingHorizontal: 16, borderRadius: 999, backgroundColor: "rgba(6,12,52,0.62)", flexDirection: "row", alignItems: "center", gap: 9 },
-  islandDot: { width: 6, height: 6, borderRadius: 6, backgroundColor: "#fff" },
-  islandTxt: { color: "#fff", fontSize: 13, fontWeight: "500", fontFamily: fontMedium },
-  middle: { flex: 1, minHeight: 0, paddingHorizontal: 14 },
+  island: { height: 36, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 9 },
+  islandDot: { width: 8, height: 8, borderRadius: 8, backgroundColor: colors.cyan, borderWidth: 1, borderColor: "rgba(68,70,216,0.35)" },
+  islandWarn: { backgroundColor: "#ffb340", borderColor: "rgba(180,100,0,0.3)" },
+  islandTxt: { color: colors.label, fontSize: 14, fontWeight: "600", letterSpacing: -0.14, fontFamily: fontMedium },
+  middle: { flex: 1, minHeight: 0, paddingHorizontal: 10 },
   listen: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16 },
-  lbl: { color: "#fff", opacity: 0.75, fontSize: 15, letterSpacing: -0.15, fontFamily: font },
-  heard: { color: "#fff", fontSize: 27, fontWeight: "500", letterSpacing: -0.7, lineHeight: 32, textAlign: "center", paddingHorizontal: 28, minHeight: 96, fontFamily: fontMedium },
+  lbl: { color: colors.label2, fontSize: 19, fontStyle: "italic", letterSpacing: -0.1, fontFamily: serif },
+  heard: { color: colors.label, fontSize: 28, fontWeight: "500", letterSpacing: -0.4, lineHeight: 34, textAlign: "center", paddingHorizontal: 28, minHeight: 102, fontFamily: serif },
   foot: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 10, gap: 9 },
-  interim: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontFamily: font },
-  now: { color: "rgba(255,255,255,0.85)", fontSize: 13, fontFamily: font, minHeight: 18 },
-  nowB: { fontWeight: "600", letterSpacing: 0.3, color: "#fff" },
-  for: { opacity: 0.65 },
-  sum: { color: "#fff", fontSize: 13, fontFamily: font },
+  interim: { color: colors.label2, fontSize: 13, fontStyle: "italic", fontFamily: font },
+  now: { color: colors.label2, fontSize: 13, fontFamily: font, minHeight: 18 },
+  nowB: { fontWeight: "700", letterSpacing: 0.5, color: colors.accent },
+  for: { opacity: 0.8 },
+  sum: { color: colors.label, fontSize: 13, fontFamily: font },
   sumB: { fontWeight: "600" },
   acts: { flexDirection: "row", gap: 8 },
-  err: { color: "#ffd9d9", fontSize: 13, fontFamily: font },
+  err: { color: "#b3261e", fontSize: 13, fontFamily: font },
   gen: { position: "absolute", right: 16, top: -11, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, overflow: "hidden",
-    backgroundColor: "#f4f6ff", color: "#1f34b5", fontSize: 11, fontWeight: "600", fontFamily: fontMedium },
-  hint: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontFamily: font, textAlign: "center" },
-  credit: { color: "rgba(255,255,255,0.45)", fontSize: 10, fontFamily: font },
-  safetyTitle: { color: "#1f34b5", fontSize: 19, fontWeight: "600", fontFamily: fontMedium },
-  safetyCaption: { color: "#1f34b5", fontSize: 17, marginTop: 10, marginBottom: 12, fontFamily: fontMedium },
-  safetyReason: { color: "#1f34b5", fontSize: 12, lineHeight: 17, marginBottom: 7, fontFamily: font },
+    backgroundColor: colors.white, color: colors.accent, fontSize: 11, fontWeight: "600", fontFamily: fontMedium },
+  hint: { color: colors.label2, fontSize: 12, fontFamily: font, textAlign: "center" },
+  credit: { color: colors.label3, fontSize: 10, fontFamily: font },
+  safetyTitle: { color: colors.warn, fontSize: 12, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase", fontFamily: fontMedium },
+  safetyCaption: { color: colors.label, fontSize: 23, lineHeight: 28, fontWeight: "500", marginTop: 12, marginBottom: 12, fontFamily: serif },
+  safetyReason: { color: colors.label2, fontSize: 13, lineHeight: 18, marginBottom: 7, fontFamily: font },
 });
-

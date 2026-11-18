@@ -9,6 +9,7 @@
 //    allowsProtectedMedia is only for DRM (RESOURCE_PROTECTED_MEDIA_ID), not needed for the camera.
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { INJECTED_BRIDGE, parseBridge, type BridgeMsg, type FrameError } from "../lib/bridge";
+import { colors } from "../theme";
 
 interface Props {
   url: string;
@@ -22,7 +23,7 @@ export function SignFrame({ url, onMessage, onError, onReady }: Props) {
     <WebView
       source={{ uri: url }}
       style={{ flex: 1, backgroundColor: "transparent" }}
-      containerStyle={{ backgroundColor: "#10208a" }}
+      containerStyle={{ backgroundColor: colors.bg }}
       originWhitelist={["*"]}
       javaScriptEnabled
       domStorageEnabled

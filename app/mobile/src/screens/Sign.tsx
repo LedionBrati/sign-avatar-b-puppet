@@ -7,12 +7,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Camera } from "expo-camera";
 import { Field } from "../components/Field";
 import { Mark } from "../components/Mark";
-import { Pill } from "../components/Glass";
+import { AccentFill, Glass, Pill } from "../components/Glass";
 import { SignFrame } from "../components/SignFrame";
 import { preflight, signPageUrl, type BridgeMsg, type FrameError } from "../lib/bridge";
 import { speakText, stopSpeaking } from "../lib/voice";
 import { keepAwake, tap } from "../lib/feedback";
-import { colors, font, fontMedium, shadow } from "../theme";
+import { accentShadow, colors, font, fontMedium, radii, serif, shadow } from "../theme";
 
 interface Props {
   serverUrl: string;
@@ -82,10 +82,10 @@ export function Sign({ serverUrl, onExit, onSettings }: Props) {
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom", "left", "right"]}>
         <View style={s.bar}>
           <View style={{ flex: 1 }}><Mark size={28} /></View>
-          <View style={s.island} testID="island">
-            <View style={[s.islandDot, speaking && { backgroundColor: "#9fffc9" }]} />
+          <Glass tint={colors.island} style={s.island} testID="island">
+            <View style={[s.islandDot, speaking && { backgroundColor: "#5ee7a8" }, (phase === "error" || phase === "denied") && s.islandWarn]} />
             <Text style={s.islandTxt}>{island}</Text>
-          </View>
+          </Glass>
           <View style={{ flex: 1, alignItems: "flex-end" }}>
             <Pill label="Stop" onPress={stop} testID="stop" />
           </View>
@@ -95,11 +95,11 @@ export function Sign({ serverUrl, onExit, onSettings }: Props) {
           <Problem phase={phase} err={err} url={url} onSettings={onSettings} onRetry={retry} />
         ) : (
           <>
-            <View style={[s.card, shadow(18, 40, "rgba(5,15,90,0.5)")]}>
+            <View style={[s.card, shadow(30, 70, `rgba(${colors.shadow},0.4)`)]}>
               {phase === "ready" ? <SignFrame key={`${url}#${attempt}`} url={url} onMessage={onMessage} onError={onFrameError} onReady={() => setLoaded(true)} /> : null}
               {!loaded && (
                 <View style={s.loading} pointerEvents="none">
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.accent} />
                   <Text style={s.loadingTxt}>{phase === "permission" ? "Asking for the camera…" : "Starting the signing camera…"}</Text>
                 </View>
               )}
@@ -109,12 +109,14 @@ export function Sign({ serverUrl, onExit, onSettings }: Props) {
               {insecure ? (
                 <Text style={s.warn} testID="insecure">The camera only works on https:// or localhost pages. See the app README (adb reverse or an https tunnel).</Text>
               ) : null}
-              <View style={[s.sheet, shadow(18, 40, "rgba(5,15,90,0.45)")]} accessibilityLiveRegion="polite">
-                <Text style={s.sheetLbl}>{spoken && spoken === sentence.trim() ? "Spoken" : "Your sentence"}</Text>
-                <Text style={[s.sentence, !sentence && s.placeholder]} numberOfLines={3} testID="sign-sentence">
-                  {sentence || "Sign in front of the camera. Words appear here."}
-                </Text>
-              </View>
+              <Glass radius={radii.xl} large style={s.sheet}>
+                <View accessibilityLiveRegion="polite" style={{ gap: 4 }}>
+                  <Text style={s.sheetLbl}>{spoken && spoken === sentence.trim() ? "Spoken" : "Your sentence"}</Text>
+                  <Text style={[s.sentence, !sentence && s.placeholder]} numberOfLines={3} testID="sign-sentence">
+                    {sentence || "Sign in front of the camera. Words appear here."}
+                  </Text>
+                </View>
+              </Glass>
               <View style={s.acts}>
                 <Pressable
                   onPress={() => speak(sentence)}
@@ -122,7 +124,8 @@ export function Sign({ serverUrl, onExit, onSettings }: Props) {
                   accessibilityRole="button"
                   accessibilityState={{ disabled: !sentence.trim() }}
                   testID="speak"
-                  style={({ pressed }) => [s.speak, !sentence.trim() && { opacity: 0.45 }, { transform: [{ scale: pressed ? 0.97 : 1 }] }]}>
+                  style={({ pressed }) => [s.speak, sentence.trim() ? accentShadow : { opacity: 0.45 }, { transform: [{ scale: pressed ? 0.97 : 1 }] }]}>
+                  <AccentFill />
                   <Text style={s.speakTxt}>{speaking ? "Speaking…" : "Speak"}</Text>
                 </Pressable>
               </View>
@@ -145,7 +148,7 @@ function Problem({ phase, err, url, onSettings, onRetry }: { phase: Phase; err: 
       : "Is app/server running on the laptop, and is the phone on the same Wi-Fi?";
   return (
     <View style={s.problem} testID="sign-error">
-      <View style={[s.pcard, shadow(18, 40, "rgba(5,15,90,0.45)")]}>
+      <Glass radius={radii.lg} large style={s.pcard}>
         <Text style={s.ptitle}>{title}</Text>
         <Text style={s.pbody}>{body}</Text>
         {!denied && (
@@ -154,7 +157,7 @@ function Problem({ phase, err, url, onSettings, onRetry }: { phase: Phase; err: 
             {err?.detail ? <Text style={s.urlDetail} numberOfLines={2}>{err.detail}</Text> : null}
           </View>
         )}
-      </View>
+      </Glass>
       <View style={s.acts}>
         {denied ? (
           <Pill label="Open phone settings" onPress={() => { Linking.openSettings().catch(() => {}); }} testID="open-os-settings" />
@@ -169,27 +172,28 @@ function Problem({ phase, err, url, onSettings, onRetry }: { phase: Phase; err: 
 
 const s = StyleSheet.create({
   bar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
-  island: { height: 34, paddingHorizontal: 16, borderRadius: 999, backgroundColor: "rgba(6,12,52,0.62)", flexDirection: "row", alignItems: "center", gap: 9 },
-  islandDot: { width: 6, height: 6, borderRadius: 6, backgroundColor: "#fff" },
-  islandTxt: { color: "#fff", fontSize: 13, fontWeight: "500", fontFamily: fontMedium },
-  card: { flex: 1, minHeight: 0, marginHorizontal: 14, borderRadius: 28, overflow: "hidden", backgroundColor: "#10208a" },
+  island: { height: 36, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 9 },
+  islandDot: { width: 8, height: 8, borderRadius: 8, backgroundColor: colors.cyan, borderWidth: 1, borderColor: "rgba(68,70,216,0.35)" },
+  islandWarn: { backgroundColor: "#ffb340", borderColor: "rgba(180,100,0,0.3)" },
+  islandTxt: { color: colors.label, fontSize: 14, fontWeight: "600", letterSpacing: -0.14, fontFamily: fontMedium },
+  card: { flex: 1, minHeight: 0, marginHorizontal: 14, borderRadius: 30, overflow: "hidden", backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.rim },
   loading: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", gap: 12 },
-  loadingTxt: { color: "rgba(255,255,255,0.8)", fontSize: 14, fontFamily: font },
+  loadingTxt: { color: colors.label2, fontSize: 14, fontFamily: font },
   foot: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, gap: 10 },
-  warn: { color: "#ffe3b3", fontSize: 12.5, lineHeight: 17, fontFamily: font },
-  sheet: { backgroundColor: colors.paper2, borderRadius: 24, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 15, gap: 4 },
-  sheetLbl: { color: "#7a82b0", fontSize: 11.5, fontWeight: "600", letterSpacing: 0.6, textTransform: "uppercase", fontFamily: fontMedium },
-  sentence: { color: colors.inkBlue, fontSize: 22, lineHeight: 27, fontWeight: "500", letterSpacing: -0.4, fontFamily: fontMedium, minHeight: 54 },
-  placeholder: { color: "#9aa1c4", fontSize: 17, lineHeight: 23 },
+  warn: { color: colors.warn, fontSize: 12.5, lineHeight: 17, fontFamily: font },
+  sheet: { paddingHorizontal: 18, paddingTop: 13, paddingBottom: 15 },
+  sheetLbl: { color: colors.label2, fontSize: 11.5, fontWeight: "600", letterSpacing: 1.2, textTransform: "uppercase", fontFamily: fontMedium },
+  sentence: { color: colors.label, fontSize: 24, lineHeight: 29, fontWeight: "500", letterSpacing: -0.3, fontFamily: serif, minHeight: 58 },
+  placeholder: { color: colors.label3, fontSize: 18, lineHeight: 24, fontStyle: "italic" },
   acts: { flexDirection: "row", gap: 8, justifyContent: "center" },
-  speak: { minHeight: 48, minWidth: 160, paddingHorizontal: 28, borderRadius: 999, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-  speakTxt: { color: colors.inkBlue, fontSize: 16, fontWeight: "500", letterSpacing: -0.16, fontFamily: fontMedium },
-  credit: { color: "rgba(255,255,255,0.55)", fontSize: 11, fontFamily: font, textAlign: "center" },
+  speak: { zIndex: 0, minHeight: 50, minWidth: 160, paddingHorizontal: 28, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  speakTxt: { color: colors.white, fontSize: 16, fontWeight: "600", letterSpacing: -0.16, fontFamily: fontMedium },
+  credit: { color: colors.label3, fontSize: 11, fontFamily: font, textAlign: "center" },
   problem: { flex: 1, justifyContent: "center", paddingHorizontal: 18, gap: 18 },
-  pcard: { backgroundColor: colors.paper2, borderRadius: 26, padding: 22, gap: 10 },
-  ptitle: { color: colors.inkBlue, fontSize: 22, lineHeight: 27, fontWeight: "600", letterSpacing: -0.5, fontFamily: fontMedium },
-  pbody: { color: "#4a5288", fontSize: 15, lineHeight: 21, fontFamily: font },
-  urlBox: { marginTop: 4, backgroundColor: "rgba(31,63,214,0.07)", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 4 },
-  urlTxt: { color: colors.inkBlue, fontSize: 13, fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "ui-monospace, Menlo, Consolas, monospace" }) },
-  urlDetail: { color: "#7a82b0", fontSize: 12, fontFamily: font },
+  pcard: { padding: 22, gap: 10 },
+  ptitle: { color: colors.label, fontSize: 24, lineHeight: 29, fontWeight: "500", letterSpacing: -0.4, fontFamily: serif },
+  pbody: { color: colors.label2, fontSize: 15, lineHeight: 21, fontFamily: font },
+  urlBox: { marginTop: 4, backgroundColor: colors.fill, borderWidth: 1, borderColor: colors.hair, borderRadius: radii.sm, paddingHorizontal: 12, paddingVertical: 10, gap: 4 },
+  urlTxt: { color: colors.accent, fontSize: 13, fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "ui-monospace, Menlo, Consolas, monospace" }) },
+  urlDetail: { color: colors.label2, fontSize: 12, fontFamily: font },
 });

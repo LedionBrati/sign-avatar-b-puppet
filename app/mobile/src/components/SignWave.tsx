@@ -1,9 +1,10 @@
-// Flux listening wave (port of the prototype's canvas SignWave to react-native-svg):
-// a thin white line with soft blue lobes that swell while someone is talking. ~30 fps, cheap paths.
+// Flux listening wave (the web app's canvas wave, lib/signWave.ts, ported to react-native-svg): the same blue lobes
+// that swell while someone is talking, around a thin white line on a soft violet glow so it reads on the light
+// background (as the extension's wave does). ~30 fps, cheap paths.
 import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, View, type LayoutChangeEvent } from "react-native";
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
-import { waveColors } from "../theme";
+import { colors, waveColors } from "../theme";
 
 type Lobe = { c: number; w: number; at: number; a: number; f: number; p: number; ps: number; life: number; dur: number };
 const spawn = (): Lobe => ({
@@ -82,6 +83,11 @@ export function SignWave({ level = 0.7, talking = true, height = 140 }: { level?
                 <Stop offset="1" stopColor={`rgb(${c})`} stopOpacity={0.05} />
               </LinearGradient>
             ))}
+            <LinearGradient id="wglow" x1="0" y1="0" x2="1" y2="0">
+              <Stop offset="0" stopColor={colors.wordmarkDot} stopOpacity={0} />
+              <Stop offset="0.5" stopColor={colors.wordmarkDot} stopOpacity={0.3} />
+              <Stop offset="1" stopColor={colors.wordmarkDot} stopOpacity={0} />
+            </LinearGradient>
             <LinearGradient id="wline" x1="0" y1="0" x2="1" y2="0">
               <Stop offset="0" stopColor="#fff" stopOpacity={0} />
               <Stop offset="0.18" stopColor="#fff" stopOpacity={0.75} />
@@ -93,7 +99,9 @@ export function SignWave({ level = 0.7, talking = true, height = 140 }: { level?
           {paths.map((p, i) => (
             <Path key={i} d={p.d} fill={`url(#wl${i})`} />
           ))}
-          <Rect x={0} y={mid - 0.7} width={w} height={1.4} fill="url(#wline)" />
+          <Rect x={0} y={mid - 3} width={w} height={6} rx={3} fill="url(#wglow)" />
+          <Rect x={0} y={mid - 1.5} width={w} height={3} rx={1.5} fill="url(#wglow)" />
+          <Rect x={0} y={mid - 0.8} width={w} height={1.6} fill="url(#wline)" />
         </Svg>
       )}
     </View>

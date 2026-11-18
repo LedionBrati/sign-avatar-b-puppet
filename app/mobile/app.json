@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#1f3fd6",
+    "backgroundColor": "#f6f6fb",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.flux.mobile",
@@ -40,7 +40,7 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "output": "single",
-      "backgroundColor": "#1f3fd6"
+      "backgroundColor": "#f6f6fb"
     },
     "plugins": [
       "expo-video",

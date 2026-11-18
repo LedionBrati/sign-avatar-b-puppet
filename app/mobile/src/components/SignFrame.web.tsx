@@ -3,6 +3,7 @@
 // (allow="camera"); the iframe's origin must be https:// or localhost for getUserMedia.
 import { useEffect, useRef } from "react";
 import { parseBridge, type BridgeMsg, type FrameError } from "../lib/bridge";
+import { colors } from "../theme";
 
 interface Props {
   url: string;
@@ -32,7 +33,7 @@ export function SignFrame({ url, onMessage, onReady }: Props) {
       allow="camera; microphone; autoplay; fullscreen"
       onLoad={onReady}
       data-testid="sign-frame"
-      style={{ border: 0, width: "100%", height: "100%", display: "block", background: "#10208a" }}
+      style={{ border: 0, width: "100%", height: "100%", display: "block", background: colors.bg }}
     />
   );
 }

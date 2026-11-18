@@ -6,6 +6,7 @@ import { Live } from "./src/screens/Live";
 import { Settings } from "./src/screens/Settings";
 import { Sign } from "./src/screens/Sign";
 import { useServerUrl } from "./src/lib/settings";
+import { colors } from "./src/theme";
 
 type Screen = { name: "home" } | { name: "live"; typed: boolean; key: number } | { name: "sign" };
 
@@ -18,8 +19,8 @@ export default function App() {
   const go = (typed: boolean) => (needUrl ? setSettingsOpen(true) : setScreen({ name: "live", typed, key: Date.now() }));
 
   return (
-    <SafeAreaProvider style={{ backgroundColor: "#1f3fd6" }}>
-      <StatusBar style="light" />
+    <SafeAreaProvider style={{ backgroundColor: colors.bg }}>
+      <StatusBar style="dark" />
       {screen.name === "home" ? (
         <Home onListen={() => go(false)} onType={() => go(true)} onSign={() => (needUrl ? setSettingsOpen(true) : setScreen({ name: "sign" }))} onSettings={() => setSettingsOpen(true)} />
       ) : screen.name === "sign" ? (
