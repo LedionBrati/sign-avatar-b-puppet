@@ -56,12 +56,6 @@ const wordOf = (l: string) => (l.startsWith("#") ? cap(l.slice(1).toLowerCase())
 const TOP_OPTIONS = 3;
 const localSentence = (xs: Entry[]) => composeSentence(xs.map((x) => localLabel(x.label)));
 const fixedSentence = (xs: Entry[]) => knownPhrase(xs.map((x) => localLabel(x.label)));
-/** Words of the demo sentences: preferred (not forced) when the recognizer is torn between them and other words. */
-const DEMO_WORDS = new Set("hello how are you your today day good evening night morning thank you thankyou all very much judge luck lucky can i me my have some coffee water please want build company nice meet name where bathroom yes no fine happy see later tomorrow help sorry".split(" "));
-const DEMO_BOOST = 1.5;
-const preferDemo = <T extends { label: string; text?: string; confidence: number }>(xs: T[]): T[] =>
-  xs.map((x) => (DEMO_WORDS.has((x.text || labelText(x.label)).toLowerCase()) || DEMO_WORDS.has(x.label.toLowerCase()) ? { ...x, confidence: Math.min(1, x.confidence * DEMO_BOOST) } : x))
-    .sort((a, b) => b.confidence - a.confidence);
 const keyOf = (epoch: number, xs: Entry[]) => `${epoch}|${xs.map((x) => x.label).join(" ")}`;
 
 declare global { interface Window { ReactNativeWebView?: { postMessage(s: string): void }; __sl?: Record<string, unknown> } }
@@ -175,7 +169,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
         const last = entries[entries.length - 1];
         if (epoch === o.epoch) setHint(!last ? null : unsure || last.options![0]!.confidence < LOW ? "Not sure about that one. Tap the right word below." : null);
       } else {
-        const options = r.reject ? [] : preferDemo(dejunk(r.options)).filter((x) => x.confidence >= MIN_CONF); // no sign / junk / too unsure -> nothing
+        const options = r.reject ? [] : dejunk(r.options).filter((x) => x.confidence >= MIN_CONF); // no sign / junk / too unsure -> nothing
         if (options.length) {
           entries.push({ label: options[0]!.label, options, sel: 0 });
           if (epoch === o.epoch) setHint(options[0]!.confidence < LOW ? "Not sure about that one. Tap the right word below." : null);
