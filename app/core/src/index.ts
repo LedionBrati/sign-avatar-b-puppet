@@ -7,3 +7,4 @@ export * from "./compose.ts";
 export * from "./segment.ts";
 export * from "./signer3d.ts";
 export * from "./context.ts";
+export * from "./vocab.ts";

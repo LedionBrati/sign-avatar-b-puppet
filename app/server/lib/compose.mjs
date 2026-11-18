@@ -10,7 +10,7 @@
 // or video. The instructions + the recognizer's 250-label vocabulary are a fixed prefix, so prompt caching applies.
 
 import { createHash } from "node:crypto";
-import { SIGN_LABELS } from "./sign-vocab.mjs";
+import { SIGN_VOCAB } from "../../core/src/vocab.ts";
 
 export const COMPOSE_ROUTE = "/api/compose";
 export const DEFAULT_COMPOSE_MODEL = "gpt-5.4-mini";
@@ -80,8 +80,8 @@ Noisy guesses:
   1. [0] gift 0.4 [1] dad 0.35  2. [0] sick 0.6  ->  picked [1, 0], "My dad is sick."`;
 
 /** The recognizer's whole vocabulary: a fixed developer message right after the instructions (cacheable prefix). */
-export const VOCAB_MESSAGE = `Recognizer vocabulary (the only signs it can output; ${SIGN_LABELS.length} labels):
-${SIGN_LABELS.join(", ")}
+export const VOCAB_MESSAGE = `Recognizer vocabulary (the only signs it can output; ${SIGN_VOCAB.length} labels):
+${SIGN_VOCAB.join(", ")}
 Label notes: thankyou = "thank you", minemy = "my/mine", hesheit = "he/she/it", weus = "we/us", haveto = "have to",
 callonphone = "call (on the phone)", potty = "bathroom/toilet", glasswindow = "glass/window", owie = "hurt/ouch", shhh = "be quiet",
 yourself = "you", TV = "television". A "#NAME" sign is a fingerspelled name or word; always use it as written.`;
