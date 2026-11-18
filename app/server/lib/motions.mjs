@@ -7,6 +7,7 @@
 //                   wins over the v1 file of the same sign. Default <repo>/out/motion/wlasl3d.
 //   MOTION_REST     the rest pose every 3D phrase starts and ends in. Default out/realtime/neutral.clean.json.
 //   MOTION=off      no 3D signer (the server answers as before: clips only).
+//   Parsed by lib/config.mjs motionConfig().
 //
 // motion_id / gloss come from each file's head (the same index generate-on-use uses, lib/ondemand.mjs). Signs that
 // failed extraction or QC (dominant hand in < MOTION_MIN_HAND_PCT % of frames, default 80) are left out.
@@ -21,7 +22,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { displayGloss, scanMotionDirs } from "./ondemand.mjs";
-import { fromRepo, list, readMotionHead as readHead } from "./paths.mjs";
+import { readMotionHead as readHead } from "./paths.mjs";
 
 /** MediaPipe face indices the player reads: nose tip, forehead, eye corners, chin, face outline at the ears. */
 export const FACE_KEEP = Object.freeze([1, 10, 33, 133, 152, 234, 263, 362, 454]);
@@ -32,23 +33,6 @@ export const BLENDSHAPES_KEEP = Object.freeze(["eyeBlinkLeft", "eyeBlinkRight", 
 const STEM = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,120}$/;
 const LETTER = /^FS_([A-Z])$/;
 export const REST_STEM = "neutral";
-
-const ifExists = (p) => (existsSync(p) ? p : null);
-
-/** Settings from the environment (null = 3D signer off). Never under node --test unless passed explicitly. */
-export function motionConfig(env = process.env) {
-  if (/^(off|0|false|no)$/i.test(env.MOTION ?? "")) return null;
-  if (env.NODE_TEST_CONTEXT && env.MOTION_IN_TESTS !== "1") return null;
-  const v1 = list(env.MOTION_DIRS);
-  const v2 = list(env.MOTION_V2_DIRS);
-  return {
-    dirs: v1.length ? v1 : [fromRepo("out/motion/wlasl")],
-    v2Dirs: v2.length ? v2 : [fromRepo("out/motion/wlasl3d")],
-    rest: env.MOTION_REST || ifExists(fromRepo("out/realtime/neutral.clean.json")),
-    model: env.SIGNER_MODEL || ifExists(fromRepo("puppet/models/signer.glb")),
-    minHandPct: Number.isFinite(Number(env.MOTION_MIN_HAND_PCT)) && env.MOTION_MIN_HAND_PCT ? Number(env.MOTION_MIN_HAND_PCT) : 80,
-  };
-}
 
 /** Every <stem>.v2.json under dir (recursive). */
 function findV2(dir, out = []) {

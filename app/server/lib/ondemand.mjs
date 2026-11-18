@@ -11,7 +11,7 @@
 // Spend: a per-batch reserve of $0.25 per video second (min 5 s) is counted against FAL_DAILY_BUDGET_USD before the
 // fal call; a batch that would exceed it is refused. State (queue, spend, batches) persists in ONDEMAND_STATE_DIR/state.json.
 // Secrets: the fal key lives only in this process (process.env.FAL_KEY for fal.mjs); child processes never get it, and
-// every stored or logged error goes through the server's redactor.
+// every stored or logged error goes through the server's redactor. Settings: lib/config.mjs onDemandConfig().
 
 import { spawn, execFile } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -20,7 +20,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { cutClips, cutPoints } from "../../../pipeline/lib/clips.mjs";
 import { MODELS } from "../../../pipeline/e0/models.mjs";
-import { REPO, list, readMotionHead as readHead } from "./paths.mjs";
+import { REPO, readMotionHead as readHead } from "./paths.mjs";
 
 export const USD_PER_VIDEO_S = 0.25;   // H3 Max ~$0.085/s + input tokens ~= $0.22/s of video; rounded up to be safe
 export const MIN_BATCH_S = 5;          // H3 Max Recast minimum
@@ -39,34 +39,6 @@ class OnDemandError extends Error {
 const localDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const round2 = (x) => Math.round(x * 100) / 100;
 export const reserveUsd = (videoS) => round2(Math.max(videoS, MIN_BATCH_S) * USD_PER_VIDEO_S);
-
-/**
- * Settings from the environment. Enabled only with ONDEMAND=on, a fal key and at least one motion dir.
- * @returns {{wanted: boolean, enabled: boolean, reason?: string, ...options}}
- */
-export function onDemandConfig(env = process.env, { falKey = null, keyError } = {}) {
-  const wanted = env.ONDEMAND !== undefined && env.ONDEMAND !== "";
-  const on = /^(on|1|true|yes)$/i.test(env.ONDEMAND ?? "");
-  const motionDirs = list(env.MOTION_DIRS);
-  const cfg = {
-    wanted,
-    motionDirs,
-    neutral: env.ONDEMAND_NEUTRAL || join(REPO, "out/realtime/neutral.clean.json"),
-    avatar: env.ONDEMAND_AVATAR || join(REPO, "assets/avatar/avatar-main.jpg"),
-    renderScript: env.PUPPET_RENDER || join(REPO, "puppet/render.mjs"),
-    stateDir: env.ONDEMAND_STATE_DIR || join(REPO, "out/ondemand"),
-    clipsDir: env.ONDEMAND_CLIPS_DIR || join(REPO, "out/realtime/clips-ondemand"),
-    budgetUsd: Number(env.FAL_DAILY_BUDGET_USD) >= 0 && env.FAL_DAILY_BUDGET_USD !== undefined && env.FAL_DAILY_BUDGET_USD !== "" ? Number(env.FAL_DAILY_BUDGET_USD) : 20,
-    maxQueue: Number(env.ONDEMAND_MAX_QUEUE) > 0 ? Math.floor(Number(env.ONDEMAND_MAX_QUEUE)) : 30,
-    minHandPct: Number.isFinite(Number(env.ONDEMAND_MIN_HAND_PCT)) && env.ONDEMAND_MIN_HAND_PCT ? Number(env.ONDEMAND_MIN_HAND_PCT) : 80,
-    falKey,
-  };
-  const reason = !on ? (wanted ? `ONDEMAND=${env.ONDEMAND} (set ONDEMAND=on)` : "ONDEMAND is not on")
-    : !falKey ? (keyError ?? "no fal key (set FAL_KEY_FILE or FAL_KEY)")
-    : !motionDirs.length ? "MOTION_DIRS is not set"
-    : null;
-  return { ...cfg, enabled: !reason, ...(reason ? { reason } : {}) };
-}
 
 // ── Motion index ────────────────────────────────────────────────────────────────
 
