@@ -14,21 +14,14 @@ export const CACHE_DIR = join(HERE, "cache");
 
 const firstExisting = (paths) => paths.find((p) => p && existsSync(p));
 
-/** Default clip set: $SIGN_CLIPS_DIR, <repo>/out/realtime/clips, or the main checkout next to this worktree. */
+/** Default clip set: $SIGN_CLIPS_DIR, else <repo>/out/realtime/clips (undefined if neither exists). */
 export function defaultClipsDir() {
-  return firstExisting([
-    process.env.SIGN_CLIPS_DIR,
-    join(REPO, "out", "realtime", "clips"),
-    join(REPO, "..", "sign-avatar-b-puppet", "out", "realtime", "clips"),
-  ]);
+  return firstExisting([process.env.SIGN_CLIPS_DIR, join(REPO, "out", "realtime", "clips")]);
 }
 
-/** Full WLASL-derived dictionary index: $SIGN_DICTIONARY or ../ai-summit/data/signs/index.json. */
+/** Full WLASL-derived dictionary index.json: $SIGN_DICTIONARY (not in the repo; undefined if unset or missing). */
 export function defaultDictionaryPath() {
-  return firstExisting([
-    process.env.SIGN_DICTIONARY,
-    join(REPO, "..", "ai-summit", "data", "signs", "index.json"),
-  ]);
+  return firstExisting([process.env.SIGN_DICTIONARY]);
 }
 
 const isLetterClip = (id, entry) => /^FS_[A-Z]$/.test(id) || (typeof entry?.letter === "string" && /^[A-Z]$/.test(entry.letter));

@@ -14,15 +14,14 @@
 // every stored or logged error goes through the server's redactor.
 
 import { spawn, execFile } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { cutClips, cutPoints } from "../../../pipeline/lib/clips.mjs";
 import { MODELS } from "../../../pipeline/e0/models.mjs";
+import { REPO, list, readMotionHead as readHead } from "./paths.mjs";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-export const REPO = resolve(HERE, "../../..");
 export const USD_PER_VIDEO_S = 0.25;   // H3 Max ~$0.085/s + input tokens ~= $0.22/s of video; rounded up to be safe
 export const MIN_BATCH_S = 5;          // H3 Max Recast minimum
 export const MAX_BATCH_S = 14;         // single shot must be <= 15 s
@@ -37,8 +36,6 @@ class OnDemandError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
 
-const list = (v) => String(v ?? "").split(/[,;]/).map((d) => d.trim()).filter(Boolean);
-const firstExisting = (paths) => paths.find((p) => p && existsSync(p));
 const localDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const round2 = (x) => Math.round(x * 100) / 100;
 export const reserveUsd = (videoS) => round2(Math.max(videoS, MIN_BATCH_S) * USD_PER_VIDEO_S);
@@ -54,8 +51,7 @@ export function onDemandConfig(env = process.env, { falKey = null, keyError } = 
   const cfg = {
     wanted,
     motionDirs,
-    neutral: env.ONDEMAND_NEUTRAL || firstExisting([join(REPO, "out/realtime/neutral.clean.json"),
-      resolve(REPO, "../sign-avatar-b-puppet/out/realtime/neutral.clean.json")]) || join(REPO, "out/realtime/neutral.clean.json"),
+    neutral: env.ONDEMAND_NEUTRAL || join(REPO, "out/realtime/neutral.clean.json"),
     avatar: env.ONDEMAND_AVATAR || join(REPO, "assets/avatar/avatar-main.jpg"),
     renderScript: env.PUPPET_RENDER || join(REPO, "puppet/render.mjs"),
     stateDir: env.ONDEMAND_STATE_DIR || join(REPO, "out/ondemand"),
@@ -89,18 +85,6 @@ function readSummary(dir) {
       seconds: frames > 0 && fps > 0 ? frames / fps : null });
   }
   return out;
-}
-
-/** motion_id / gloss / fps from the first 4 KB of a motion file (they come before the frames). */
-function readHead(path) {
-  let fd;
-  try {
-    fd = openSync(path, "r");
-    const buf = Buffer.alloc(4096);
-    const n = readSync(fd, buf, 0, buf.length, 0);
-    const s = buf.subarray(0, n).toString("utf8");
-    return { motion_id: /"motion_id"\s*:\s*"([^"]+)"/.exec(s)?.[1] ?? null, gloss: /"gloss"\s*:\s*"([^"]+)"/.exec(s)?.[1] ?? null };
-  } catch { return null; } finally { if (fd !== undefined) closeSync(fd); }
 }
 
 export const displayGloss = (g) => String(g).replace(/_/g, " ").replace(/\s+/g, " ").trim().toUpperCase();

@@ -95,13 +95,14 @@ export function findMain(explicit, { env = process.env, repo = REPO, originUrl }
   throw new Error("cannot find the checkout with out/ (pass --main or set SBP_MAIN)");
 }
 
+/** The WLASL dictionary index.json is not in the repo: SIGN_DICTIONARY must point at it. */
 export function defaultPaths(main, env = process.env) {
-  const first = (ps) => ps.find((p) => p && existsSync(p)) ?? ps.filter(Boolean)[0];
+  if (!env.SIGN_DICTIONARY) throw new Error("set SIGN_DICTIONARY to the WLASL dictionary index.json");
   return {
     neutral: join(main, "out/realtime/neutral.clean.json"),
     v2Root: join(main, "out/motion/wlasl3d"),
     cleanDir: join(main, "out/motion/wlasl"),
-    index: first([env.SIGN_DICTIONARY, resolve(main, "../hackathon-archive/ai-summit/data/signs/index.json"), resolve(main, "../ai-summit/data/signs/index.json")]),
+    index: env.SIGN_DICTIONARY,
     realtime: join(main, "out/realtime"),
     workRoot: join(main, "out/produce"),
   };

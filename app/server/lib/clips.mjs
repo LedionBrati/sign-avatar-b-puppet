@@ -2,24 +2,19 @@
 // Later dirs add signs; the first dir wins when two dirs have the same motion_id.
 // Only files listed in a manifest AND present on disk are exposed, so a sign is never invented
 // and /clips/* can never serve anything outside the manifests.
-// Env: CLIPS_DIR=dirA,dirB. Default <repo>/out/realtime/clips; a git worktree without clips of its own
-// falls back to the main checkout next to it (../sign-avatar-b-puppet/out/realtime/clips).
+// Env: CLIPS_DIR=dirA,dirB. Default <repo>/out/realtime/clips.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fromRepo, list } from "./paths.mjs";
 
-const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const OWN_CLIPS = join(REPO, "out/realtime/clips");
-const SIBLING_CLIPS = resolve(REPO, "../sign-avatar-b-puppet/out/realtime/clips");
-export const DEFAULT_CLIPS_DIR = !existsSync(join(OWN_CLIPS, "manifest.json")) && existsSync(join(SIBLING_CLIPS, "manifest.json"))
-  ? SIBLING_CLIPS : OWN_CLIPS;
+export const DEFAULT_CLIPS_DIR = fromRepo("out/realtime/clips");
 const FPS = 24;
 const LETTER = /^FS_([A-Z])$/;
 
 /** "a,b ; c" -> ["a", "b", "c"] (comma or semicolon separated). */
 export function parseClipsDirs(value = process.env.CLIPS_DIR) {
-  const dirs = String(value ?? "").split(/[,;]/).map((d) => d.trim()).filter(Boolean);
+  const dirs = list(value);
   return dirs.length ? dirs : [DEFAULT_CLIPS_DIR];
 }
 
@@ -29,7 +24,7 @@ export const V2_SETS = ["demo", "sentences", "library"];   // priority order (pi
  * clips-v2-<set> folders (with a manifest) next to the configured clip dirs and in <repo>/out/realtime, in priority order.
  * @param {string[]} dirs  the configured clip dirs
  */
-export function discoverV2Dirs(dirs, { roots = [join(REPO, "out/realtime"), dirname(DEFAULT_CLIPS_DIR)] } = {}) {
+export function discoverV2Dirs(dirs, { roots = [dirname(DEFAULT_CLIPS_DIR)] } = {}) {
   const parents = [...new Set([...dirs.map((d) => dirname(resolve(d))), ...roots.map((r) => resolve(r))])];
   const out = [];
   for (const set of V2_SETS) {
