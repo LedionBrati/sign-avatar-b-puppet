@@ -12,17 +12,13 @@ export function getSigner3D(): Signer3D {
   if (!inst || b !== base) {
     inst?.stop();
     base = b;
-    const canvas = document.createElement("canvas");
-    canvas.width = 540;
-    canvas.height = 720;
-    canvas.className = "sl-3d-canvas";
-    canvas.setAttribute("aria-hidden", "true");
     inst = new Signer3D({
       // The standalone artifact build has no 3D signer (no server for the avatar and motions).
       load: ARTIFACT ? () => Promise.reject(new Error("no 3D signer in the artifact build")) : () => import("@flux/signer-player"),
       modelUrl: `${b}${ROUTES.model}`,
-      canvas,
     });
+    inst.canvas.className = "sl-3d-canvas";
+    inst.canvas.setAttribute("aria-hidden", "true");
   }
   return inst;
 }

@@ -81,7 +81,7 @@ The config plugin adds the permission strings: iOS `NSSpeechRecognitionUsageDesc
 
 ### Server URL
 
-Tap the sliders icon on Home to open the settings sheet. Enter `http://<laptop LAN IP>:8787`, tap **Test connection** (it calls `GET /api/health`), then **Save**. The URL is saved with AsyncStorage. The app suggests an address on its own: in development it uses the Metro host's IP, which is the laptop. The phone and the laptop must be on the same Wi-Fi.
+Tap the sliders icon on Home to open the settings sheet. Enter `http://<laptop LAN IP>:8787`, tap **Test connection** (it calls `GET /api/health`), then **Save**. The URL is saved with AsyncStorage. The app suggests an address on its own: in development it uses the Metro host's IP, which is the laptop (on web, the page's host, else `http://localhost:8787`). A phone build with nothing saved and nothing detected has no address: Listen, Type and Sign open the settings sheet first. The phone and the laptop must be on the same Wi-Fi.
 
 ### Web preview
 

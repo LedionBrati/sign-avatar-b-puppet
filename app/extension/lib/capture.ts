@@ -4,10 +4,12 @@
 //               └► AnalyserNode (level, silence) + MediaRecorder (audio/webm opus)
 //   chunks of 2-4 s, cut at a short silence when possible (a hard cut overlaps the next chunk by 0.4 s),
 //   silent chunks skipped ─► POST {apiUrl}/api/transcribe ─► text, in order, overlap words dropped.
-import { ROUTES, type TranscribeResponse } from "@flux/core";
+import { SignApiError, createSignClient, type SignClient } from "@flux/core";
 import type { ChunkInfo } from "./messages";
 
 const MIN_MS = 2000, MAX_MS = 4000, SILENCE_MS = 280, OVERLAP_MS = 400, MIN_VOICED_MS = 250, NO_AUDIO_MS = 6000;
+/** A chunk's transcription not back by then counts as the server being unreachable. */
+const TRANSCRIBE_TIMEOUT_MS = 30_000;
 
 export interface ChunkHandlers {
   onText(text: string, chunk: ChunkInfo): void;
@@ -49,7 +51,11 @@ export class Chunker {
   private stopped = false;
   private mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
 
-  constructor(private stream: MediaStream, private apiUrl: string, private h: ChunkHandlers, private opts: { monitor: boolean; silentHint: string; silentHint2?: string }) {}
+  private client: SignClient;
+
+  constructor(private stream: MediaStream, private apiUrl: string, private h: ChunkHandlers, private opts: { monitor: boolean; silentHint: string; silentHint2?: string }) {
+    this.client = createSignClient(apiUrl, { timeoutMs: TRANSCRIBE_TIMEOUT_MS });
+  }
 
   async start() {
     this.ctx = new AudioContext();
@@ -142,20 +148,18 @@ export class Chunker {
     const t0 = performance.now();
     let text = "";
     try {
-      const res = await fetch(`${this.apiUrl.replace(/\/$/, "")}${ROUTES.transcribe}?lang=en`, {
-        method: "POST", body: blob, headers: { "content-type": "audio/webm", "x-audio-ms": String(Math.min(30000, Math.round(ms))) },
-      });
-      const body = (await res.json().catch(() => null)) as (TranscribeResponse & { error?: { code: string; message: string } }) | null;
-      if (!res.ok) {
-        const code = body?.error?.code ?? `http_${res.status}`;
-        if (code === "transcribe_off") { this.stop(); this.h.onError("Speech-to-text is off on the Flux server (it needs an OpenAI key)."); }
-        else console.warn("[flux] transcribe", code, body?.error?.message);
-      } else text = body?.text ?? "";
+      // A 200 whose body isn't JSON comes back as null: no text.
+      text = (await this.client.transcribe(blob, { lang: "en", ms }))?.text ?? "";
     } catch (e) {
-      console.warn("[flux] transcribe failed", e);
-      let host = this.apiUrl;
-      try { host = new URL(this.apiUrl).host; } catch { /* keep */ }
-      this.h.onHint(`Can't reach the server (${host}) for speech-to-text. Set it in ⚙.`);
+      if (e instanceof SignApiError) {
+        if (e.code === "transcribe_off") { this.stop(); this.h.onError("Speech-to-text is off on the Flux server (it needs an OpenAI key)."); }
+        else console.warn("[flux] transcribe", e.code === "http_error" ? `http_${e.status}` : e.code, e.message);
+      } else {
+        console.warn("[flux] transcribe failed", e);
+        let host = this.apiUrl;
+        try { host = new URL(this.apiUrl).host; } catch { /* keep */ }
+        this.h.onHint(`Can't reach the server (${host}) for speech-to-text. Set it in ⚙.`);
+      }
     }
     this.done.set(id, text);
     const chunk: ChunkInfo = { ms: Math.round(ms), bytes: blob.size, latency_ms: Math.round(performance.now() - t0), text };

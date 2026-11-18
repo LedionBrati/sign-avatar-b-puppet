@@ -1,6 +1,6 @@
 // API base: the settings field (localStorage) wins, then VITE_API_URL, then the page origin when served at /app/ by app/server, then http://localhost:8787.
 // "same-origin" (used by `npm run dev:mock`) means the API is served by the page's own origin.
-import { DEFAULT_PORT } from "@flux/core";
+import { DEFAULT_PORT, trimBase } from "@flux/core";
 
 declare const __ARTIFACT__: boolean;
 /** The standalone claude.ai Artifact build (vite.artifact.config.ts): the API runs in the page, no mic, no camera. */
@@ -20,6 +20,6 @@ export function setApiSetting(v: string) {
 export function apiBase(): string {
   if (ARTIFACT) return ""; // src/artifact/shim.ts answers /api/* inside the page
   const v = getApiSetting() || ENV_API;
-  return v === "same-origin" ? "" : v.replace(/\/$/, "");
+  return v === "same-origin" ? "" : trimBase(v);
 }
 export const apiLabel = () => apiBase() || location.origin;

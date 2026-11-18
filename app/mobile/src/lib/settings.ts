@@ -1,15 +1,16 @@
 // Server URL: persisted with AsyncStorage. Suggests the laptop's LAN IP when it can be detected
-// (the Expo dev server's host, or the page's host on web) with the API's default port.
+// (the Expo dev server's host, or the page's host on web) with the API's default port. Nothing saved and nothing
+// detected: localhost on web, empty on a phone (the app opens Settings so the user enters the dev machine's address).
 import { useCallback, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import { DEFAULT_PORT } from "@flux/core";
+import { DEFAULT_PORT, trimBase } from "@flux/core";
 
 const KEY = "flux.serverUrl";
 export const PLACEHOLDER = `http://192.168.x.x:${DEFAULT_PORT}`;
-/** Demo laptop on the venue LAN (used only when nothing is saved and nothing can be detected). */
-export const FALLBACK_URL = "http://172.20.1.174:8787";
+/** Used only when nothing is saved and nothing can be detected. */
+export const FALLBACK_URL = Platform.OS === "web" ? `http://localhost:${DEFAULT_PORT}` : "";
 
 /** Best guess for the server: same machine that serves the JS bundle (Metro) or the web page. */
 export function detectServerUrl(): string | null {
@@ -25,7 +26,7 @@ export function detectServerUrl(): string | null {
 }
 
 export const normalizeUrl = (u: string) => {
-  const t = u.trim().replace(/\/+$/, "");
+  const t = trimBase(u.trim());
   if (!t) return "";
   return /^https?:\/\//i.test(t) ? t : `http://${t}`;
 };

@@ -65,9 +65,13 @@ card          ─► POST /api/sign ─► playlist ─► signer + captions
 
 - `entrypoints/background.ts`: toolbar toggle, start/stop broker, offscreen document, Chrome-page badge.
 - `entrypoints/float.ts`: the in-page frame (glass, rim, glow, drag, position).
-- `entrypoints/overlay/`: the card UI (player, transcript, sign requests).
+- `entrypoints/overlay/`: the card UI. `main.ts` wires up `frame.ts` (size, drag grip, messages with `float.ts`), `controls.ts` (Mic | Tab, Start), `menu.ts` (gear menu: size, server, 3D), `listen.ts` (capture start/stop through the background, level), `phrases.ts` (`/api/sign`, in order), `player.ts` (phrase queue, clip crossfade, 3D phrases, idle pose), `signer3d.ts`, `captions.ts`, `status.ts` (status dot, problem line), `health.ts` (server checks), `state.ts` and `dom.ts`.
 - `entrypoints/offscreen/`: capture + transcription. `entrypoints/mic/`: one-time microphone permission tab.
-- `lib/capture.ts` (chunker, error wording), `lib/wave.ts` (voice wave), `lib/messages.ts`, `lib/settings.ts`, `lib/brand.ts` (Flux mark + wordmark, icons), `lib/fonts.ts`.
+- `lib/capture.ts` (chunker, error wording; `/api/transcribe` through `@flux/core`'s client, 30 s timeout per chunk), `lib/wave.ts` (voice wave, on the shared lobes in `core/src/wave.ts`), `lib/messages.ts`, `lib/settings.ts`, `lib/brand.ts` (Flux mark + wordmark, icons), `lib/fonts.ts`.
+
+## Build and typecheck
+
+`npm run build` (`wxt build`) bundles the instant 3D signer from source: `@flux/signer-player` is aliased to `puppet/src/player.ts` in `wxt.config.ts`, so the build needs `puppet/node_modules` (three.js etc.; `cd puppet && npm i`). `npm run typecheck` (`tsc --noEmit`, after `wxt prepare`, which `npm i` runs) doesn't compile the puppet sources: the `prepare:tsconfig` hook in `wxt.config.ts` points `@flux/signer-player` at its declaration, `app/core/src/signer-player.d.ts`, in the generated `.wxt/tsconfig.json`.
 - `scripts/make-icons.py`: renders `public/icon/*.png` from the Flux mark with Pillow (no browser).
 
 ## Verify

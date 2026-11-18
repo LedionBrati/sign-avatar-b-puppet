@@ -1,25 +1,18 @@
-// The listening wave, the web app's (app/web/src/lib/signWave.ts): a thin white line with glowing cobalt-to-ice lobes
-// that swell with the real audio level, on a soft violet glow so it reads on white glass. Silent: a calm line.
+// The listening wave, the web app's (app/web/src/lib/signWave.ts, same lobes from app/core/src/wave.ts): a thin white
+// line with glowing cobalt-to-ice lobes that swell with the real audio level, on a soft violet glow so it reads on white
+// glass. Silent: a calm line.
 // Drawing stops by itself once the line has settled (no idle CPU), and while the card is hidden.
-import { waveColors as COLORS } from "@flux/core";
+import { createWaveLobes, fitCanvas, waveColors } from "@flux/core";
 
 export function createWave(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext("2d")!;
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let level = 0, target = 0, voiced = false, active = false, glow = 0;
   let last = performance.now(), raf = 0, d = 1, still = 0;
-  const spawn = () => ({ c: Math.random() * 1.3 - 0.65, w: 0.16 + Math.random() * 0.24, at: 0.45 + Math.random() * 0.55, a: 0,
-    f: 6 + Math.random() * 6, p: Math.random() * 6.28, ps: (Math.random() < 0.5 ? -1 : 1) * (1 + Math.random() * 1.6), life: 0, dur: 1.4 + Math.random() * 2 });
-  const layers = COLORS.map((c) => ({ c, lobes: [spawn(), spawn()] }));
-  layers.forEach((L) => L.lobes.forEach((b) => (b.life = Math.random() * b.dur)));
-  const N = 96;
-  const ys = new Float32Array(N + 1);
+  const lobes = createWaveLobes({ colors: waveColors, points: 96, at: 0.45, atRange: 0.55, dur: 1.4, durRange: 2 });
 
   function size() {
-    const r = canvas.getBoundingClientRect();
-    d = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.max(2, Math.round(r.width * d));
-    canvas.height = Math.max(2, Math.round(r.height * d));
+    d = fitCanvas(canvas);
     kick();
   }
 
@@ -31,37 +24,7 @@ export function createWave(canvas: HTMLCanvasElement) {
     glow += ((voiced ? 1 : active ? 0.35 : 0.18) - glow) * Math.min(1, dt * 4);
     const W = canvas.width, H = canvas.height, mid = H / 2, amp = (H / 2 - 2 * d) * level;
     ctx.clearRect(0, 0, W, H);
-    if (amp > 0.4) {
-      ctx.globalCompositeOperation = "lighter";
-      for (const L of layers) {
-        L.lobes.forEach((b, j) => {
-          b.life += dt;
-          const k = b.life / b.dur;
-          if (k >= 1) { L.lobes[j] = spawn(); return; }
-          b.a = Math.pow(Math.sin(Math.PI * k), 1.6) * b.at;
-          b.p += b.ps * dt;
-        });
-        for (let i = 0; i <= N; i++) {
-          const xx = -1 + (2 * i) / N;
-          let yy = 0;
-          for (const b of L.lobes) { const e = Math.exp(-(((xx - b.c) / b.w) ** 2)); const s = Math.sin(b.f * (xx - b.c) + b.p); yy += b.a * e * s * s; }
-          ys[i] = Math.min(1, yy);
-        }
-        ctx.beginPath();
-        ctx.moveTo(0, mid);
-        for (let i = 0; i <= N; i++) ctx.lineTo((i / N) * W, mid - ys[i]! * amp);
-        for (let i = N; i >= 0; i--) ctx.lineTo((i / N) * W, mid + ys[i]! * amp);
-        ctx.closePath();
-        const gr = ctx.createLinearGradient(0, mid - amp, 0, mid + amp);
-        gr.addColorStop(0, `rgba(${L.c},0.05)`); gr.addColorStop(0.5, `rgba(${L.c},0.9)`); gr.addColorStop(1, `rgba(${L.c},0.05)`);
-        ctx.fillStyle = gr;
-        ctx.shadowColor = `rgba(${L.c},0.8)`;
-        ctx.shadowBlur = 14 * d;
-        ctx.fill();
-      }
-      ctx.shadowBlur = 0;
-      ctx.globalCompositeOperation = "source-over";
-    }
+    if (amp > 0.4) lobes.draw(ctx, dt, W, mid, amp, d);
     // The centre line: white with a violet glow, brighter while speech is detected.
     const a = 0.55 + glow * 0.45;
     const lg = ctx.createLinearGradient(0, 0, W, 0);

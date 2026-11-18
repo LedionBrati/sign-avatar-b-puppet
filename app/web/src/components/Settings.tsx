@@ -1,6 +1,6 @@
 // Settings as a clean sheet: appearance, the signed-word highlight, and where the sign server runs.
 import { useState } from "react";
-import { copy, createSignClient } from "@flux/core";
+import { copy, createSignClient, trimBase } from "@flux/core";
 import { ARTIFACT, ENV_API, apiBase, getApiSetting, setApiSetting } from "../config";
 import { setPrefs, usePrefs, type Theme } from "../lib/prefs";
 import { Segmented } from "./Segmented";
@@ -10,7 +10,7 @@ export function Settings({ onClose }: { onClose(): void }) {
   const [url, setUrl] = useState(getApiSetting());
   const [status, setStatus] = useState("");
   async function test() {
-    const base = url.trim() ? url.trim().replace(/\/$/, "") : apiBase();
+    const base = url.trim() ? trimBase(url.trim()) : apiBase();
     setStatus("Checking…");
     try {
       const h = await createSignClient(base === "same-origin" ? "" : base, { timeoutMs: 4000 }).health();

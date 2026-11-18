@@ -13,7 +13,7 @@
     "allowImportingTsExtensions": true,
     "types": ["vite/client"],
     "baseUrl": ".",
-    "paths": { "@flux/core": ["../core/src/index.ts"] }
+    "paths": { "@flux/core": ["../core/src/index.ts"], "@flux/signer-player": ["../core/src/signer-player.d.ts"] }
   },
   "include": ["src", "../core/src"]
 }
