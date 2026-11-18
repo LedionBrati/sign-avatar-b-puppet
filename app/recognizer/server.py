@@ -36,7 +36,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import enroll as E
-from recognizer import MAX_FRAMES, POINTS, RecognizeError, Recognizer, parse_frames
+from recognizer import MAX_FRAMES, MODELS_DIR, OPTIONAL_FILES, POINTS, REQUIRED_FILES, RecognizeError, Recognizer, parse_frames
 
 MAX_BODY = MAX_FRAMES * POINTS * 3 * 4
 
@@ -177,9 +177,21 @@ def create_server(host: str = "127.0.0.1", port: int = 8788, rec: Recognizer | N
     return srv
 
 
+def check_models() -> None:
+    """Exit with one clear line if a required model is missing; one warning line for missing optional ones."""
+    missing = [f for f in REQUIRED_FILES if not (MODELS_DIR / f).exists()]
+    if missing:
+        sys.exit(f"recognizer: missing {', '.join(missing)} in {MODELS_DIR}: run `uv run python fetch_models.py` first")
+    gone = {f: why for f, why in OPTIONAL_FILES.items() if not (MODELS_DIR / f).exists()}
+    if gone:
+        print(f"recognizer: optional models missing in {MODELS_DIR}: " + " | ".join(f"{f} ({why})" for f, why in gone.items()),
+              file=sys.stderr, flush=True)
+
+
 def main():
     host = os.environ.get("RECOGNIZER_HOST", "127.0.0.1")
     port = int(os.environ.get("RECOGNIZER_PORT", "8788"))
+    check_models()
     t = time.perf_counter()
     srv = create_server(host, port)
     print(f"Flux recognizer on http://{host}:{port} (models loaded and warm in {time.perf_counter() - t:.1f} s)", flush=True)

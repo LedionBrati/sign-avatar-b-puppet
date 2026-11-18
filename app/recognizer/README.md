@@ -23,6 +23,23 @@ uv run pytest -q                         # 42 tests
 
 Everything at once from the repo root: `node app/start.mjs` (this service + the Node API on :8787).
 
+### Runtime files (`models/`, gitignored)
+
+| File | Size | Needed | From |
+|---|---|---|---|
+| `gislr.tflite`, `gislr_labels.json` | 11.2 MB, 3 KB | required | `fetch_models.py` (Hugging Face) |
+| `fs.tflite`, `fs_args.json`, `fs_chars.json` | 40.9 MB, 6 KB, 0.4 KB | required | `fetch_models.py` (GitHub release, HTTP Range) |
+| `templates.npz` | 1.5 MB | optional | `eval/build_templates.py` (needs extracted WLASL motion `out/motion/wlasl`, the WLASL library `index.json` and the clip manifests `out/realtime/clips*`) |
+| `demo_model.npz` | 0.4 MB | optional | `eval/build_demo_model.py` (needs `out/wlasl-demo` from `eval/fetch_wlasl_demo.py --extract` + the motion library) |
+| `demo_generic.npz` | 1.8 MB | optional | `eval/build_demo_model.py`, same run |
+
+The three optional files are derived features only (no landmarks), but they come from WLASL (research use only), so
+they are not downloadable from upstream; ship them separately or rebuild them. Without a required file `server.py`
+exits with one line telling you to run `fetch_models.py`. Without an optional one it starts anyway and prints one
+`recognizer: optional models missing ...` line: no `templates.npz` = GISLR's 250 signs only; no `demo_model.npz` =
+`profile=demo` / `vocab=` requests are answered like plain sign mode (no `signs`); no `demo_generic.npz` = "Train my
+signs" fits on the person's own reps only.
+
 ## API
 
 - `GET /health` -> `{ok, models: {sign, spell}, warm_ms}`
