@@ -62,6 +62,8 @@ Open **http://localhost:8787/app/**. Type or say a sentence to see it signed; op
 
 **3. Optional: an OpenAI key.** Without one, Flux needs no paid API: the browser's speech recognition and voice, plus the local translator and recognizer. Put `OPENAI_API_KEY=...` in `.env` to turn on server-side transcription (also needed for tab audio in the extension), natural sentences for sign to voice, the natural voice and the planning layer.
 
+**4. Optional: your own fal key, to make new signs.** Run `npm run setup -- --ondemand`, then put `FAL_KEY=...` and `ONDEMAND=on` in `.env`. A word Flux can't sign yet is then generated with fal on first use, on your own key and capped by `FAL_DAILY_BUDGET_USD` (default 20). Everything runs on your machine; nothing is hosted.
+
 ### Configuration
 
 Everything goes in `.env` (created from [`.env.example`](.env.example)); variables already set in your shell win.
