@@ -18,6 +18,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { ffmpegPath, ffprobePath } from "../shared/ffmpeg.mjs";
 import { RACE_MODELS, planRace } from "./race/models.mjs";
 import { repoRoot, scorePair, sidecars } from "./lib/finger.mjs";
 
@@ -35,7 +36,7 @@ if (flag("help") || !opt("ref")) {
 }
 
 function probe(file) {
-  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
+  const j = JSON.parse(execFileSync(ffprobePath(), ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
     "stream=width,height,r_frame_rate,nb_read_frames:format=duration", "-of", "json", file]).toString());
   const s = j.streams[0], [n, d = 1] = s.r_frame_rate.split("/").map(Number);
   return { file, width: s.width, height: s.height, fps: n / d, frames: Number(s.nb_read_frames), seconds: Number(Number(j.format.duration).toFixed(3)) };
@@ -86,12 +87,12 @@ if (flag("execute")) {
   const padded = (file, plan) => {
     if (!plan.pad_to_seconds) return file;
     const out = join(runDir, `${basename(file, ".mp4")}-pad${plan.pad_to_seconds}s.mp4`);
-    if (!existsSync(out)) execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-vf", `tpad=stop_mode=clone:stop_duration=${(plan.pad_to_seconds - ref.seconds).toFixed(3)}`,
+    if (!existsSync(out)) execFileSync(ffmpegPath(), ["-v", "error", "-y", "-i", file, "-vf", `tpad=stop_mode=clone:stop_duration=${(plan.pad_to_seconds - ref.seconds).toFixed(3)}`,
       "-an", "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", out]);
     return out;
   };
   const small = join(runDir, "avatar-1080.jpg");
-  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", avatar, "-vf", "scale=-2:'min(1080,ih)'", "-q:v", "2", small]);
+  execFileSync(ffmpegPath(), ["-v", "error", "-y", "-i", avatar, "-vf", "scale=-2:'min(1080,ih)'", "-q:v", "2", small]);
   const urls = { avatar: await toUrl(avatar), avatarSmall: await toUrl(small), firstFrame: opt("first-frame") ? await toUrl(resolve(opt("first-frame"))) : null };
   await Promise.all(eligible.map(async (plan) => {
     const m = RACE_MODELS[plan.name], t0 = Date.now();

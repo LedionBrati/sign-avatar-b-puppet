@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import colorsys
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -110,7 +111,7 @@ def render(motion_path: str, out: str, width: int = 540, height: int = 720, face
                 cv2.circle(img, px(p), 1, (255, 255, 255), -1)
         writer.write(img)
     writer.release()
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(tmp), "-an", "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p",
+    subprocess.run([os.environ.get("FFMPEG") or "ffmpeg", "-v", "error", "-y", "-i", str(tmp), "-an", "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p",
                     "-r", str(fps), "-movflags", "+faststart", out], check=True)
     tmp.unlink(missing_ok=True)
     return {"out": out, "frames": len(frames), "fps": fps, "width": width, "height": height, "hand_frames": hands_drawn}

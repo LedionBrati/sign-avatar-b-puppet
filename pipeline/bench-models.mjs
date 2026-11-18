@@ -12,6 +12,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { ffmpegPath, ffprobePath } from "../shared/ffmpeg.mjs";
 import { fal } from "@fal-ai/client";
 import { toUrl, download } from "./lib/fal.mjs";
 
@@ -28,7 +29,7 @@ const MODELS = {
 };
 
 const probe = (file) => {
-  const out = execFileSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,nb_read_frames:format=duration", "-of", "json", file]).toString();
+  const out = execFileSync(ffprobePath(), ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,nb_read_frames:format=duration", "-of", "json", file]).toString();
   const j = JSON.parse(out);
   const s = j.streams[0];
   return { width: s.width, height: s.height, fps: s.r_frame_rate, frames: Number(s.nb_read_frames), seconds: Number(Number(j.format.duration).toFixed(3)) };
@@ -60,7 +61,7 @@ async function job(name, endpoint, input) {
 
 const [videoUrl, avatarUrl] = await Promise.all([toUrl(args.video), toUrl(args.avatar)]);
 const smallAvatar = join(outDir, "avatar-1080.jpg");
-execFileSync("ffmpeg", ["-v", "error", "-y", "-i", args.avatar, "-vf", "scale=-2:1080", "-q:v", "2", smallAvatar]);
+execFileSync(ffmpegPath(), ["-v", "error", "-y", "-i", args.avatar, "-vf", "scale=-2:1080", "-q:v", "2", smallAvatar]);
 const smallAvatarUrl = await toUrl(smallAvatar);
 const input = probe(args.video);
 const names = (args.models ?? "recast,kling3,kling26,dreamactor,wanturbo").split(",");
@@ -73,7 +74,7 @@ if (args.split) {
   const halves = [0, 1].map((k) => {
     const file = join(outDir, `split-half${k}.mp4`);
     const pad = Math.max(0, 5.05 - half);
-    execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(k * half), "-t", String(half), "-i", args.split, "-vf", `tpad=stop_mode=clone:stop_duration=${pad}`, "-an", "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", file]);
+    execFileSync(ffmpegPath(), ["-v", "error", "-y", "-ss", String(k * half), "-t", String(half), "-i", args.split, "-vf", `tpad=stop_mode=clone:stop_duration=${pad}`, "-an", "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", file]);
     return file;
   });
   const urls = await Promise.all(halves.map((f) => toUrl(f)));

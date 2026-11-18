@@ -32,6 +32,7 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, createWriteStream } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { ffprobePath } from "../../shared/ffmpeg.mjs";
 import { toId } from "../lib/clips.mjs";
 import { MODELS } from "../e0/models.mjs";
 
@@ -81,7 +82,7 @@ const saveState = (s) => { if (opt.simulate) return; s.updated = new Date().toIS
 const loadRanked = () => { if (!existsSync(rankedPath)) throw new Error("run `rank` first"); return load(rankedPath); };
 const usd = (x) => `$${x.toFixed(2)}`;
 const hms = (s) => s >= 3600 ? `${(s / 3600).toFixed(1)} h` : s >= 60 ? `${(s / 60).toFixed(1)} min` : `${Math.round(s)} s`;
-const frameCount = (mp4) => Number(execFileSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0",
+const frameCount = (mp4) => Number(execFileSync(ffprobePath(), ["-v", "error", "-count_frames", "-select_streams", "v:0",
   "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", mp4]).toString().trim());
 
 const children = new Set();
