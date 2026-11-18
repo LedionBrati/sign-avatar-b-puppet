@@ -6,6 +6,7 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, r
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AVATAR_PROMPT, RACE_MODELS, ltxFrames } from "../race/models.mjs";
+import { toMotionId as toId } from "../../translate/rules.mjs";
 
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const RENDER_FPS = 24;            // the avatar video is always written at 24 fps
@@ -48,7 +49,7 @@ export const SETS = Object.freeze({
 });
 
 export const round = (x, d = 3) => Math.round(x * 10 ** d) / 10 ** d;
-export const toId = (g) => String(g).trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+export { toId };   // gloss -> motion_id (translate/rules.mjs toMotionId)
 export const glossKey = (g) => String(g).trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
 export const displayGloss = (g) => String(g).replace(/_/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
 

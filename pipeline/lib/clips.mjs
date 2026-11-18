@@ -7,9 +7,10 @@ import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSyn
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
+import { toMotionId as toId } from "../../translate/rules.mjs";
 
 export const ffmpeg = (args) => execFileSync("ffmpeg", ["-v", "error", "-y", ...args], { stdio: ["ignore", "ignore", "inherit"] });
-export const toId = (gloss) => gloss.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+export { toId };   // gloss -> motion_id, one definition (translate/rules.mjs toMotionId)
 
 /** Every clip gets the same encoding so joinClips can join them without re-encoding. */
 export const CLIP_ENCODE = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "24", "-g", "12", "-movflags", "+faststart"];
