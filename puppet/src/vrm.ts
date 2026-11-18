@@ -88,6 +88,8 @@ export interface PuppetOptions {
   /** render hand close-up insets */
   closeup?: boolean;
   background?: string;
+  /** an image behind the avatar instead of the flat background colour (URL), e.g. assets/avatar/wall-plate.jpg */
+  backgroundImage?: string;
   /** soft image-based lighting, tone mapping and target-photo framing (on for non-VRM avatars such as signer.glb) */
   realistic?: boolean;
   /** passes drawn side by side, left to right, each `width` wide (default ["rgb"]) */
@@ -174,6 +176,7 @@ export class VrmPuppet {
       background: opts.background ?? (opts.mannequin ? "#2b2b2f" : "#1d2026"), realistic: opts.realistic ?? false,
       passes: opts.passes?.length ? opts.passes : ["rgb"], antialias: opts.antialias ?? true, lite: opts.lite ?? false,
       placement: opts.placement ?? "auto", swivel: opts.swivel ?? true, handClean: opts.handClean ?? true,
+      backgroundImage: opts.backgroundImage ?? "",
     };
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.opts.antialias, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
@@ -208,6 +211,12 @@ export class VrmPuppet {
     this.vrm = vrm;
     if (this.opts.realistic) this.applyRealisticLook();
     if (this.opts.mannequin) this.applyMannequin();
+    if (this.opts.backgroundImage) {
+      // a photo of the wall fills the frame (stretched to the canvas; use a plate with the canvas's aspect ratio)
+      const tex = await new THREE.TextureLoader().loadAsync(this.opts.backgroundImage);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.scene.background = tex;
+    }
     for (const s of SIDES) {
       try { this.hands[s] = new AvatarHand(vrm, s, this.isGltfAvatar ? mixamoTips(vrm.scene, s) : {}); } catch { /* no finger bones */ }
     }

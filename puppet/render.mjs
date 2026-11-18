@@ -22,6 +22,8 @@
 // --workers N       N Chrome processes render interleaved 1 s chunks (jpeg/raw capture). On this 10-core laptop it
 //                   did not help: SwiftShader already uses every core. Kept for many-core machines.
 // --aa 0            no multisampling: faster on software WebGL, slightly jaggier edges.
+// --bg-image PATH   an image behind the avatar instead of the flat wall colour (e.g. assets/avatar/wall-plate.jpg,
+//                   3:4 like the frame). Data passes (depth/normal/seg) keep their flat backgrounds.
 // --lite            cheap shading (Lambert, hemisphere light, no environment map) for software WebGL.
 // --placement auto|fk|ik   hand placement (src/place.ts). ik: wrists placed relative to the avatar's own face and
 //                   shoulders, arms solved with IK; fk: arm rotations copied. auto (default): ik for --avatar signer,
@@ -153,6 +155,8 @@ if (lite) params.set("lite", "1");
 if (placement !== "auto") params.set("place", placement);
 if (String(arg("swivel", "1")) === "0") params.set("swivel", "0");
 if (String(arg("handclean", "1")) === "0") params.set("handclean", "0");
+const bgImage = arg("bg-image", null);
+if (bgImage) params.set("bgimage", toUrlPath(resolve(bgImage)));
 const panels = view === "sidebyside" ? (srcTpl ? 3 : 2) : passes.length;
 const pageW = W * panels;
 

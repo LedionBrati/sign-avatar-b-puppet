@@ -53,6 +53,8 @@ const LITE = q.get("lite") === "1";
 const PLACE = (q.get("place") ?? "auto") as "auto" | "fk" | "ik";
 const SWIVEL = q.get("swivel") !== "0";
 const HANDCLEAN = q.get("handclean") !== "0";
+/** bgimage=PATH: an image behind the avatar (render.mjs --bg-image), e.g. assets/avatar/wall-plate.jpg */
+const BG_IMAGE = q.get("bgimage");
 
 /** local paths go through the dev server's /__file/ route (see vite.config.ts) */
 export function resolveUrl(p: string): string {
@@ -113,7 +115,8 @@ async function main() {
     if (PASSES.length > 1) p.style.width = `${PW * PASSES.length}px`;
     const c = canvas(p);
     vrmOverlay = canvas(p, "overlay").getContext("2d")!;
-    puppet = new VrmPuppet(c, PW, PH, { solver, closeup, mannequin: MANNEQUIN, passes: PASSES, antialias: ANTIALIAS, lite: LITE, placement: PLACE, swivel: SWIVEL, handClean: HANDCLEAN });
+    puppet = new VrmPuppet(c, PW, PH, { solver, closeup, mannequin: MANNEQUIN, passes: PASSES, antialias: ANTIALIAS, lite: LITE,
+      placement: PLACE, swivel: SWIVEL, handClean: HANDCLEAN, backgroundImage: BG_IMAGE ? resolveUrl(BG_IMAGE) : undefined });
     await puppet.load(MODEL);
     if (SMOOTH) puppet.bake(motion);
     (window as any).puppet = puppet; // for poking at from devtools

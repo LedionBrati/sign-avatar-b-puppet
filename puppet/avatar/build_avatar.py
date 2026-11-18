@@ -18,6 +18,14 @@ ap.add_argument("--assets", required=True)
 ap.add_argument("--out", required=True)
 ap.add_argument("--hair", default="long01")
 ap.add_argument("--tex", type=int, default=1024, help="max texture size")
+ap.add_argument("--look", default="default", choices=["default", "bob"],
+                help="bob: the assets/avatar/avatar-main.jpg lookalike (chin-length bob, about 35, olive skin, face shape)")
+ap.add_argument("--eyebrows", default=None, help="eyebrow asset (default eyebrow001)")
+ap.add_argument("--targets", default="", help="extra face/body targets, name=weight,name=weight (MakeHuman target names)")
+ap.add_argument("--skin-tint", default=None, help="r,g,b multiplier for the skin texture (1,1,1 = as shipped)")
+ap.add_argument("--part-fringe", type=float, default=None,
+                help="delete hair cards in front of the face up to this height above the head joint (m); bob look: 0.16")
+ap.add_argument("--preview", default=None, help="also write a face close-up PNG (Cycles, CPU) here")
 args = ap.parse_args(argv)
 
 importlib.import_module("bl_ext.user_default.mpfb")
@@ -27,18 +35,57 @@ from bl_ext.user_default.mpfb.services.exportservice import ExportService
 
 A = lambda *p: os.path.join(args.assets, *p)
 
+# The lookalike of assets/avatar/avatar-main.jpg: a woman of about 35 with olive skin, an oval face with defined
+# cheekbones and a narrow chin, straight nose, slight closed-mouth smile, and a dark chin-length bob (MakeHuman
+# bob01 with its side fringe removed, darkened in the player like the long hair), medium dark brows.
+# Weights are MakeHuman modifier values (0..1). Chosen by eye against avatar-closeup.jpg on Modal previews.
+LOOK_BOB = {
+    "hair": "bob01", "eyebrows": "eyebrow011", "skin_tint": None,
+    "macro": {"age": 0.58, "race": {"asian": 0.05, "caucasian": 0.83, "african": 0.12}},
+    "targets": {"head-oval": 0.55, "head-scale-horiz-decr": 0.12, "chin-width-decr": 0.25, "chin-prominent-incr": 0.15,
+                "l-cheek-bones-incr": 0.35, "r-cheek-bones-incr": 0.35, "l-cheek-volume-decr": 0.2, "r-cheek-volume-decr": 0.2,
+                "nose-scale-vert-incr": 0.2, "nose-point-width-decr": 0.15, "nose-hump-decr": 0.2,
+                "mouth-angles-up": 0.35, "mouth-scale-horiz-incr": 0.08, "mouth-upperlip-volume-decr": 0.15,
+                "eyebrows-angle-up": 0.1, "l-eye-scale-decr": 0.1, "r-eye-scale-decr": 0.1},
+}
+if args.look == "bob":
+    if args.hair == "long01":
+        args.hair = LOOK_BOB["hair"]
+    args.eyebrows = args.eyebrows or LOOK_BOB["eyebrows"]
+    if LOOK_BOB["skin_tint"]:
+        args.skin_tint = args.skin_tint or ",".join(map(str, LOOK_BOB["skin_tint"]))
+brows = args.eyebrows or "eyebrow001"
+targets = dict(LOOK_BOB["targets"]) if args.look == "bob" else {}
+for kv in filter(None, args.targets.split(",")):
+    k, v = kv.split("=")
+    targets[k.strip()] = float(v)
+print("LOOK", args.look, "hair", args.hair, "brows", brows, "tint", args.skin_tint, "targets", len(targets))
+
 for o in list(bpy.data.objects):
     bpy.data.objects.remove(o)
 
 macro = {"gender": 0.0, "age": 0.55, "muscle": 0.5, "weight": 0.45, "proportions": 0.75, "height": 0.5,
          "cupsize": 0.3, "firmness": 0.5, "race": {"asian": 0.05, "caucasian": 0.9, "african": 0.05}}
+if args.look == "bob":
+    macro.update({k: v for k, v in LOOK_BOB["macro"].items()})
 bm = HumanService.create_human(macro_detail_dict=macro)
+# face/body modifiers go on before the rig and the clothes-style assets, so both are fitted to the final shape
+for name, w in targets.items():
+    try:
+        path = TargetService.target_full_path(name)
+    except Exception:
+        path = None
+    if not path or not os.path.exists(path):
+        print("WARN no target", name)
+        continue
+    TargetService.load_target(bm, path, weight=w, name=name)
+    print("TARGET", name, w)
 rig = HumanService.add_builtin_rig(bm, "mixamo")
 HumanService.set_character_skin(A("skins", "young_caucasian_female", "young_caucasian_female.mhmat"), bm, skin_type="GAMEENGINE")
 
 assets = [
     ("Eyes", A("eyes", "low-poly", "low-poly.mhclo")),
-    ("Eyebrows", A("eyebrows", "eyebrow001", "eyebrow001.mhclo")),
+    ("Eyebrows", A("eyebrows", brows, f"{brows}.mhclo")),
     ("Eyelashes", A("eyelashes", "eyelashes01", "eyelashes01.mhclo")),
     ("Hair", A("hair", args.hair, f"{args.hair}.mhclo")),
 ]
@@ -49,6 +96,31 @@ for kind, path in assets:
 # bake the body shape and drop the helper geometry (MakeHuman ships clothes-fitting helpers inside the mesh)
 TargetService.bake_targets(bm)
 ExportService.bake_modifiers_remove_helpers(bm, bake_masks=True, remove_helpers=True)
+
+# MakeHuman's bobs have a long side fringe over one eye; the target has an open forehead and a side part.
+# Delete the hair cards that hang in front of the face (eyes, cheeks, forehead) and keep the sides and back.
+if args.part_fringe is None and args.look == "bob":
+    args.part_fringe = 0.16
+if args.part_fringe:
+    import bmesh as _bmesh
+    hj = rig.matrix_world @ rig.data.bones["mixamorig:Head"].head_local
+    mw = bm.matrix_world
+    face = [mw @ v.co for v in bm.data.vertices if hj.z < (mw @ v.co).z < hj.z + 0.15 and abs((mw @ v.co).x - hj.x) < 0.07]
+    face_front = min(c.y for c in face)  # nose tip (MakeHuman faces -Y)
+    face_back = hj.y + 0.02
+    hair = objs["Hair"]
+    hb = _bmesh.new()
+    hb.from_mesh(hair.data)
+    hmw = hair.matrix_world
+    kill = []
+    for f in hb.faces:
+        c = hmw @ f.calc_center_median()
+        if hj.z - 0.06 < c.z < hj.z + args.part_fringe and abs(c.x - hj.x) < 0.066 and c.y < face_back:
+            kill.append(f)
+    _bmesh.ops.delete(hb, geom=kill, context="FACES")
+    hb.to_mesh(hair.data)
+    hb.free()
+    print("PART fringe: deleted", len(kill), "hair faces, front", round(face_front, 3), "head joint", tuple(round(x, 3) for x in hj))
 
 
 def principled(name, color, rough, tex=None, alpha=False):
@@ -76,9 +148,36 @@ def replace_materials(obj, mat):
 # textures, of which glTF keeps only the first, which put lip colour on the nose)
 replace_materials(objs["Eyes"], principled("eyes", (1, 1, 1), 0.15, A("eyes", "materials", "brown_eye.png")))
 replace_materials(objs["Hair"], principled("hair", (1, 1, 1), 0.55, A("hair", args.hair, f"{args.hair}_diffuse.png"), alpha=True))
-replace_materials(objs["Eyebrows"], principled("eyebrows", (1, 1, 1), 0.8, A("eyebrows", "eyebrow001", "eyebrow001.png"), alpha=True))
+replace_materials(objs["Eyebrows"], principled("eyebrows", (1, 1, 1), 0.8, A("eyebrows", brows, f"{brows}.png"), alpha=True))
 replace_materials(objs["Eyelashes"], principled("eyelashes", (1, 1, 1), 0.8, A("eyelashes", "eyelashes01", "eyelashes01.png"), alpha=True))
 skin = principled("skin", (1, 1, 1), 0.55, A("skins", "young_caucasian_female", "young_lightskinned_female_diffuse.png"))
+if args.skin_tint:
+    # tint the texture pixels themselves (a glTF baseColorFactor would need a multiply node the exporter may drop)
+    import numpy as np
+    tint = [float(x) for x in args.skin_tint.split(",")]
+    img = skin.node_tree.nodes["Image Texture"].image
+    px = np.empty(len(img.pixels), dtype=np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(-1, 4)
+    px[:, :3] *= np.array(tint, dtype=np.float32)
+    img.pixels.foreach_set(px.ravel())
+    img.update()
+
+# the player tints hair dark brown by multiplying (src/vrm.ts), which assumes a light texture like long01's;
+# bob01's texture is already dark, so it went black. Make it a grey of mean 0.45, which the player tint turns into the photo's near-black brown.
+if args.look == "bob" or args.hair.startswith("bob01"):
+    import numpy as np
+    himg = objs["Hair"].data.materials[0].node_tree.nodes["Image Texture"].image
+    hp = np.empty(len(himg.pixels), dtype=np.float32)
+    himg.pixels.foreach_get(hp)
+    hp = hp.reshape(-1, 4)
+    lum = hp[:, :3] @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    on = hp[:, 3] > 0.3
+    scale = 0.45 / max(1e-3, float(lum[on].mean()))
+    hp[:, :3] = np.clip(lum * scale, 0, 1)[:, None]
+    himg.pixels.foreach_set(hp.ravel())
+    himg.update()
+    print("LOOK hair texture normalised, scale", round(scale, 2))
 
 # the long-sleeve top: faces that belong mostly to the torso and arms get a black fabric material;
 # hands, neck and head keep the skin. Only the rig's deform weights count, so the cuff sits at the wrist joint.
@@ -171,3 +270,30 @@ bpy.ops.export_scene.gltf(filepath=args.out, export_format="GLB", use_selection=
                           export_skins=True, export_morph=False, export_animations=False, export_apply=False,
                           export_image_format="JPEG", export_image_quality=88)
 print("WROTE", args.out, "verts", len(bm.data.vertices), "bones", len(rig.data.bones))
+
+if args.preview:
+    # face close-up for checking the look (Cycles on the CPU; not what the player shows, but the same mesh and textures)
+    scn = bpy.context.scene
+    head = rig.matrix_world @ rig.data.bones["mixamorig:Head"].head_local
+    cam = bpy.data.objects.new("pcam", bpy.data.cameras.new("pcam"))
+    scn.collection.objects.link(cam)
+    cam.data.lens, cam.data.sensor_fit, cam.data.sensor_height = 85, "VERTICAL", 36
+    cam.location = (head.x, head.y - 1.15, head.z + 0.03)  # MakeHuman faces -Y
+    cam.rotation_euler = (math.pi / 2, 0, 0)
+    scn.camera = cam
+    for nm, loc, energy, size in (("key", (-0.9, -1.3, 0.6), 60, 1.2), ("fill", (1.0, -1.0, 0.3), 20, 1.5)):
+        L = bpy.data.objects.new(nm, bpy.data.lights.new(nm, "AREA"))
+        L.data.energy, L.data.size = energy, size
+        L.location = (head.x + loc[0], head.y + loc[1], head.z + loc[2])
+        L.rotation_euler = (head - L.location).to_track_quat("-Z", "Y").to_euler()
+        scn.collection.objects.link(L)
+    scn.world = scn.world or bpy.data.worlds.new("w")
+    scn.world.use_nodes = True
+    scn.world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.05, 0.05, 0.048, 1)
+    scn.render.engine = "CYCLES"
+    scn.cycles.device, scn.cycles.samples, scn.cycles.use_denoising = "CPU", 32, True
+    scn.render.resolution_x, scn.render.resolution_y, scn.render.resolution_percentage = 600, 800, 100
+    scn.view_settings.view_transform = "Standard"
+    scn.render.filepath = args.preview
+    bpy.ops.render.render(write_still=True)
+    print("PREVIEW", args.preview)

@@ -86,15 +86,25 @@ def _node(args: list[str], cwd: Path) -> str:
 
 @app.function(volumes={"/vol": vol}, cpu=CPU, memory=8192, timeout=3600)
 def render_one(motion: str, avatar: str = "signer", passes: str = "rgb,depth,normal", lite: bool = True,
-               extra: list[str] | None = None, gpu: bool = False, tag: str = "", placement: str = "auto") -> dict:
-    """Render /vol/motion/<motion> to /vol/renders/<stem>-<avatar>[-<tag>].mp4 (+ .depth/.normal/.seg mp4 and the .json report)."""
+               extra: list[str] | None = None, gpu: bool = False, tag: str = "", placement: str = "auto",
+               model: str = "", bg_image: str = "", frames: int = 0) -> dict:
+    """Render /vol/motion/<motion> to /vol/renders/<stem>-<avatar>[-<tag>].mp4 (+ .depth/.normal/.seg mp4 and the .json report).
+    model: another avatar on the volume (/models/<model>, e.g. signer-bob.glb); <avatar> in the name is then the model stem.
+    bg_image: an image on the volume (/models/<bg_image>, e.g. wall-plate.jpg) behind the avatar."""
     w = _workdir()
     stem = motion.removesuffix(".json").removesuffix(".clean")  # x.v2.json -> x.v2, so v1 and v2 renders differ
-    out = Path(f"/vol/renders/{stem}-{avatar}{'-' + tag if tag else ''}.mp4")
+    name = Path(model).stem if model else avatar
+    out = Path(f"/vol/renders/{stem}-{name}{'-' + tag if tag else ''}.mp4")
     out.parent.mkdir(parents=True, exist_ok=True)
     args = [str(w / "render.mjs"), "--motion", f"/vol/motion/{motion}", "--view", "vrm", "--out", str(out)]
     if avatar == "signer":
         args += ["--avatar", "signer", "--passes", passes, "--aa", "0"] + (["--lite"] if lite and not gpu else [])
+    if model:
+        args += ["--model", f"/models/{model}"]
+    if bg_image:
+        args += ["--bg-image", f"/vol/models/{bg_image}"]
+    if frames:
+        args += ["--frames", str(frames)]
     if gpu:
         args.append("--gpu")
     if placement != "auto":
@@ -155,14 +165,16 @@ def probe_gpu_remote(motion: str) -> str:
 
 @app.local_entrypoint()
 def main(motions: str, avatar: str = "signer", passes: str = "rgb,depth,normal", lite: bool = True, gpu: bool = False,
-         tag: str = "", placement: str = "auto", extra: str = ""):
+         tag: str = "", placement: str = "auto", extra: str = "", model: str = "", bg_image: str = "", frames: int = 0):
     """--motions a.clean.json,b.v2.json (names on the volume, under /motion). --avatar signer|vrm.
     --placement auto|fk|ik (render.mjs --placement), --tag x: outputs named <stem>-<avatar>-x.mp4,
-    --extra "--swivel 0": more render.mjs arguments (space-separated)."""
+    --extra "--swivel 0": more render.mjs arguments (space-separated).
+    --model signer-bob.glb --bg-image wall-plate.jpg: the lookalike avatar in front of the photo wall (both under /models)."""
     names = [m for m in motions.split(",") if m]
     t0 = time.time()
     rows = list(render_one.map(names, kwargs={"avatar": avatar, "passes": passes, "lite": lite, "gpu": gpu, "tag": tag, "placement": placement,
-                                                      "extra": extra.split() if extra else None},
+                                              "extra": extra.split() if extra else None, "model": model,
+                                              "bg_image": bg_image, "frames": frames},
                                return_exceptions=True))
     for r in rows:
         print(json.dumps(r if isinstance(r, dict) else {"error": str(r)[-1500:]}))
@@ -171,7 +183,8 @@ def main(motions: str, avatar: str = "signer", passes: str = "rgb,depth,normal",
 
 @app.local_entrypoint()
 def upload(motions: str = "", models: str = ""):
-    """--motions comma-separated local motion files -> /motion/<name>; --models a folder -> /models/ (.glb, .vrm)."""
+    """--motions comma-separated local motion files -> /motion/<name>; --models a folder -> /models/ (.glb, .vrm, and
+    .jpg/.png background plates)."""
     def have(path: str) -> set[str]:
         try:
             return {e.path.split("/")[-1] for e in vol.listdir(path)}
@@ -182,7 +195,7 @@ def upload(motions: str = "", models: str = ""):
         if models:
             on = have("/models")
             for f in Path(models).iterdir():
-                if f.suffix in (".glb", ".vrm") and f.name not in on:
+                if f.suffix in (".glb", ".vrm", ".jpg", ".png") and f.name not in on:
                     b.put_file(str(f), f"/models/{f.name}"); n += 1
         on = have("/motion")
         for m in [Path(x) for x in motions.split(",") if x]:
