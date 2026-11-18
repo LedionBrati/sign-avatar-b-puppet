@@ -36,7 +36,7 @@ Every capture also exists in the other theme and size (`2030-<screen>-<phone|des
 | `--cap-heard` (heard, not yet signed) | `.62` | `.5` |
 | `--stage-top/bot` (clip backdrop) | `#252a32` / `#1b1f28` | same |
 
-- **Brand:** cobalt `#1f3fd6`, the mark (cobalt tile, white bars) and the `sıgnlayer` wordmark (Inter 500, with the dot in the accent).
+- **Brand:** cobalt `#1f3fd6`, the mark (cobalt tile, white bars) and the `flux` wordmark (Inter 500, with the dot in the accent).
 - **Type:** `-apple-system, "SF Pro Display/Text", Inter (variable, optical sizes), system-ui`. Large titles are 40/64 px, 700 weight, −0.038 em tracking. Captions are 26/36 px, 600 weight, −0.024 em, 1.24 line height. Body text is 17 px, −0.011 em.
 - **Spacing:** 8-pt grid (`--s1` 4 px through `--s8` 64 px). Every hit target is at least 44 px. The primary button is 72 px and the shutter is 76 px.
 - **Radii:** 14 / 22 / 30 / 38 px. Cards use 38 px and capsules are fully round.

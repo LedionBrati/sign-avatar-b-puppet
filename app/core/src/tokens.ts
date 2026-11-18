@@ -1,6 +1,6 @@
 // Flux design tokens, from the team's prototype (claude.ai artifacts "Flux App" and the
-// concept page). Grainy cobalt-to-paper gradients, frosted glass pills/cards, lowercase "sıgnlayer"
-// wordmark (Inter 500, the dotless ı carries a cobalt dot), system/Helvetica type.
+// concept page). Grainy cobalt-to-paper gradients, frosted glass pills/cards, lowercase "flux"
+// wordmark (serif italic), system/Helvetica type.
 
 export const colors = {
   table: "#cbcbcc",

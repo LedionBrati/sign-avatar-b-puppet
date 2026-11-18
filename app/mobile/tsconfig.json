@@ -3,6 +3,8 @@
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "paths": { "@flux/core": ["../core/src/index.ts"] }
   },
   "include": ["**/*.ts", "**/*.tsx", "../core/src/**/*.ts"]

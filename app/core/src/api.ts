@@ -201,7 +201,7 @@ export interface EnrollInfo {
   model?: { labels: string[]; samples: number; train_ms: number; own_reps?: number; loo?: { right: number; of: number } | null };
 }
 
-/** Signs of the finals demo (closed vocabulary). "_none" = rest / fidgeting reps (the "no sign" class). */
+/** The closed demo vocabulary (Train my signs / demo profile). "_none" = rest / fidgeting reps (the "no sign" class). */
 export const DEMO_SIGNS = ["HELLO", "YES", "NO", "PLEASE", "THANK_YOU", "WATER", "HUNGRY", "SICK", "HOME", "HELP", "NAME", "NICE",
   "MEET", "YOU", "ME", "WHERE", "FINE", "HAPPY", "BYE", "SORRY"] as const;
 export const NONE_SIGN = "_none";
