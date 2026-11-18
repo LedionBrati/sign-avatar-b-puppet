@@ -61,12 +61,16 @@ export interface SignerPlayerModule {
   SignerPlayer: { create(canvas: HTMLCanvasElement, opts?: { modelUrl?: string }): Promise<SignerPlayerLike> };
 }
 
+/** The 3D signer's canvas: 3:4 like the photoreal clips. */
+export const SIGNER3D_SIZE = { width: 540, height: 720 } as const;
+
 export interface Signer3DOptions {
   /** Lazy loader of the player bundle, e.g. () => import("@flux/signer-player"). Called once. */
   load: () => Promise<SignerPlayerModule>;
   /** The avatar, e.g. client.modelUrl() (GET /models/signer.glb). Fetched once. */
   modelUrl: string;
-  canvas: HTMLCanvasElement;
+  /** Default: a new SIGNER3D_SIZE canvas (put it on the page yourself). */
+  canvas?: HTMLCanvasElement;
   /** Cross-blend between neighbouring signs, seconds (default 0.2). */
   blendS?: number;
   fetch?: typeof fetch;
@@ -89,7 +93,10 @@ export class Signer3D {
 
   private readonly o: Signer3DOptions;
 
-  constructor(o: Signer3DOptions) { this.o = o; this.canvas = o.canvas; }
+  constructor(o: Signer3DOptions) {
+    this.o = o;
+    this.canvas = o.canvas ?? Object.assign(document.createElement("canvas"), SIGNER3D_SIZE);
+  }
 
   warm(restUrl?: string): Promise<SignerPlayerLike> {
     if (!this.player) {

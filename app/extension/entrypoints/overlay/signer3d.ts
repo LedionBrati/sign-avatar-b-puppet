@@ -9,11 +9,8 @@ export function get3d(): Signer3D {
   if (!signer3d || !signer3d.canvas.isConnected) {
     signer3d?.stop();
     layer3d.replaceChildren();
-    const canvas = document.createElement("canvas");
-    canvas.width = 540;
-    canvas.height = 720;
-    layer3d.appendChild(canvas);
-    signer3d = new Signer3D({ load: () => import("@flux/signer-player"), modelUrl: client.modelUrl(), canvas });
+    signer3d = new Signer3D({ load: () => import("@flux/signer-player"), modelUrl: client.modelUrl() });
+    layer3d.appendChild(signer3d.canvas);
   }
   return signer3d;
 }
