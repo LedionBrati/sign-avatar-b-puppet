@@ -9,6 +9,8 @@
       "paths": [
         "out/realtime/clips",
         "out/realtime/clips-mass",
+        "out/realtime/clips-demo",
+        "out/realtime/clips-phrases",
         "out/realtime/clips-v2-demo",
         "out/realtime/clips-v2-sentences",
         "out/realtime/neutral.clean.json",
@@ -17,8 +19,8 @@
         "app/recognizer/models/demo_model.npz",
         "app/recognizer/models/demo_generic.npz"
       ],
-      "sha256": "fd4d1d9f49006224092a775a7013ab8c1558063471cd368632115019a1a24f1f",
-      "bytes": 205898134
+      "sha256": "8ebf6dfb2c285ffbc41923b48469a9d2cceb41591fb93d00a50971a41cd6b2dd",
+      "bytes": 240274256
     },
     {
       "name": "motion",

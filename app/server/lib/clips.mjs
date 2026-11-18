@@ -2,14 +2,14 @@
 // Later dirs add signs; the first dir wins when two dirs have the same motion_id.
 // Only files listed in a manifest AND present on disk are exposed, so a sign is never invented
 // and /clips/* can never serve anything outside the manifests.
-// Env: CLIPS_DIR=dirA,dirB. Default <repo>/out/realtime/clips + clips-mass (both in the asset pack).
+// Env: CLIPS_DIR=dirA,dirB. Default <repo>/out/realtime/clips, clips-mass, clips-phrases, clips-demo (all in the asset pack).
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fromRepo, list } from "./paths.mjs";
 
 export const DEFAULT_CLIPS_DIR = fromRepo("out/realtime/clips");
-const DEFAULT_CLIPS_DIRS = [DEFAULT_CLIPS_DIR, fromRepo("out/realtime/clips-mass")];
+const DEFAULT_CLIPS_DIRS = ["clips", "clips-mass", "clips-phrases", "clips-demo"].map((d) => fromRepo(`out/realtime/${d}`));
 const FPS = 24;
 const LETTER = /^FS_([A-Z])$/;
 

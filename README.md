@@ -72,7 +72,7 @@ Everything goes in `.env` (created from [`.env.example`](.env.example)); variabl
 | `FAL_KEY` (or `FAL_KEY_FILE`), `ONDEMAND=on` | Make missing signs with fal in the background, capped by `FAL_DAILY_BUDGET_USD` (default 20). |
 | `HOST`, `PORT` | Where the API listens (default `127.0.0.1:8787`). `HOST=0.0.0.0` to open the app from a phone on the same Wi-Fi. |
 | `SIGNING_MODE` | `strict` (default) signs a phrase only when every word is signable; `relaxed` signs what it can and leaves the rest in the captions. |
-| `CLIPS_DIR` | Clip folders, comma-separated (default `out/realtime/clips,out/realtime/clips-mass`); the production sets `out/realtime/clips-v2-*` go in front automatically. |
+| `CLIPS_DIR` | Clip folders, comma-separated (default: `clips`, `clips-mass`, `clips-phrases`, `clips-demo` under `out/realtime`); the production sets `out/realtime/clips-v2-*` go in front automatically. |
 | `NO_RECOGNIZER=1`, `MOTION=off` | Skip the Python recognizer / the 3D signer. |
 
 The full list is in [`app/server/README.md`](app/server/README.md) and [`app/recognizer/README.md`](app/recognizer/README.md).

@@ -2,7 +2,7 @@
 
 `cd translate && npm i` once (and `cd app/server && npm i` for the optional agent layer: the `openai` SDK is its only dependency), then `node app/server/index.mjs` (Node >= 22.18: it imports `app/core/src/*.ts` directly). It listens on `127.0.0.1:8787` and prints the URL; `HOST=0.0.0.0` makes it reachable from phones on the LAN (and prints every LAN URL; on Windows the first start asks for a firewall rule). `npm test` here runs `node --test test/`.
 `CLIPS_DIR=dirA,dirB` merges clip sets (`manifest.json` each; first dir wins on a motion_id); only manifest files that exist are served, at `/clips/<file>` with Range/206. `SEMANTIC=0` = rules only.
-With the mass clip set (`pipeline/mass/`, see `experiments/2026-11-15-mass-signs.md`), both folders are loaded by default: the hand-made set wins on overlap, and mass aliases (synonyms sharing one WLASL video) point at the same file.
+With the mass clip set (`pipeline/mass/`, see `experiments/2026-11-15-mass-signs.md`), the clip folders are loaded by default: the hand-made set wins on overlap, and mass aliases (synonyms sharing one WLASL video) point at the same file.
 Routes: `GET /api/health`, `GET /api/vocab`, `POST /api/sign {text, semantic?, agent?}` (text ≤ 500 chars; errors are `{error:{code,message}}`), `GET /api/sign.mp4?text=` (joined mp4 via ffmpeg stream copy; `ffmpeg` must be on PATH, else `503 no_ffmpeg`). CORS open to any origin.
 The semantic model warms in the background (~0.5 s with `translate/cache/`); until `health.semantic` is `"ready"`, `/api/sign` uses rules only. `word_index` comes from the translator's `source_index`.
 Speech -> text (the extension's tab audio): `POST /api/transcribe` with one audio chunk (`audio/webm` opus from MediaRecorder; also ogg, wav, mpeg, mp4; up to 2 MB, optional `?lang=en`, `X-Audio-Ms` up to 30000) returns `{text, model, timings}`; `text` is empty for silence or music. It uses the same OpenAI key as the agent layer (`gpt-4o-mini-transcribe`, `TRANSCRIBE_MODEL` to override, `TRANSCRIBE=off` to disable); `health.transcribe` is `"ready"` or `"off"`, and without a key the route answers `503 transcribe_off`. Audio is never stored or logged. `node scripts/transcribe-bench.mjs <dir>` compares models on real chunks.
@@ -18,7 +18,7 @@ Every environment variable the server reads is listed with its default at the to
 | `PORT` / `HOST` | `8787` / `127.0.0.1` | listen address; `HOST=0.0.0.0` for phones on the LAN |
 | `RECOGNIZER_URL` | `http://127.0.0.1:8788` | `app/recognizer` (sign -> voice) |
 | `WEB_DIST` | `app/web/dist` | the built web app served at `/app/` |
-| `CLIPS_DIR` | `out/realtime/clips,out/realtime/clips-mass` | clip dirs, comma separated; `out/realtime/clips-v2-{demo,sentences,library}` go in front unless `CLIPS_V2=0` |
+| `CLIPS_DIR` | `out/realtime/` `clips`, `clips-mass`, `clips-phrases`, `clips-demo` | clip dirs, comma separated; `out/realtime/clips-v2-{demo,sentences,library}` go in front unless `CLIPS_V2=0` |
 | `SEMANTIC` | on | `0` = rules only |
 | `SIGNING_MODE` | `strict` | `relaxed`: partial sentences sign what they can (`docs/semantic-safety.md`) |
 | `MOTION` | on | `off` disables the 3D signer (`/motion/*`, `/models/signer.glb`, `POST /api/sign {motion: true}`) |
