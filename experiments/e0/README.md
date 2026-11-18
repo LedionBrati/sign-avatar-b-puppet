@@ -1,6 +1,6 @@
 # E0 puppet → repaint harness
 
-This prepares [Issue #1](https://github.com/LedionBrati/sign-avatar-b-puppet/issues/1) and README checkpoints 1–3. It does **not** generate a puppet, call fal by default, or establish ASL correctness. Run it only after Nikos's source/skeleton/puppet comparison has passed its free finger-quality gate.
+This prepares [Issue #1](https://github.com/LedionBrati/sign-avatar-b-puppet/issues/1) and checkpoints 1–3 of the original plan. It does **not** generate a puppet, call fal by default, or establish ASL correctness. Run it only after Nikos's source/skeleton/puppet comparison has passed its free finger-quality gate.
 
 ## Install and preflight
 

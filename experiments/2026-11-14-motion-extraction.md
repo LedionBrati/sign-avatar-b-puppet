@@ -2,7 +2,7 @@
 
 **Who:** Nikos (with Claude)
 **Question:** Can free, CPU-only MediaPipe Holistic turn our reference clips into motion files (FORMAT.md v1), and how good is the finger tracking, honestly? (Issues #4 and #2.)
-**Why it matters:** In Method B the motion data is the source of truth. If the fingers are wrong or missing here, no puppet or repaint can fix them.
+**Why it matters:** In the puppet-then-repaint pipeline (root README, "The clip factory") the motion data is the source of truth. If the fingers are wrong or missing here, no puppet or repaint can fix them.
 
 > Nothing below says whether any sign is *linguistically* right. The numbers only say where the tracker is missing, jumpy or inconsistent. Only a Deaf or fluent signer can judge the signs.
 
@@ -101,7 +101,7 @@ Pose and face were found in 100% of frames in all 4 clips. Judy's low left-hand 
 ## What I'd try next
 - Show `<clip>-skeleton.mp4` and the clean JSON to the puppet side (issue #4): judy's clean file is ready to drive the VRM.
 - Have a fluent signer watch judy and travis overlays at the flagged frames and say which lost or filled handshapes matter.
-- Compare with How2Sign's own OpenPose keypoints for the same clips (README §6.2).
+- Compare with How2Sign's own OpenPose keypoints for the same clips.
 - Interpolate filled hands in joint-angle space rather than straight lines. Or leave long or blurred gaps `null` and let the puppet hold the last good shape.
 - Run the full 1,945-sign batch overnight (`--workers 4`), then check `summary.csv` for low detection and for signs flagged "left", and spot-check 20 of them by eye.
-- Record fingerspelling A to Z at 60 fps (product plan) and compare detection and jitter against these 24 fps clips.
+- Record fingerspelling A to Z at 60 fps and compare detection and jitter against these 24 fps clips.

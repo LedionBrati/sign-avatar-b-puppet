@@ -1,8 +1,8 @@
 # 2026-11-15: E0, H3 Max Recast on the puppet (checkpoint 3)
 
 **Who:** Nikos (with Claude)
-**Question:** does `minimax/h3-max/recast` repaint a 3D puppet into our realistic avatar as faithfully as it repaints a real person? (Issue #1, README §6.1.)
-**Why it matters:** Method B only works if the repaint keeps the signs. If it changes handshapes, the README fallback applies (Recast on real signer clips only).
+**Question:** does `minimax/h3-max/recast` repaint a 3D puppet into our realistic avatar as faithfully as it repaints a real person? (Issue #1.)
+**Why it matters:** The puppet-then-repaint pipeline only works if the repaint keeps the signs. If it changes handshapes, the fallback applies (Recast on real signer clips only).
 
 ## Setup
 - **Puppet:** `judy-vrm.mp4` from PR #15 (the "direct" solver, VRM sample model), 540×720, 24 fps, 142 frames, 5.92 s. It's driven by the Judy motion from PR #16.

@@ -2,7 +2,7 @@
 
 **Who:** Nikos (with Claude)
 **Question:** can one real signer clip drive a 3D puppet in the browser, with real signer | landmarks | puppet side by side, and where does it go wrong?
-**Why it matters:** checkpoint 1 in README §4, issue #4. Everything after it (finger test, repaint, text → sign) builds on this.
+**Why it matters:** checkpoint 1 of the original plan, issue #4. Everything after it (finger test, repaint, text → sign) builds on this.
 
 ## Setup
 - **Input:** `references/how2sign/judy.mp4` (How2Sign, signer 3, CC BY-NC 4.0, 5.9 s, 142 frames at 24 fps).

@@ -1,7 +1,7 @@
 [project]
 name = "sbp-motion"
 version = "0.1.0"
-description = "MediaPipe landmark extraction, cleanup and QA for the Method B sign puppet"
+description = "MediaPipe landmark extraction, cleanup and QA for the VRM sign puppet (puppet/)"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "mediapipe==1.2.3",

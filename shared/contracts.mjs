@@ -12,7 +12,7 @@ function throwErrors(label, errors) {
 }
 
 /**
- * Plan contract (README §6.5):
+ * Plan contract (shared/INTEGRATION.md):
  * - items are in signing order, including fingerspelling anywhere in the sequence.
  * - nonmanual markers use zero-based INCLUSIVE item spans [from, to].
  * - unknown motions are handled by resolvePlan(), not invented here.

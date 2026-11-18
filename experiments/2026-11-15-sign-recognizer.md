@@ -29,7 +29,7 @@
 | segment length | median 36 frames (17–69) |
 | top-1 confidence | median 0.93 when right, 0.31 when wrong. At confidence ≥ 0.7: 70 clips, 70/70 right |
 
-Misses (label -> top-1): kiss->home, scissors->cut, make->zipper, fine->table, helicopter->police, dance->zebra, tooth->glasswindow, table->arm, after->table, there->vacuum, cry->for, ride->stairs, clean->zebra, tongue->glasswindow. 10 of the 14 still had the right sign in the top 5. This matches the earlier 60-clip check in `docs/product-plan.md` §3 (82% / 97%).
+Misses (label -> top-1): kiss->home, scissors->cut, make->zipper, fine->table, helicopter->police, dance->zebra, tooth->glasswindow, table->arm, after->table, there->vacuum, cry->for, ride->stairs, clean->zebra, tongue->glasswindow. 10 of the 14 still had the right sign in the top 5. This matches an earlier 60-clip check (82% / 97%).
 
 **Fingerspelling sanity (no proper test set on this machine):**
 - 21 single-letter WLASL clips (the library has a b d e f g h i j k m n o p q r s t u v w): **20/21 exactly right** (Q read as S).
@@ -60,6 +60,6 @@ Tests: `uv run pytest -q` (17 pass: shape validation, all-NaN segment, top-5 sor
 - Real webcam users (lighting, partial framing, left-handed signers). This is the real test, and WLASL clips are studio-clean.
 - Cap or downsample long spell segments on the server, and measure accuracy against latency.
 - A proper fingerspelling set (ChicagoFSWild, or the Kaggle supplemental data) for a real character error rate.
-- Use GISLR to auto-check the motion dictionary (product plan §3 synergy): flag extracted signs the model no longer recognizes.
+- Use GISLR to auto-check the motion dictionary: flag extracted signs the model no longer recognizes.
 
 **Data:** WLASL (C-UDA, research use only) and Kaggle-derived models. Private demo only. No landmarks were committed or logged; the eval cache lives in `%TEMP%`.

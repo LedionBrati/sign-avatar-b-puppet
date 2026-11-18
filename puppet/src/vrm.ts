@@ -83,7 +83,7 @@ const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qc = new THRE
 
 export interface PuppetOptions {
   solver?: Solver;
-  /** black top, skin-tone hands, dark wall (README §6.4) */
+  /** black top, skin-tone hands, dark wall: the look of assets/avatar/avatar-main.jpg */
   mannequin?: boolean;
   /** render hand close-up insets */
   closeup?: boolean;
@@ -340,7 +340,7 @@ export class VrmPuppet {
     return n ? n.getWorldPosition(new THREE.Vector3()) : null;
   }
 
-  /** Waist-up, camera at chest height, 3:4 (README §6.4). */
+  /** Waist-up, camera at chest height, 3:4: the avatar framing (540x720, see puppet/README.md). */
   frameCamera() {
     this.vrm!.scene.updateMatrixWorld(true);
     const hips = this.wpos("hips")!, head = this.wpos("head")!;

@@ -1,7 +1,7 @@
 # 2026-11-15: English -> sign plan without an LLM
 
 **Who:** Nikos (with Claude)
-**Question:** Can we turn everyday English into a README §6.5 plan locally (no fal, no Anthropic, no remote model calls) quickly enough to drive the real-time clip player, and how wrong is it?
+**Question:** Can we turn everyday English into a plan (`shared/INTEGRATION.md`) locally (no fal, no Anthropic, no remote model calls) quickly enough to drive the real-time clip player, and how wrong is it?
 **Why it matters:** The race demo needs text -> video in well under a second. An API call costs time and money, and it fails when the network is down. A local translator also makes the "can't sign this yet" list explicit: it never invents a sign.
 
 ## Setup

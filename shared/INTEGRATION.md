@@ -1,6 +1,6 @@
 # Shared plan → catalog → motion boundary
 
-The plan contract uses only Node.js built-ins. `README.md` §6.5 is the plan source of truth, `catalog/signs.json` is the catalog source of truth, and Nikos's published `motion/FORMAT.md` is the motion v1 source of truth. The validator checks that format; it does not render an avatar or establish ASL correctness.
+The plan contract uses only Node.js built-ins. This file and `contracts.mjs` are the plan source of truth, `catalog/signs.json` is the catalog source of truth, and Nikos's published `motion/FORMAT.md` is the motion v1 source of truth. The validator checks that format; it does not render an avatar or establish ASL correctness.
 
 ## Contract
 
