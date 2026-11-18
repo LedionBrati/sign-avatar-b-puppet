@@ -1,0 +1,39 @@
+{
+  "repo": "LedionBrati/sign-avatar-b-puppet",
+  "release": "assets-v1",
+  "assets": [
+    {
+      "name": "core",
+      "description": "sign clips, the 3D signer avatar, the recognizer's WLASL template bank",
+      "file": "flux-assets.tar.gz",
+      "paths": [
+        "out/realtime/clips",
+        "out/realtime/clips-mass",
+        "out/realtime/clips-v2-demo",
+        "out/realtime/clips-v2-sentences",
+        "out/realtime/neutral.clean.json",
+        "puppet/models/signer.glb",
+        "app/recognizer/models/templates.npz"
+      ],
+      "sha256": "00a21222d0f7c04e419d997190489c34cd40beda369f881926c4717a8fe802d0",
+      "bytes": 203683817
+    },
+    {
+      "name": "motion",
+      "optional": true,
+      "description": "motion library for the instant 3D signer (about 1,800 signs)",
+      "file": "flux-motion.tar.gz",
+      "paths": [
+        "out/motion/wlasl",
+        "out/motion/wlasl3d"
+      ],
+      "include": [
+        "*.clean.json",
+        "summary.csv",
+        "**/*.v2.json"
+      ],
+      "sha256": null,
+      "bytes": 0
+    }
+  ]
+}

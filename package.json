@@ -1,0 +1,17 @@
+{
+  "name": "flux",
+  "private": true,
+  "description": "Flux: a live sign language interpreter that works both ways (speech -> ASL signer, signing -> voice).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "start": "node app/start.mjs",
+    "dev": "node app/start.mjs --web-dev",
+    "test": "node scripts/test.mjs",
+    "assets": "node scripts/assets.mjs fetch",
+    "assets:pack": "node scripts/assets.mjs pack"
+  }
+}
