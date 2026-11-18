@@ -10,7 +10,7 @@ export function offline(e: unknown) {
   let host = s.apiUrl;
   try { host = new URL(s.apiUrl).host; } catch { /* keep */ }
   ui.offlineMsg = `Can't reach <b>${esc(host)}</b>.`;
-  console.warn("[flux]", e);
+  if (!ui.isOffline) console.warn("[flux] server unreachable", e); // once, not on every 10 s retry
   ui.isOffline = true;
   render();
 }

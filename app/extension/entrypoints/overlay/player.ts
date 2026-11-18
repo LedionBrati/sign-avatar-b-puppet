@@ -111,7 +111,9 @@ function advance() {
   back.requestVideoFrameCallback?.(() => swap());
   back.addEventListener("playing", () => setTimeout(swap, 40), { once: true });
   back.play().catch((e) => {
-    console.warn("[flux] play failed", item.url, e);
+    // Autoplay refused or the source failed: skip ahead rather than hang. (An AbortError only means the clip was
+    // stopped or replaced meanwhile: not worth a warning.)
+    if ((e as Error)?.name !== "AbortError") console.warn("[flux] play failed", item.url, e);
     swap();
     setTimeout(advance, 0);
   });
