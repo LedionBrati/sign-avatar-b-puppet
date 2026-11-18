@@ -1,8 +1,6 @@
 // Sign -> speak, continuous: the front camera, MediaPipe Holistic landmarks, always reading while the camera is on
-// (no tap per sign). Sign mode (STREAM): lib/stream.ts reads sliding ~1 s windows while the hands move and accepts a
-// sign once it wins 2 windows in a row (junk motion / toddler words filtered); STREAM=false (and Spell mode) use the
-// rest-based segmenter (lib/segmenter.ts on the shared cutter app/core/src/segment.ts): every segment goes to
-// POST /api/recognize. Closed vocabulary (prefs.closedVocab, the default): the demo signs only, read by the profile's
+// (no tap per sign). The rest-based segmenter (lib/segmenter.ts on the shared cutter app/core/src/segment.ts) cuts the
+// signs out of the landmark stream: every segment goes to POST /api/recognize. Closed vocabulary (prefs.closedVocab, the default): the demo signs only, read by the profile's
 // personal model ("Train my signs", #/train; profile "demo" = the generic one) + the GISLR prior; a segment can hold
 // several signs (signs[]); "no sign" pieces are dropped, unsure ones kept with the hint and the chips. Top-1 is appended (top-3 chips to correct it), and
 // the words show live in the sentence box. With the server's OpenAI layer (health.compose), every new sign asks
@@ -20,8 +18,9 @@ import { ClockIcon, CloseIcon, GridIcon, HandIcon, PauseIcon, SpeakerIcon, UndoI
 import { Segmented } from "../components/Segmented";
 import { createTracker, drawOverlay, type Tracker } from "../lib/holistic";
 import { SPELL_SEG, createSegmenter, type SegState, type SegmentDone } from "../lib/segmenter";
-import { createStream, dejunk, type RestInfo, type StreamSign } from "../lib/stream";
+import { dejunk } from "../lib/junk";
 import { readHeard } from "../lib/heard";
+import { debugStats } from "../lib/debug";
 import { addTurn, recentHistory } from "../lib/chat";
 import { SIGN_VOCAB } from "../lib/vocab";
 import { navigate } from "../lib/route";
@@ -32,16 +31,11 @@ type Option = RecognizeResponse["options"][number];
 /** fixed: the signer picked this guess from the chips, so the model gets it as certain. */
 interface Entry { label: string; options?: Option[]; sel?: number; fixed?: boolean }
 type Cam = "starting" | "ready" | "denied" | "nocam" | "error";
+/** When the hands stopped (last motion, or last seen when they left the frame) and whether they left. */
+interface RestInfo { since: number; gone: boolean }
 
 const LOW = 0.35; // below this the top-3 chips get a "not sure" hint
-/** false = no sentence model call: every recognized sign is spoken as its word right away. true = one sentence per phrase. */
-const SENTENCES = true;
-/** false = sentences are built locally (composeSentence rules), no OpenAI generation. true = /api/compose. */
-const MODEL = true;
 const MIN_CONF = 0.25; // a sign is only taken when the recognizer is at least this sure
-const WORD_CLEAR_MS = 6000; // word mode: the sentence box clears this long after the last sign
-/** true = sliding-window recognition (lib/stream.ts) in Sign mode; false = the rest-based segmenter (lib/segmenter.ts). */
-const STREAM = false;
 const REST_MS = 900; // hands rested this long (nothing still being read) -> speak
 const WAIT_MS = 1200; // at rest, wait this long for the model's sentence, then speak the local one
 const HISTORY_TURNS = 10; // conversation turns sent with every compose call
@@ -58,7 +52,7 @@ const localSentence = (xs: Entry[]) => composeSentence(xs.map((x) => localLabel(
 const fixedSentence = (xs: Entry[]) => knownPhrase(xs.map((x) => localLabel(x.label)));
 const keyOf = (epoch: number, xs: Entry[]) => `${epoch}|${xs.map((x) => x.label).join(" ")}`;
 
-declare global { interface Window { ReactNativeWebView?: { postMessage(s: string): void }; __sl?: Record<string, unknown> } }
+declare global { interface Window { ReactNativeWebView?: { postMessage(s: string): void } } }
 /** Embed mode: the phone app's WebView gets a JSON string; its web/iframe fallback gets the object on window "message". */
 const post = (msg: { type: "sentence" | "speak"; text: string }) => {
   try { window.ReactNativeWebView?.postMessage(JSON.stringify(msg)); } catch { /* not in a WebView */ }
@@ -102,7 +96,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const [composed, setComposed] = useState<{ key: string; sentence: string } | null>(null);
   const composedRef = useRef<{ key: string; sentence: string } | null>(null);
   const [composing, setComposing] = useState(false);
-  const aiOn = useRef(MODEL); // off when health says compose is off, or the server answers 404 / 503
+  const aiOn = useRef(true); // off when health says compose is off, or the server answers 404 / 503
   const [lastSaid, setLastSaid] = useState(""); // the last spoken sentence stays visible in the empty box
   const pendingVoice = useRef<{ blob: Blob; done: () => void } | null>(null);
   useEffect(() => {
@@ -157,7 +151,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
       const cv = closedRef.current;
       const r = await client.recognize(m, s.frames, m === "sign" && cv.on ? { profile: cv.profile, vocab: cv.vocab, fps: fpsRef.current } : {});
       if (!alive.current) return;
-      window.__sl = { ...window.__sl, last: r, frames: s.count, segMs: Math.round(s.ms), reason: s.reason, rtMs: Math.round(performance.now() - t0), recognized: ((window.__sl?.recognized as number) ?? 0) + 1 };
+      debugStats({ last: r, frames: s.count, segMs: Math.round(s.ms), reason: s.reason, rtMs: Math.round(performance.now() - t0) });
       setBanner(null);
       if (m === "spell") {
         const word = (r.text ?? "").replace(/[^A-Za-z' -]/g, "").trim();
@@ -191,37 +185,6 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   const segRef = useRef<ReturnType<typeof createSegmenter> | null>(null);
   if (!segRef.current) segRef.current = createSegmenter((s) => void onSegmentRef.current(s), (s) => alive.current && setSeg(s));
 
-  // ── Sliding-window reading (Sign mode, STREAM): one window in flight at most; accepted signs are appended. ──
-  const streamRef = useRef<ReturnType<typeof createStream> | null>(null);
-  const recognizeWindow = useCallback(async (frames: Float32Array) => {
-    setPending((n) => n + 1);
-    try {
-      const r = await client.recognize("sign", frames);
-      if (alive.current) setBanner(null);
-      return r;
-    } catch (e) {
-      showError(e);
-      throw e;
-    } finally {
-      if (alive.current) setPending((n) => n - 1);
-    }
-  }, [client, showError]);
-  const onStreamSign = useCallback((s: StreamSign) => {
-    if (!alive.current || !s.options.length) return;
-    window.__sl = { ...window.__sl, last: s, stream: streamRef.current?.stats, recognized: ((window.__sl?.recognized as number) ?? 0) + 1 };
-    setItems((xs) => [...xs, { label: s.label, options: s.options, sel: 0 }]);
-    setHint(s.options[0]!.confidence < LOW ? "Not sure about that one. Tap the right word below." : null);
-  }, []);
-  const streamCbs = useRef({ recognizeWindow, onStreamSign });
-  streamCbs.current = { recognizeWindow, onStreamSign };
-  if (!streamRef.current) {
-    streamRef.current = createStream(
-      (f) => streamCbs.current.recognizeWindow(f),
-      (s) => streamCbs.current.onStreamSign(s),
-      (s, rest) => { if (!alive.current) return; setSeg(s); if (rest) setRestFrom(rest); },
-    );
-  }
-
   // ── Camera ──
   const startCam = useCallback(async () => {
     setCam("starting");
@@ -247,10 +210,10 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     createTracker().then((t) => {
       if (!alive.current) { t.close(); return; }
       tracker.current = t;
-      window.__sl = { ...window.__sl, delegate: t.delegate };
+      debugStats({ delegate: t.delegate });
       setTrack("ready");
     }).catch((e) => { if (alive.current) { setTrack("error"); setBanner(`Hand tracking didn't load (${(e as Error).message}). Check the connection and reload.`); } });
-    client.health().then((h) => { aiOn.current = MODEL && h.compose === "ready"; voiceOn.current = h.speak === "ready"; if (alive.current && h.recognizer === "down") setBanner("The sign recognizer is offline. Start app/recognizer; signing won't work until then."); }).catch(() => {});
+    client.health().then((h) => { aiOn.current = h.compose === "ready"; voiceOn.current = h.speak === "ready"; if (alive.current && h.recognizer === "down") setBanner("The sign recognizer is offline. Start app/recognizer; signing won't work until then."); }).catch(() => {});
     return () => {
       alive.current = false;
       const s = video.current?.srcObject as MediaStream | null;
@@ -287,12 +250,11 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
         const f = t.detect(v, now);
         dms += performance.now() - now;
         drawOverlay(ctx, f, t.connections);
-        if (STREAM && modeRef.current === "sign") streamRef.current!.push(f, performance.now());
-        else segRef.current!.push(f, performance.now());
+        segRef.current!.push(f, performance.now());
         const h = Boolean(f.leftHand?.length || f.rightHand?.length);
         if (h !== sawHands) { sawHands = h; setHands(h); }
         n++;
-        if (now - win >= 1000) { const r = (n * 1000) / (now - win); setFps(r); fpsRef.current = r; window.__sl = { ...window.__sl, fps: +r.toFixed(1), detectMs: Math.round(dms / n) }; n = 0; dms = 0; win = now; }
+        if (now - win >= 1000) { const r = (n * 1000) / (now - win); setFps(r); fpsRef.current = r; debugStats({ fps: +r.toFixed(1), detectMs: Math.round(dms / n) }); n = 0; dms = 0; win = now; }
       }
       next();
     };
@@ -305,12 +267,10 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
 
   // ── Camera on => always reading (until Pause) ──
   useEffect(() => {
-    const useStream = STREAM && mode === "sign";
-    const sg = useStream ? streamRef.current! : segRef.current!;
-    (useStream ? segRef.current! : streamRef.current!).cancel(); // the other reader stays off
+    const sg = segRef.current!;
     if (cam === "ready" && track === "ready" && !paused) { if (sg.state === "idle") sg.arm(); }
     else sg.cancel();
-  }, [cam, track, paused, mode]);
+  }, [cam, track, paused]);
 
   // ── Sentence ──
   const sentence = useMemo(() => {
@@ -398,25 +358,8 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   // With the model: every new sign -> ask for the sentence in the background (aborting the stale call). It is only
   // spoken at rest (below); if the hands are already resting and waiting for exactly this answer, it is spoken now.
   const [aiFailed, setAiFailed] = useState(false);
-  // Word mode (SENTENCES off): say each newly recognized sign as its word, keep the words building up in the
-  // sentence box, and start fresh only after WORD_CLEAR_MS without a new sign (or on Clear).
-  const saidCount = useRef(0);
   useEffect(() => {
-    if (SENTENCES) return;
-    if (items.length < saidCount.current) saidCount.current = items.length; // Undo / Clear
-    if (paused || editing || edit || items.length <= saidCount.current) return;
-    const word = wordOf(items[items.length - 1]!.label);
-    saidCount.current = items.length;
-    restKey.current = null;
-    speakText(word);
-  }, [items, paused, editing, edit, speakText]);
-  useEffect(() => {
-    if (SENTENCES || paused || editing || !items.length) return;
-    const t = window.setTimeout(() => { saidCount.current = 0; order.current.epoch++; setItems([]); setEdit(null); setHint(null); }, WORD_CLEAR_MS);
-    return () => clearTimeout(t);
-  }, [items, paused, editing]);
-  useEffect(() => {
-    if (!SENTENCES || !aiOn.current || aiFailed || paused || editing || edit || !items.length || fixedSentence(items)) return;
+    if (!aiOn.current || aiFailed || paused || editing || edit || !items.length || fixedSentence(items)) return;
     const key = keyOf(order.current.epoch, items);
     const ctrl = new AbortController();
     setComposing(true);
@@ -433,7 +376,6 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
     client.compose({ signs, ...(context ? { context } : {}) }, ctrl.signal)
       .then((r) => {
         if (!alive.current || ctrl.signal.aborted || keyOf(order.current.epoch, items) !== key) return;
-        window.__sl = { ...window.__sl, compose: r };
         const sentence = r.sentence.trim();
         composedRef.current = { key, sentence };
         setComposed({ key, sentence });
@@ -456,7 +398,7 @@ export function SignToSpeak({ embed, onHome }: { embed: boolean; onHome(): void 
   // these signs; if it isn't back yet, wait up to WAIT_MS for it, then the local composeSentence. After an edit, the
   // edited sentence (plus any signs since) is spoken at rest once something new was signed.
   useEffect(() => {
-    if (!SENTENCES || paused || editing || !items.length) return;
+    if (paused || editing || !items.length) return;
     if (edit && items.length <= edit.at) return; // only the typed edit: the signer presses Speak
     const full = items.length >= CAP;
     if (!full && (seg === "recording" || pending > 0)) return;
