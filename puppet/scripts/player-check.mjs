@@ -4,7 +4,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
+import { findChrome } from "../../shared/find-chrome.mjs";
 
 const here = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
@@ -14,7 +14,7 @@ const shot = shotI !== -1 ? resolve(argv[shotI + 1]) : null;
 const files = argv.filter((a, i) => !a.startsWith("--") && i !== shotI + 1).map((f) => resolve(f));
 if (!files.length) { console.error("usage: player-check.mjs [--gpu] [--shot x.png] a.json b.json ..."); process.exit(1); }
 
-const chrome = process.env.CHROME ?? ["C:/Program Files/Google/Chrome/Application/chrome.exe", `${process.env.LOCALAPPDATA ?? ""}/Google/Chrome/Application/chrome.exe`, "/usr/bin/google-chrome"].find(existsSync);
+const chrome = findChrome();
 const { createServer } = await import("vite");
 const server = await createServer({ root: here, configFile: join(here, "vite.config.ts"), logLevel: "error", server: { port: 5191, strictPort: false, host: "127.0.0.1" } });
 await server.listen();

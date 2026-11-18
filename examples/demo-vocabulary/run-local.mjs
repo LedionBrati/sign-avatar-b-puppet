@@ -2,12 +2,13 @@
 // From repository root: node examples/demo-vocabulary/run-local.mjs [--force] [--no-render]
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPlayback } from "../../shared/contracts.mjs";
 import { assertMotionV1 } from "../../shared/motion-format.mjs";
 import { auditVerifiedCatalog, createMotionLoader } from "../../shared/motion-loader.node.mjs";
+import { ffmpegPath, ffprobePath } from "../../shared/ffmpeg.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const manifest = JSON.parse(readFileSync(join(root, "examples/demo-vocabulary/manifest.json"), "utf8"));
@@ -25,17 +26,9 @@ function run(command, args, cwd = root, env = process.env) {
   if (result.status !== 0) throw new Error(`${command} exited ${result.status}`);
 }
 
-function ensureFfmpegPath() {
-  const requirePipeline = createRequire(pathToFileURL(join(root, "pipeline/package.json")));
-  const ffmpeg = requirePipeline("ffmpeg-static");
-  const ffprobe = requirePipeline("@ffprobe-installer/ffprobe").path;
-  const bin = join(root, "out/demo/bin");
-  mkdirSync(bin, { recursive: true });
-  for (const [name, target] of [["ffmpeg", ffmpeg], ["ffprobe", ffprobe]]) {
-    const link = join(bin, name);
-    if (!existsSync(link)) symlinkSync(target, link);
-  }
-  return { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` };
+// The children (motion/report.py, puppet/render.mjs) read FFMPEG / FFPROBE; the bundled pipeline/ binaries first.
+function ffmpegEnv() {
+  return { ...process.env, FFMPEG: ffmpegPath({ prefer: "bundled" }), FFPROBE: ffprobePath({ prefer: "bundled" }) };
 }
 
 async function puppetFunctions() {
@@ -60,7 +53,7 @@ const stats = (motion) => ({
 });
 
 try {
-  const env = ensureFfmpegPath();
+  const env = ffmpegEnv();
   const { validateMotion } = await puppetFunctions();
   const localCatalog = {
     schema_version: 1,

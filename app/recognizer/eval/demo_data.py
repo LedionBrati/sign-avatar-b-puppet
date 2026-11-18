@@ -2,8 +2,8 @@
 
 Sources (all gitignored, WLASL is research use only; landmarks are biometric and never printed or committed):
 - out/wlasl-demo/ (fetch_wlasl_demo.py): extra instances downloaded from WLASL_v0.3.json, landmarks/*.npy
-- the motion library (MOTION_DIR, default out/motion/wlasl or the main checkout's): *.raw.json, one per gloss,
-  with signer ids from the WLASL library index (SIGN_DICTIONARY or --index)
+- the motion library (MOTION_DIR, default <repo>/out/motion/wlasl): *.raw.json, one per gloss, with signer ids from
+  the WLASL library index (SIGN_DICTIONARY=<path-to>/index.json; optional, without it signer ids come from the motion)
 Other (out-of-vocabulary) glosses from the motion library are the open-set negatives.
 """
 
@@ -19,23 +19,19 @@ import numpy as np
 
 import templates as T
 
-HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = Path(__file__).resolve().parents[3]
 DEMO_DIR = Path(os.environ.get("DEMO_DIR") or REPO / "out" / "wlasl-demo")  # modal_sign_eval.py points it at a volume
 
 
 def _motion_dir() -> Path:
     if os.environ.get("MOTION_DIR"):
         return Path(os.environ["MOTION_DIR"])
-    p = REPO / "out" / "motion" / "wlasl"
-    return p if p.exists() else Path.home() / "Desktop" / "sign-avatar-b-puppet" / "out" / "motion" / "wlasl"
+    return REPO / "out" / "motion" / "wlasl"
 
 
 def _index_path() -> Path | None:
-    if os.environ.get("SIGN_DICTIONARY"):
-        return Path(os.environ["SIGN_DICTIONARY"])
-    p = Path.home() / "Desktop" / "hackathon-archive" / "ai-summit" / "data" / "signs" / "index.json"
-    return p if p.exists() else None
+    p = Path(os.environ["SIGN_DICTIONARY"]) if os.environ.get("SIGN_DICTIONARY") else None
+    return p if p and p.exists() else None
 
 
 # WLASL gloss -> demo label
@@ -43,6 +39,17 @@ GLOSS_LABEL = {"hello": "HELLO", "yes": "YES", "no": "NO", "please": "PLEASE", "
                "hungry": "HUNGRY", "sick": "SICK", "home": "HOME", "help": "HELP", "name": "NAME", "nice": "NICE",
                "meet": "MEET", "you": "YOU", "me": "ME", "i": "ME", "where": "WHERE", "fine": "FINE", "happy": "HAPPY",
                "bye": "BYE", "goodbye": "BYE", "sorry": "SORRY"}
+# Example sentences over the demo vocabulary (sign labels in signing order, ASL order: WH-sign last). Eval data only:
+# eval_generic.py builds its pseudo-sentences from them and fits the context.py bigram prior on them.
+DEMO_SENTENCES = [
+    "HELLO", "HELLO NICE MEET YOU", "HELLO ME NAME", "HELLO YOU FINE", "HELLO HAPPY MEET YOU", "NICE MEET YOU",
+    "NICE MEET YOU BYE", "HAPPY MEET YOU", "YOU NAME", "ME NAME", "THANK_YOU", "THANK_YOU BYE", "THANK_YOU HELP",
+    "YES", "YES PLEASE", "YES ME FINE", "YES ME HUNGRY", "YES THANK_YOU", "NO", "NO THANK_YOU", "NO ME FINE", "ME FINE",
+    "ME FINE THANK_YOU", "ME HAPPY", "ME HUNGRY", "ME SICK", "ME SORRY", "SORRY", "SORRY ME SICK", "WATER PLEASE",
+    "ME WATER PLEASE", "YOU WATER", "YOU HUNGRY", "YOU SICK", "YOU FINE", "YOU HAPPY", "HELP PLEASE", "HELP ME PLEASE",
+    "PLEASE HELP ME", "HOME WHERE", "YOU HOME WHERE", "WATER WHERE", "ME HOME", "BYE", "BYE NICE MEET YOU",
+    "ME HUNGRY WATER PLEASE", "ME SICK HELP PLEASE", "SORRY ME HOME",
+]
 # Related glosses kept out of the negatives (same or very close sign to a demo sign).
 NOT_NEGATIVE = set(GLOSS_LABEL) | {"hi", "thanks", "my", "mine", "your", "welcome", "excuse", "apologize", "drink",
                                    "house", "ill", "disease", "good", "fine", "glad", "cheerful", "introduce"}

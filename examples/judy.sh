@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Needs bash (Git Bash on Windows). Not on the runtime path.
 # The full Judy demo from 14 Nov 2026, as one script.
 # Real How2Sign clip -> crop -> Recast into our avatar -> remove background
 # -> dark wall -> caption -> side-by-side + phone videos.

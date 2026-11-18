@@ -21,6 +21,14 @@ MAX_FRAMES = 384
 OFFSETS = {"face": 0, "left_hand": 468, "pose": 489, "right_hand": 522}
 COUNTS = {"face": 468, "left_hand": 21, "pose": 33, "right_hand": 21}
 MODELS_DIR = Path(os.environ.get("RECOGNIZER_MODELS") or Path(__file__).resolve().parent / "models")
+# What the service needs in MODELS_DIR. Required: the two pretrained models (fetch_models.py). Optional, built from
+# WLASL data by the eval/ scripts; without one the service still runs, with less (the value says what is lost).
+REQUIRED_FILES = ("gislr.tflite", "gislr_labels.json", "fs.tflite", "fs_args.json", "fs_chars.json")
+OPTIONAL_FILES = {
+    "templates.npz": "no template matching, GISLR's 250 signs only; build: eval/build_templates.py",
+    "demo_model.npz": "no closed-vocabulary demo model, profile=demo / vocab= answer like plain sign mode; build: eval/build_demo_model.py",
+    "demo_generic.npz": "Train my signs fits on the person's reps only; build: eval/build_demo_model.py",
+}
 
 # GISLR labels that are not plain English words -> the text a client shows / speaks (labels stay unchanged).
 # Mostly the same as LABEL_TEXT in app/core/src/compose.ts; here tuned for adult conversation (potty -> bathroom,

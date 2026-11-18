@@ -3,7 +3,7 @@
 Storage (gitignored, local only, ENROLL_DIR, default <repo>/out/enroll):
     <profile>/<LABEL>/<timestamp>.npy   one rep, float16 [frames, 543, 3] with the FACE REMOVED (hands + pose only)
     <profile>/model.npz                 the fitted model (derived features only)
-Generic data (models/demo_generic.npz, built by build_demo_model.py from WLASL clips of the demo signs): features
+Generic data (models/demo_generic.npz, built by eval/build_demo_model.py from WLASL clips of the demo signs): features
 of the generic reps (augmented) and of the none class, so a profile with few reps still knows every demo sign, and
 models/demo_model.npz = the generic model alone (profile "demo", used before anyone enrolls).
 """

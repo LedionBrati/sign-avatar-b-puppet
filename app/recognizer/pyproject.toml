@@ -10,7 +10,8 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest>=8"]
-# Only for eval_wlasl.py (landmark extraction from video); the service itself does not need it.
+# Only for the eval/ scripts that extract landmarks from video (eval_wlasl, fetch_wlasl_demo --extract, gather_wlasl);
+# the service itself does not need it.
 eval = ["mediapipe==1.2.3"]
 
 [tool.uv]

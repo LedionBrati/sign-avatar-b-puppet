@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import ffmpegPath from "ffmpeg-static";
+import { ffmpegPath } from "../../shared/ffmpeg.mjs";
 import { parseOptions, guardPaid, runExperiment } from "./harness.mjs";
 import { probeVideo } from "./video.mjs";
 import { planModel } from "./models.mjs";
@@ -17,7 +17,7 @@ const avatar = resolve(dirname(fileURLToPath(import.meta.url)), "../../assets/av
 
 async function fixture(dir, name, color) {
   const output = join(dir, name);
-  await exec(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+  await exec(ffmpegPath({ prefer: "bundled" }), ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
     `color=c=${color}:s=120x160:r=24:d=1`, "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", output]);
   return output;
 }

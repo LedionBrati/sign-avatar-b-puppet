@@ -1,8 +1,8 @@
 """Honest offline evaluation of the running recognizer on WLASL library clips (signs it was NOT trained on).
 
-    uv run --group eval python eval_wlasl.py                       # all GISLR-vocabulary clips, service at :8788
-    uv run --group eval python eval_wlasl.py --limit 60 --url http://127.0.0.1:8787   # through the Node proxy
-    uv run --group eval python eval_wlasl.py --spell               # also the fingerspelling sanity check
+    uv run --group eval python -m eval.eval_wlasl                       # all GISLR-vocabulary clips, service at :8788
+    uv run --group eval python -m eval.eval_wlasl --limit 60 --url http://127.0.0.1:8787   # through the Node proxy
+    uv run --group eval python -m eval.eval_wlasl --spell               # also the fingerspelling sanity check
 
 Pipeline per clip: video -> MediaPipe Tasks HolisticLandmarker (Python, VIDEO mode) -> legacy 543-point packing
 (face 478 -> 468, same as app/core/src/landmarks.ts) -> POST /api/recognize over HTTP -> top-1 / top-5.
@@ -31,9 +31,9 @@ from pathlib import Path
 
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
+REC = Path(__file__).resolve().parents[1]  # app/recognizer
 LIB = Path(os.environ["SIGN_DICTIONARY"]).parent if os.environ.get("SIGN_DICTIONARY") else None
-HOLISTIC = [HERE / "models" / "holistic_landmarker.task", HERE.parents[1] / "motion" / "models" / "holistic_landmarker.task"]
+HOLISTIC = [REC / "models" / "holistic_landmarker.task", REC.parents[1] / "motion" / "models" / "holistic_landmarker.task"]
 HOLISTIC_URL = "https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task"
 # GISLR label -> library gloss, only where it is the same sign.
 ALIAS = {"thankyou": "thank you", "icecream": "ice cream", "frenchfries": "french fries", "grandpa": "grandfather",
@@ -159,7 +159,7 @@ def main():
         ap.error(f"no WLASL library index.json in {a.lib} (pass --lib DIR or set SIGN_DICTIONARY=<path-to>/index.json)")
 
     index = json.loads((a.lib / "index.json").read_text(encoding="utf8"))
-    labels = json.loads((HERE / "models" / "gislr_labels.json").read_text())
+    labels = json.loads((REC / "models" / "gislr_labels.json").read_text())
     lib = {k.lower(): k for k in index}
     pairs = [(s, lib.get(s.lower()) or lib.get(ALIAS.get(s, ""))) for s in labels]
     pairs = sorted((s, g) for s, g in pairs if g)

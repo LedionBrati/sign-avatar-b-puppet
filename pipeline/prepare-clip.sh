@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Needs bash (Git Bash on Windows). Not on the runtime path.
 # Crop a signer clip to the avatar's framing: 3:4 portrait, 540x720, 24 fps, no audio.
 #
 # Usage:

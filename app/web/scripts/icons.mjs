@@ -3,9 +3,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import puppeteer from "puppeteer-core";
+import { findChrome } from "../../../shared/find-chrome.mjs";
 
 const pub = path.resolve(import.meta.dirname, "../public");
-const CHROME = process.env.CHROME ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const CHROME = findChrome();
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
 const page = await browser.newPage();
 const jobs = [

@@ -5,12 +5,12 @@
 **Why it matters:** the 9 existing realistic clips only cover the three race sentences. A demo needs everyday conversation plus a medical/help scenario. This log covers everything **up to** the paid H3 Max Recast step. The owner approves the spend and runs `RUN-PAID.sh`.
 
 ## Setup
-- **Library:** WLASL (`ai-summit/data/signs/index.json`, C-UDA non-commercial). Videos and motion JSON stay outside git.
+- **Library:** WLASL (`<signs>/index.json`, C-UDA non-commercial). Videos and motion JSON stay outside git.
 - **Extraction:** `motion/batch_library.py` (MediaPipe holistic, `--trim-rest` cleanup), 5 workers, filtered index `index.vocab.json` (45 candidates). That's 108 s wall time for 45 signs, about 8–10 s each per worker.
 - **Batching:** new `pipeline/make-batches.mjs`. It takes a gloss list, builds `NEUTRAL S1 NEUTRAL S2 ... NEUTRAL` with the same `concatClips` as `puppet/compose.mjs`, splits the list into the fewest balanced batches ≤ `--max-seconds` (12 here), and writes `vocab-N.clean.json` plus `vocab-N.json` (compose-style, with `segments`). It fails if any pause has fewer than 3 pure neutral frames.
   - **Regression check:** run on `hello my name "thank you" see`, it reproduces `batch-a.json` exactly: same segments, and frames byte-identical.
 - **Render:** `puppet/render.mjs --view vrm`, run one batch at a time, 0.22–0.36 s per frame (52–91 s per batch).
-- **Outputs (outside git):** `sign-avatar-b-puppet/out/realtime/vocab/` holds the batch motion files, the `*.json` segments, `*-vrm.mp4` and `RUN-PAID.sh`. Motion is in `vocab/motion/`.
+- **Outputs (outside git):** `out/realtime/vocab/` holds the batch motion files, the `*.json` segments, `*-vrm.mp4` and `RUN-PAID.sh`. Motion is in `vocab/motion/`.
 
 ```bash
 # from the repo root

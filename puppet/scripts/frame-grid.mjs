@@ -4,6 +4,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { ffmpegPath } from "../../shared/ffmpeg.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name, fb) => { const i = argv.indexOf(`--${name}`); if (i === -1) return fb; const v = argv[i + 1]; argv.splice(i, 2); return v; };
@@ -18,5 +19,5 @@ const sel = frames.map((n) => `eq(n\\,${n})`).join("+");
 const rows = videos.map((_, r) => `[${r}:v]select='${sel}',scale=${width}:-2,setsar=1,tile=${frames.length}x1[r${r}]`);
 const graph = videos.length > 1 ? `${rows.join(";")};${videos.map((_, r) => `[r${r}]`).join("")}vstack=${videos.length}[g]` : rows[0].replace("[r0]", "[g]");
 mkdirSync(dirname(out), { recursive: true });
-execFileSync("ffmpeg", ["-v", "error", "-y", ...inputs, "-filter_complex", graph, "-map", "[g]", "-frames:v", "1", "-update", "1", out], { stdio: "inherit" });
+execFileSync(ffmpegPath(), ["-v", "error", "-y", ...inputs, "-filter_complex", graph, "-map", "[g]", "-frames:v", "1", "-update", "1", out], { stdio: "inherit" });
 console.log(`wrote ${out}: ${videos.length} row(s) x ${frames.length} frame(s) [${frames.join(", ")}]`);

@@ -1,6 +1,6 @@
 """Continuous test without a human signer: pseudo-sentences spliced from one WLASL signer's demo clips.
 
-    .venv/Scripts/python eval_demo.py continuous [--sentences 60]
+    uv run python -m eval.eval_demo continuous [--sentences 60]
 
 Each sentence = 3-4 different demo clips of ONE test signer, shoulders aligned, at 30 fps, in three styles:
 - rest:     whole clips one after the other (hands go down to rest between signs, as in WLASL)
@@ -21,9 +21,9 @@ from collections import defaultdict
 
 import numpy as np
 
-import demo_data as D
 import personal as P
 import segment as S
+from eval import demo_data as D
 
 FPS = 30.0
 IOU = 0.3
@@ -173,7 +173,7 @@ def edit(a: list, b: list) -> int:
 
 
 def continuous(args):
-    from eval_demo import Baseline, client_rules, fold_train, idle, neg_features, transitions
+    from eval.eval_demo import Baseline, client_rules, fold_train, idle, neg_features, transitions
 
     demo = D.load_demo()
     negs = D.load_negatives(400)

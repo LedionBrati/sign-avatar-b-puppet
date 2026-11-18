@@ -214,3 +214,21 @@ def test_http(base):
     assert status == 400 and out["error"]["code"] == "bad_body_size"
     status, out = post(base + "/recognize?mode=dance", b, 16)
     assert status == 400 and out["error"]["code"] == "bad_mode"
+
+
+def test_check_models(tmp_path, monkeypatch, capsys):
+    """Missing required models stop the service with one line; missing optional ones only warn, in one line."""
+    import server
+
+    monkeypatch.setattr(server, "MODELS_DIR", tmp_path)
+    with pytest.raises(SystemExit, match="fetch_models.py"):
+        server.check_models()
+    for f in server.REQUIRED_FILES:
+        (tmp_path / f).write_bytes(b"")
+    server.check_models()
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1 and all(f in err for f in server.OPTIONAL_FILES)
+    for f in server.OPTIONAL_FILES:
+        (tmp_path / f).write_bytes(b"")
+    server.check_models()
+    assert capsys.readouterr().err == ""

@@ -1,6 +1,6 @@
 """Build the generic demo-vocabulary model from WLASL clips (no person enrolled yet), for enroll.py / personal.py.
 
-    .venv/Scripts/python build_demo_model.py          # -> models/demo_generic.npz + models/demo_model.npz (~10-30 s)
+    uv run python -m eval.build_demo_model          # -> models/demo_generic.npz + models/demo_model.npz (~10-30 s)
 
 Input: demo_data.py (out/wlasl-demo from fetch_wlasl_demo.py --extract, plus the motion library). Output holds
 derived features only (no landmarks): every demo clip's features and AUG augmented copies (labels per row), and
@@ -19,10 +19,10 @@ import time
 
 import numpy as np
 
-import demo_data as D
 import enroll as E
 import personal as P
-from eval_demo import idle, seg_cached, transitions
+from eval import demo_data as D
+from eval.eval_demo import idle, seg_cached, transitions
 
 
 def main():

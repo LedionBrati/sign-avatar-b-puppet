@@ -13,10 +13,11 @@ import { mkdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, extname, resolve } from "node:path";
 import puppeteer from "puppeteer-core";
+import { findChrome } from "../../../shared/find-chrome.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ext = resolve(root, ".output/chrome-mv3");
-const chrome = process.env.CHROME ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const chrome = findChrome();
 const api = process.env.FLUX_API ?? "http://localhost:8787";
 const audio = process.env.AUDIO;
 const seek = Number(process.env.SEEK ?? 0);

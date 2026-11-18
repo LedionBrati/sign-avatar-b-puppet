@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from recognizer import MODELS_DIR  # noqa: E402
+from recognizer import MODELS_DIR, REQUIRED_FILES  # noqa: E402
 
-HAVE_MODELS = all((MODELS_DIR / f).exists() for f in ("gislr.tflite", "gislr_labels.json", "fs.tflite", "fs_args.json", "fs_chars.json"))
+HAVE_MODELS = all((MODELS_DIR / f).exists() for f in REQUIRED_FILES)
 needs_models = pytest.mark.skipif(not HAVE_MODELS, reason="run fetch_models.py first")
 
 

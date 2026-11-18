@@ -1,21 +1,18 @@
 // Fake-camera end-to-end test of #/sign: Chrome plays a .y4m clip as the webcam, the page tracks it with MediaPipe,
 // it reads continuously (no clicks), and we check the recognizer's top-5. Saves docs/sign-tracking.png and docs/sign-result.png.
 //   npm run dev:mock   (or npm run dev with the real recognizer behind app/server)   then
-//   CLIPS="hello=C:/tmp/hello.y4m,water=C:/tmp/water.y4m" npm run sign-test
+//   CLIPS="hello=<dir>/hello.y4m,water=<dir>/water.y4m" npm run sign-test
 // Make clips: ffmpeg -i in.mp4 -vf "scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p" out.y4m
 // Env: APP_URL (default http://localhost:5173), CHROME, OUT, SHOTS=0 to skip screenshots, DELEGATE=cpu|gpu,
 // EMBED=1 opens #/sign?embed=1 with a fake window.ReactNativeWebView and checks the sentence/speak messages.
 import fs from "node:fs";
 import path from "node:path";
 import puppeteer from "puppeteer-core";
+import { findChrome } from "../../../shared/find-chrome.mjs";
 
 const APP = process.env.APP_URL ?? "http://localhost:5173";
 const OUT = process.env.OUT ?? path.resolve(import.meta.dirname, "../docs");
-const CHROME = process.env.CHROME ?? [
-  "C:/Program Files/Google/Chrome/Application/chrome.exe",
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/usr/bin/google-chrome",
-].find((p) => fs.existsSync(p));
+const CHROME = findChrome();
 const clips = (process.env.CLIPS ?? "").split(",").filter(Boolean).map((s) => { const [label, file] = s.split("="); return { label, file: path.resolve(file) }; });
 if (!clips.length) { console.error('set CLIPS="label=file.y4m,..."'); process.exit(2); }
 const shots = process.env.SHOTS !== "0";

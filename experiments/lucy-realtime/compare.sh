@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Needs bash (Git Bash on Windows). Not on the runtime path.
 # Build one side-by-side PNG from frames of several videos.
 # Usage: compare.sh <out.png> "<label>|<video>|<seconds>|<crop>" ...
 #   crop: "lucy" = cut the 720x960 puppet area back out of Lucy's 720x1280 padded frame, "-" = none.

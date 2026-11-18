@@ -9,7 +9,7 @@
   - Stages: `rank`, `extract`, `batch`, `render`, `repaint`, `status`, plus `run` = all free stages.
   - Every stage skips work that's already done. State lives in `out/mass/state.json` and is written after every step, so stopping with Ctrl-C loses at most one batch.
 - **Reused:**
-  - `pipeline/make-batches.mjs` (cherry-picked from `nikos/vocab`): same neutral pose (`sign-avatar-b-puppet/out/realtime/neutral.clean.json`), 0.2 s blend, 24 fps, at least 3 pure neutral frames at every cut, `--max-seconds 12`.
+  - `pipeline/make-batches.mjs` (cherry-picked from `nikos/vocab`): same neutral pose (`out/realtime/neutral.clean.json`), 0.2 s blend, 24 fps, at least 3 pure neutral frames at every cut, `--max-seconds 12`.
   - `motion/batch_library.py` from `sbp-motion` (its venv and model, resumable `rows/`).
   - `puppet/render.mjs`, `pipeline/e0.mjs` (gated paid harness) and `pipeline/sign-clips.mjs cut`.
 - **Machine:** i7-1355U laptop with Iris Xe graphics. It had been overheating, so the run used ≤ 3 extraction workers, one render at a time, chunked runs and nothing left in the background.
@@ -51,8 +51,8 @@ Struck-through signs failed the hand check (see below). Zipf runs from 7.43 (TO)
 - **This is signed English, not ASL grammar:** the list starts with English function words (TO, AND, FOR, THAT). They help the translator's signed-English output. ASL drops many of them, so a later ranking could weigh ASL gloss frequency instead.
 
 ## 2. Extraction + QA (free)
-- **Already there:** 31 of the top 300. 149 of them came from earlier runs; I also copied in the 43 vocab-candidate extractions from `sign-avatar-b-puppet/out/realtime/vocab/motion`, without overwriting anything.
-- **Extracted now:** 269 signs in three chunks, through `index.mass.json` next to `ai-summit/data/signs/index.json` so the `videos/…` paths resolve.
+- **Already there:** 31 of the top 300. 149 of them came from earlier runs; I also copied in the 43 vocab-candidate extractions from `out/realtime/vocab/motion`, without overwriting anything.
+- **Extracted now:** 269 signs in three chunks, through `index.mass.json` next to `<signs>/index.json` so the `videos/…` paths resolve.
   - Wall time was 7.8 min, or **1.7 s per sign** with 3 workers (59 s / 174 s / 234 s for 30 / 90 / 149 signs).
   - Most top words are short signs; the vocab run measured 8–10 s per sign per worker.
 - **QA rules**, as in [demo-vocab](2026-11-15-demo-vocab.md):

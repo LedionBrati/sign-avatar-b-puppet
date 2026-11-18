@@ -19,8 +19,7 @@
 // --budget-usd (a cap on the TOTAL recorded in state.json across all runs, checked before every
 // call), and goes through the gated harness pipeline/e0.mjs (--authorize-paid E0-PAID --max-usd N).
 //
-// Paths (flag or env; relative defaults are from the repo root, "realtime" = out/realtime, or the main checkout's
-// ../sign-avatar-b-puppet/out/realtime when this worktree has none):
+// Paths (flag or env; relative defaults are from the repo root, "realtime" = out/realtime):
 //   --index       MASS_INDEX       WLASL index.json (videos resolve relative to it); required by rank / extract
 //   --motion-dir  MASS_MOTION_DIR  extractor output (raw/clean JSON + rows/), shared and resumable (out/motion/wlasl)
 //   --extractor   MASS_EXTRACTOR   motion/ folder with .venv + MediaPipe model (batch_library.py) (motion)
@@ -33,6 +32,7 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, createWriteStream } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { ffprobePath } from "../../shared/ffmpeg.mjs";
 import { toId } from "../lib/clips.mjs";
 import { MODELS } from "../e0/models.mjs";
 
@@ -46,7 +46,7 @@ for (let i = 0; i < rest.length; i++) {
   else opt[k] = rest[++i];
 }
 const env = process.env;
-const REALTIME = [join(ROOT, "out/realtime"), resolve(ROOT, "../sign-avatar-b-puppet/out/realtime")].find(existsSync) ?? join(ROOT, "out/realtime");
+const REALTIME = join(ROOT, "out/realtime");
 const INDEX = opt.index ?? env.MASS_INDEX;
 const C = {
   get index() {
@@ -82,7 +82,7 @@ const saveState = (s) => { if (opt.simulate) return; s.updated = new Date().toIS
 const loadRanked = () => { if (!existsSync(rankedPath)) throw new Error("run `rank` first"); return load(rankedPath); };
 const usd = (x) => `$${x.toFixed(2)}`;
 const hms = (s) => s >= 3600 ? `${(s / 3600).toFixed(1)} h` : s >= 60 ? `${(s / 60).toFixed(1)} min` : `${Math.round(s)} s`;
-const frameCount = (mp4) => Number(execFileSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0",
+const frameCount = (mp4) => Number(execFileSync(ffprobePath(), ["-v", "error", "-count_frames", "-select_streams", "v:0",
   "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", mp4]).toString().trim());
 
 const children = new Set();

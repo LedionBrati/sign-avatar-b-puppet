@@ -1,6 +1,6 @@
 # Shared plan → catalog → motion boundary
 
-The plan contract uses only Node.js built-ins. `README.md` §6.5 is the plan source of truth, `catalog/signs.json` is the catalog source of truth, and Nikos's published `motion/FORMAT.md` is the motion v1 source of truth. The validator checks that format; it does not render an avatar or establish ASL correctness.
+The plan contract uses only Node.js built-ins. This file and `contracts.mjs` are the plan source of truth, `catalog/signs.json` is the catalog source of truth, and Nikos's published `motion/FORMAT.md` is the motion v1 source of truth. The validator checks that format; it does not render an avatar or establish ASL correctness.
 
 ## Contract
 
@@ -68,3 +68,10 @@ node shared/check-playback.mjs path/to/one-sign-plan.json path/to/catalog.json
 The CLI calls the existing `loadPlayback()` with `createMotionLoader()`. Exit 0 means all requested motions loaded and validated; exit 1 means an unsupported plan or failed motion load, with no playable prefix; exit 2 means malformed input or invocation. The JSON report lists identity, source, FPS, frame count, sampled duration, dominant hand, mirror flag, and detected pose/face/hand frame counts. These counts expose gaps but cannot prove that left/right labels or the sign itself are correct. Compare the source video, hand labels, palm/wrist movement, and the VRM rendering visually with Nikos and a fluent signer. The CLI does not render motion.
 
 Pass `ready.items[n].motion` from the same `loadPlayback()` call to Nikos's player in order. For a local render, serializing that unchanged object to a temporary JSON file allows `puppet/render.mjs --motion PATH` to consume it. For a short sequence, `puppet/src/blend.ts` accepts ordered `{ motion }` clip specs after each individual asset has passed validation. Its runtime composite is not a catalog `.clean.json` asset and should not be fed back into the isolated-asset loader. Ledi's app should submit its plan through `loadPlayback()` and render nothing on `unsupported`.
+
+## Script helpers
+
+Two small Node helpers used by the scripts (not by the contract above):
+
+- `find-chrome.mjs`: `findChrome()` = `$CHROME`, else the standard Chrome / Chromium install locations on Windows, macOS and Linux; throws one error naming them when none exists. Every headless-Chrome script (puppet render, screenshots, smoke tests) uses it.
+- `ffmpeg.mjs`: `ffmpegPath()` / `ffprobePath()` = `$FFMPEG` / `$FFPROBE`, else the binary on PATH, else the one bundled in `pipeline/` (`ffmpeg-static`, `@ffprobe-installer/ffprobe`, after `npm install` there); `{ prefer: "bundled" }` checks the bundled one first. One clear error when none runs.

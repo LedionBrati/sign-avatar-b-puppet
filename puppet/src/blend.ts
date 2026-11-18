@@ -1,5 +1,5 @@
 // Join motion clips into one sentence: per-clip speed and holds, then a short cross-blend
-// between neighbours (README §6.3). Pure functions, no DOM.
+// between neighbours. Pure functions, no DOM.
 //
 // We blend landmark POSITIONS (eased weight), not rotations: the motion file stores points,
 // and the puppet re-solves rotations from the blended points every frame. If a rotation-space

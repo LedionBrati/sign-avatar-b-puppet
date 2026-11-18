@@ -1,10 +1,10 @@
 """Generic demo model (no enrollment): more signers, signer-invariant features, calibrated rejection, context pick.
 Heavy: runs on Modal (modal_sign_eval.py::run_generic), never on the laptop.
 
-    python eval_generic.py summary                     # signers / clips per demo word, what the gather step got
-    python eval_generic.py isolated [--variants a,b]   # leave-signer-out (grouped folds), + open set, rejection curves
-    python eval_generic.py continuous --variants before,X   # pseudo-sentences (random + demo sentences), compose simulated
-    python eval_generic.py all                         # summary + isolated + continuous with the default variants
+    python -m eval.eval_generic summary                     # signers / clips per demo word, what the gather step got
+    python -m eval.eval_generic isolated [--variants a,b]   # leave-signer-out (grouped folds), + open set, rejection curves
+    python -m eval.eval_generic continuous --variants before,X   # pseudo-sentences (random + demo sentences), compose simulated
+    python -m eval.eval_generic all                         # summary + isolated + continuous with the default variants
 
 Data: gather_wlasl.py output (GEN_DIR: meta/ + landmarks/: every reachable WLASL instance of the demo glosses, one clip
 per other gloss) + the original eval data (DEMO_DIR caches from demo_data.py: the 92 clips and 400 motion-library
@@ -16,7 +16,7 @@ the other groups only (never its own signers). Every variant and "before" are sc
 base features, reject when the none class wins. Open set: negative glosses are split by gloss (hash): 2/3 can train the
 none class, 1/3 (minus every gloss the old none class saw) are the out-of-vocabulary test signs.
 Compose simulation (no paid LLM): context.py picks among each piece's top-3 guesses with an add-k bigram over the demo
-sentences (the web app's offline path is the same code in app/core/src/context.ts). Reported with the full prior and a
+sentences (demo_data.DEMO_SENTENCES; the web app's offline path is the same code in app/core/src/context.ts). Reported with the full prior and a
 leave-one-sentence-out prior (the tested sentence removed from the bigram), which is the honest one for unseen sentences.
 Prints labels and scores only, never landmarks.
 """
@@ -41,15 +41,15 @@ from pathlib import Path
 import numpy as np
 
 import context as CX
-import demo_data as D
 import personal as P
 import segment as S
 import templates as T
-from eval_continuous import FPS, build, edit, match
-from eval_demo import hands_window, idle, main_segment, transitions
+from eval import demo_data as D
+from eval.eval_continuous import FPS, build, edit, match
+from eval.eval_demo import hands_window, idle, main_segment, transitions
 
-HERE = Path(__file__).resolve().parent
-GEN = Path(os.environ.get("GEN_DIR") or HERE.parents[1] / "out" / "wlasl-gen")
+REPO = Path(__file__).resolve().parents[3]
+GEN = Path(os.environ.get("GEN_DIR") or REPO / "out" / "wlasl-gen")
 META = Path(os.environ.get("META_DIR") or "/vol/meta")
 RES = Path(os.environ.get("RESULTS_DIR") or GEN / "results")
 FOLDS = 10
@@ -297,7 +297,7 @@ def sentences(rng: random.Random):
         pool = {c.label: c for c in rng.sample(by[s], len(by[s]))}
         out.append(("random", None, rng.sample(list(pool.values()), min(len(pool), rng.choice((3, 4))))))
     # (D) demo sentences: one signer if they have every sign, else the fewest signers (most signs first)
-    for sent in [s for s in CX.DEMO_SENTENCES if len(s.split()) >= 2]:
+    for sent in [s for s in D.DEMO_SENTENCES if len(s.split()) >= 2]:
         want = sent.split()
         for rep in range(2):
             order = sorted(by, key=lambda s: (-len(set(want) & {c.label for c in by[s]}), rng.random()))
@@ -355,7 +355,7 @@ def continuous(args):
                 reads[name][idx] = r
     seg_m = sum(match(d[4], d[3])[0] for d in data)
     print(f"  cuts: P {seg_m / max(1, sum(len(d[4]) for d in data)):.0%} R {seg_m / sum(len(d[3]) for d in data):.0%}")
-    lm_full = CX.Bigram()
+    lm_full = CX.Bigram(D.DEMO_SENTENCES)
     rule = {"before": (0.0, 0.0)}
     for n in names:
         a_t = rule.get(n, (args.rej_dtw, args.rej_t))
@@ -368,7 +368,7 @@ def continuous(args):
                 keep = [r for r in rd if r["options"] and r["margin"] - a_t[0] * (r["dtw"] if r["dtw"] is not None else 3.0) >= a_t[1]]
                 outs = {"top-1, no rejection": [r["options"][0]["label"] for r in rd if r["options"]],
                         "top-1, rejected dropped": [r["options"][0]["label"] for r in keep]}
-                lm_loo = CX.Bigram([s for s in CX.DEMO_SENTENCES if s != data[i][1]])
+                lm_loo = CX.Bigram([s for s in D.DEMO_SENTENCES if s != data[i][1]])
                 for w in (0.25, 0.5, 1.0):
                     outs[f"context pick w={w}"] = CX.labels(keep, lm=lm_full, lm_weight=w)
                     outs[f"context pick w={w}, sentence left out of the prior"] = CX.labels(keep, lm=lm_loo, lm_weight=w)

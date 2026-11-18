@@ -2,8 +2,8 @@
 
 Runs in its OWN venv (rtmlib is not a recognizer dependency):
     uv venv %TEMP%/rtm --python 3.12 && uv pip install --python %TEMP%/rtm/Scripts/python.exe rtmlib onnxruntime opencv-python-headless
-    %TEMP%/rtm/Scripts/python extract_rtmw.py --mode lightweight --stride 2   # -> out/wlasl-demo/rtmw-<mode>-s<stride>/<name>.npy
-then compare with MediaPipe on the same clips:  .venv/Scripts/python eval_demo.py extractor --rtmw ../../out/wlasl-demo/rtmw-lightweight-s2 --stride 2
+    %TEMP%/rtm/Scripts/python -m eval.extract_rtmw --mode lightweight --stride 2   # -> out/wlasl-demo/rtmw-<mode>-s<stride>/<name>.npy
+then compare with MediaPipe on the same clips:  uv run python -m eval.eval_demo extractor --rtmw ../../out/wlasl-demo/rtmw-lightweight-s2 --stride 2
 
 COCO-WholeBody 133 points -> legacy layout: nose -> pose 0, shoulders 5/6 -> pose 11/12, elbows -> 13/14, wrists -> 15/16,
 left hand 91-111 -> 468-488, right hand 112-132 -> 522-542 (same 21-point order as MediaPipe; subject's left / right).
@@ -22,9 +22,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
-OUT = Path(os.environ.get("DEMO_DIR") or HERE.parents[1] / "out" / "wlasl-demo")
-LIB = Path(os.environ.get("SIGN_LIB") or Path.home() / "Desktop" / "hackathon-archive" / "ai-summit" / "data" / "signs")  # holds index.json + videos/
+REPO = Path(__file__).resolve().parents[3]
+OUT = Path(os.environ.get("DEMO_DIR") or REPO / "out" / "wlasl-demo")
+# WLASL library folder (index.json + videos/): SIGN_LIB, else the folder of SIGN_DICTIONARY; optional (adds the
+# library clips of the demo signs to out/wlasl-demo's).
+_LIB = os.environ.get("SIGN_LIB") or (str(Path(os.environ["SIGN_DICTIONARY"]).parent) if os.environ.get("SIGN_DICTIONARY") else "")
+LIB = Path(_LIB) if _LIB else None
 BODY = {0: 0, 5: 11, 6: 12, 7: 13, 8: 14, 9: 15, 10: 16}
 
 
@@ -48,7 +51,7 @@ def videos() -> list[tuple[str, Path, int, int]]:
     if idx.exists():
         for e in json.loads(idx.read_text()):
             out.append((Path(e["file"]).stem, OUT / "videos" / e["file"], e["frame_start"], e["frame_end"], str(e["signer"])))
-    lib = json.loads((LIB / "index.json").read_text()) if (LIB / "index.json").exists() else {}
+    lib = json.loads((LIB / "index.json").read_text()) if LIB and (LIB / "index.json").exists() else {}
     for g in ("hello yes no please water hungry sick home help name nice meet you me i where fine happy bye goodbye sorry".split() + ["thank you"]):
         if g in lib:
             p = LIB / lib[g]["file"]

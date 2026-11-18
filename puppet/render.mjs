@@ -41,13 +41,15 @@
 //
 // Paths are relative to the current directory. Writes <out>.json next to the mp4 with per-frame
 // tracking failures and retargeting errors (degrees) of the pose that was rendered. Chrome: set
-// CHROME=/path/to/chrome if it is not at the default location (same convention as pipeline/render-layers.mjs).
+// CHROME=/path/to/chrome if it is not at a standard location (shared/find-chrome.mjs, used by every browser script).
 
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { findChrome } from "../shared/find-chrome.mjs";
+import { ffmpegPath, ffprobePath } from "../shared/ffmpeg.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -94,20 +96,6 @@ const N = Math.min(motion.frames.length, Number(arg("frames", motion.frames.leng
 const fps = Number(arg("fps", motion.fps));
 if (fps !== motion.fps) console.warn(`note: --fps ${fps} differs from the motion's ${motion.fps} fps; frames are not resampled, the video just plays at ${fps} fps`);
 
-function findChrome() {
-  if (process.env.CHROME) return process.env.CHROME;
-  const candidates = [
-    "C:/Program Files/Google/Chrome/Application/chrome.exe",
-    "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-    `${process.env.LOCALAPPDATA ?? ""}/Google/Chrome/Application/chrome.exe`,
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser",
-  ];
-  const hit = candidates.find((p) => existsSync(p));
-  if (!hit) { console.error("Chrome not found; set CHROME=/path/to/chrome"); process.exit(1); }
-  return hit;
-}
-
 const work = mkdtempSync(join(tmpdir(), "puppet-render-"));
 const toUrlPath = (p) => "/__file/" + p.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/");
 
@@ -115,7 +103,7 @@ const toUrlPath = (p) => "/__file/" + p.replace(/\\/g, "/").split("/").map(encod
 let srcTpl = null;
 if (view === "sidebyside" && videoPath) {
   const start = motion.source?.start_s ?? 0;
-  execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(start), "-i", videoPath,
+  execFileSync(ffmpegPath(), ["-v", "error", "-y", "-ss", String(start), "-i", videoPath,
     "-vf", `fps=${motion.fps},scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2`,
     "-frames:v", String(N), join(work, "src_%05d.png")], { stdio: "inherit" });
   srcTpl = toUrlPath(join(work, "src_%05d.png")).replace("%2505d", "%05d");
@@ -235,7 +223,7 @@ try {
   } else {
     ffArgs.push("-f", "image2pipe", "-framerate", String(fps), "-c:v", "png", "-i", "-", ...x264(17, "medium"), out);
   }
-  ffmpeg = spawn("ffmpeg", ffArgs, { stdio: ["pipe", "inherit", "inherit"] });
+  ffmpeg = spawn(ffmpegPath(), ffArgs, { stdio: ["pipe", "inherit", "inherit"] });
   const ffDone = new Promise((res, rej) => { ffmpeg.on("close", (c) => (c === 0 ? res() : rej(new Error(`ffmpeg exited ${c}`)))); });
   const write = async (buf) => { if (!ffmpeg.stdin.write(buf)) await new Promise((res) => ffmpeg.stdin.once("drain", res)); };
 
@@ -307,7 +295,7 @@ try {
   const secs = (Date.now() - t0) / 1000;
   const outs = capture !== "png" ? passes.map(passOut) : [out];
   for (const o of outs) {
-    const count = parseInt(execFileSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", o]).toString().trim());
+    const count = parseInt(execFileSync(ffprobePath(), ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", o]).toString().trim());
     console.log(`wrote ${o}: ${count} frames, ${capture !== "png" ? W : pageW}x${H} @ ${fps} fps (motion has ${N} frames)`);
     if (count !== N) { console.error(`FRAME COUNT MISMATCH: video ${count} vs motion ${N}`); process.exitCode = 2; }
   }

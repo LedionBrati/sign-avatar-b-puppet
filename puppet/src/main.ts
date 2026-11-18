@@ -19,7 +19,7 @@
 //   handclean=0         anatomic hands solved frame by frame (no palm-flip rejection, no filling of untracked spans)
 //   smooth=0            raw puppet: every frame as tracked (no clean-up, no in-between frames, no hair physics)
 //   render=1            offline mode for render.mjs: no controls, window.renderFrame(i) draws frame i
-//   srcframes=<tpl>     render mode: source frames as images, e.g. /__file/C:/tmp/src_%05d.png (1-based)
+//   srcframes=<tpl>     render mode: source frames as images, e.g. /__file/<abs-dir>/src_%05d.png (1-based)
 import { duration, frameIndexAt, loadMotion, missingStats, type Motion } from "./motion";
 import { drawSkeleton, COLORS } from "./skeleton";
 import { VrmPuppet, type Pass, type RetargetReport, type Solver } from "./vrm";

@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import puppeteer from "puppeteer-core";
+import { findChrome } from "../../../shared/find-chrome.mjs";
 
-const chrome = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chrome = findChrome();
 const appUrl = process.env.APP_URL ?? "http://127.0.0.1:5173/";
 const shots = resolve(process.env.QA_SHOTS_DIR ?? "../../out/qa-logs/browser");
 await mkdir(shots, { recursive: true });

@@ -9,14 +9,14 @@
 - Models (`fetch_models.py`, gitignored `app/recognizer/models/`):
   - `sign`: GISLR 1st place (hoyso48), `huggingface.co/sign/kaggle-asl-signs-1st-place`, MIT. Input `[N, 543, 3]`, 250 logits, softmax top-5.
   - `spell`: ASL Fingerspelling 1st place (Henkel/Hanley), Apache-2.0, only `cfg_2/fold-1/model.tflite` (40.9 MB) + `inference_args.json` from the 192 MB release zip, read with HTTP Range requests (fetch from scratch: 14 s). Input `[N, 390]` (130 points x xyz, mapped from the 543 layout by column name). The tflite already greedy-decodes and cuts at EOS; we argmax each row and map with `character_to_prediction_index.json` (59 chars; P/S/E = 59/60/61). Its low-confidence fallback phrase `"2 a-e -aroe"` (a Kaggle-metric trick in `cfg_2.py`) becomes `""`. Spaces are dropped (spell mode = one word or name).
-- Eval data: WLASL clips in the library (`ai-summit/data/signs/index.json`) whose gloss is in the GISLR vocabulary: 206 (201 exact + aliases thankyou, icecream, frenchfries, grandpa->grandfather, minemy->my). A seeded random 100 of them were evaluated (19 different signers). These are **not** GISLR training data (that was PopSign).
+- Eval data: WLASL clips in the library (`<signs>/index.json`) whose gloss is in the GISLR vocabulary: 206 (201 exact + aliases thankyou, icecream, frenchfries, grandpa->grandfather, minemy->my). A seeded random 100 of them were evaluated (19 different signers). These are **not** GISLR training data (that was PopSign).
 - Landmarks: MediaPipe Tasks `HolisticLandmarker` in Python (mediapipe 1.2.3, `holistic_landmarker.task`, VIDEO mode), packed exactly like `app/core/src/landmarks.ts` (478 -> 468 face, legacy order, NaN missing), unmirrored, trimmed to the frames where a hand is visible (what the web client's auto start/stop sends).
 - Commands:
   ```sh
   cd app/recognizer && uv sync --all-groups && uv run python fetch_models.py
   uv run python server.py &                       # :8788
   PORT=8787 node app/server/index.mjs &           # proxy
-  uv run --group eval python eval_wlasl.py --limit 100 --url http://127.0.0.1:8787 --spell
+  uv run --group eval python -m eval.eval_wlasl --limit 100 --url http://127.0.0.1:8787 --spell
   ```
 
 ## Result
@@ -29,7 +29,7 @@
 | segment length | median 36 frames (17–69) |
 | top-1 confidence | median 0.93 when right, 0.31 when wrong. At confidence ≥ 0.7: 70 clips, 70/70 right |
 
-Misses (label -> top-1): kiss->home, scissors->cut, make->zipper, fine->table, helicopter->police, dance->zebra, tooth->glasswindow, table->arm, after->table, there->vacuum, cry->for, ride->stairs, clean->zebra, tongue->glasswindow. 10 of the 14 still had the right sign in the top 5. This matches the earlier 60-clip check in `docs/product-plan.md` §3 (82% / 97%).
+Misses (label -> top-1): kiss->home, scissors->cut, make->zipper, fine->table, helicopter->police, dance->zebra, tooth->glasswindow, table->arm, after->table, there->vacuum, cry->for, ride->stairs, clean->zebra, tongue->glasswindow. 10 of the 14 still had the right sign in the top 5. This matches an earlier 60-clip check (82% / 97%).
 
 **Fingerspelling sanity (no proper test set on this machine):**
 - 21 single-letter WLASL clips (the library has a b d e f g h i j k m n o p q r s t u v w): **20/21 exactly right** (Q read as S).
@@ -60,6 +60,6 @@ Tests: `uv run pytest -q` (17 pass: shape validation, all-NaN segment, top-5 sor
 - Real webcam users (lighting, partial framing, left-handed signers). This is the real test, and WLASL clips are studio-clean.
 - Cap or downsample long spell segments on the server, and measure accuracy against latency.
 - A proper fingerspelling set (ChicagoFSWild, or the Kaggle supplemental data) for a real character error rate.
-- Use GISLR to auto-check the motion dictionary (product plan §3 synergy): flag extracted signs the model no longer recognizes.
+- Use GISLR to auto-check the motion dictionary: flag extracted signs the model no longer recognizes.
 
 **Data:** WLASL (C-UDA, research use only) and Kaggle-derived models. Private demo only. No landmarks were committed or logged; the eval cache lives in `%TEMP%`.

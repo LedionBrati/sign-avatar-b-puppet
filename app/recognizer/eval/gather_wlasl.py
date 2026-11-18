@@ -1,8 +1,8 @@
 """Gather every reachable WLASL instance of the demo signs (and one clip per other gloss, the open-set negatives) and
 extract MediaPipe Holistic landmarks. Runs on Modal (modal_sign_eval.py::gather), never on the laptop.
 
-    python gather_wlasl.py --jobs   --wlasl WLASL_v0.3.json --dict index.json        # -> GEN/jobs.json
-    python gather_wlasl.py --run 0,40                                                # fetch + extract jobs[0:40]
+    python -m eval.gather_wlasl --jobs   --wlasl WLASL_v0.3.json --dict index.json        # -> GEN/jobs.json
+    python -m eval.gather_wlasl --run 0,40                                                # fetch + extract jobs[0:40]
 
 Demo jobs: all instances of the demo glosses + variants (GLOSS_LABEL, plus "ill" = SICK, the same sign) from
 WLASL_v0.3.json: direct links with urllib, YouTube with yt-dlp (both often dead: skipped after one try, the reason is
@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-GEN = Path(os.environ.get("GEN_DIR") or Path(__file__).resolve().parents[2] / "out" / "wlasl-gen")
+GEN = Path(os.environ.get("GEN_DIR") or Path(__file__).resolve().parents[3] / "out" / "wlasl-gen")
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"}
 # WLASL gloss -> demo label (demo_data.GLOSS_LABEL + variants that are the same sign)
 DEMO = {"hello": "HELLO", "yes": "YES", "no": "NO", "please": "PLEASE", "thank you": "THANK_YOU", "water": "WATER",
@@ -110,7 +110,7 @@ def _detector():
 
     task = os.environ.get("HOLISTIC_TASK")
     if not task:
-        from eval_wlasl import holistic_model
+        from eval.eval_wlasl import holistic_model
 
         task = str(holistic_model())
     opts = vision.HolisticLandmarkerOptions(base_options=BaseOptions(model_asset_path=task),

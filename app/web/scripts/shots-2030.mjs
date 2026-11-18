@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import puppeteer from "puppeteer-core";
+import { findChrome } from "../../../shared/find-chrome.mjs";
 
 const APP = process.env.APP_URL ?? "http://localhost:5173";
 const OUT = process.env.OUT ?? path.resolve(import.meta.dirname, "../docs");
@@ -16,7 +17,7 @@ const THEMES = (process.env.THEMES ?? "dark,light").split(",");
 const SIZES = (process.env.SIZES ?? "phone,desktop").split(",");
 const DPR = +(process.env.DPR ?? 2);
 const VIEW = { phone: { width: 390, height: 844, deviceScaleFactor: DPR, isMobile: true, hasTouch: true }, desktop: { width: 1440, height: 900, deviceScaleFactor: 1 } };
-const CHROME = process.env.CHROME ?? ["C:/Program Files/Google/Chrome/Application/chrome.exe", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome"].find((p) => fs.existsSync(p));
+const CHROME = findChrome();
 const want = (n) => !ONLY || ONLY.has(n);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

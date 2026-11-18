@@ -23,11 +23,12 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ffmpegPath } from "../../shared/ffmpeg.mjs";
 import { CLIP_ENCODE } from "../lib/clips.mjs";
 import { evenFilter } from "../lib/even.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ffmpeg = (args) => execFileSync("ffmpeg", ["-v", "error", "-y", ...args], { stdio: ["ignore", "ignore", "inherit"] });
+const ffmpeg = (args) => execFileSync(ffmpegPath(), ["-v", "error", "-y", ...args], { stdio: ["ignore", "ignore", "inherit"] });
 const thin = (every) => (every > 1 ? `select='not(mod(n\\,${every}))',setpts=N/24/TB,` : "");
 const readJson = (p, fallback) => (existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : fallback);
 const writeJson = (p, v) => { writeFileSync(`${p}.tmp`, JSON.stringify(v, null, 1)); renameSync(`${p}.tmp`, p); };
