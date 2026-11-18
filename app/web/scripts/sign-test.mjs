@@ -2,6 +2,7 @@
 // it reads continuously (no clicks), and we check the recognizer's top-5. Saves docs/sign-tracking.png and docs/sign-result.png.
 //   npm run dev:mock   (or npm run dev with the real recognizer behind app/server)   then
 //   CLIPS="hello=<dir>/hello.y4m,water=<dir>/water.y4m" npm run sign-test
+// On Windows, run one clip per call: a second headless Chrome in the same run can report "No camera found".
 // Make clips: ffmpeg -i in.mp4 -vf "scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p" out.y4m
 // Env: APP_URL (default http://localhost:5173), CHROME, OUT, SHOTS=0 to skip screenshots, DELEGATE=cpu|gpu,
 // EMBED=1 opens #/sign?embed=1 with a fake window.ReactNativeWebView and checks the sentence/speak messages.
@@ -61,7 +62,7 @@ for (const [ci, clip] of clips.entries()) {
       r.error = undefined;
       r.top5 = sl.last.options.map((o) => `${o.label}:${o.confidence.toFixed(2)}`);
       r.frames = sl.frames; r.segMs = sl.segMs; r.reason = sl.reason; r.rtMs = sl.rtMs; r.inferMs = sl.last.timings?.inference_ms;
-      r.rank = sl.last.options.findIndex((o) => o.label === clip.label) + 1;
+      r.rank = sl.last.options.findIndex((o) => o.label.toUpperCase() === clip.label.toUpperCase()) + 1;
       r.attempt = attempt;
     }
     r.fps2 = await page.evaluate(() => window.__sl?.fps);
@@ -84,6 +85,7 @@ for (const [ci, clip] of clips.entries()) {
     }
   } catch (e) {
     r.error = String(e.message ?? e);
+    r.page = await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").slice(0, 200)).catch(() => null);
   }
   if (errors.length) r.consoleErrors = errors.slice(0, 3);
   results.push(r);
