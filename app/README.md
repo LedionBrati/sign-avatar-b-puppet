@@ -1,6 +1,6 @@
 # Flux apps
 
-The product shell for Method B: **hear anything, see it signed.** The design follows the team's Flux prototypes: a grainy cobalt background, frosted-glass cards, captions that light up word by word, one card per speaker.
+The product: **hear anything, see it signed; sign, and be heard.** Frosted-glass cards, captions that light up word by word, one card per speaker.
 
 ```
 speech (on the device) ──► text ──► app/server ──► playlist of realistic sign clips ──► client plays them back to back
@@ -38,16 +38,14 @@ top-5 sign chips / spelled word ◄── RecognizeResponse ◄─────�
 
 ## Run
 
-```bash
-(cd translate && npm i)                           # once: translator deps (local embeddings model)
-node app/server/index.mjs                         # http://localhost:8787 + LAN URL; CLIPS_DIR=dirA,dirB (default out/realtime/clips)
-CLIPS_DIR=out/realtime/clips,out/realtime/clips-mass node app/server/index.mjs   # + the mass clip set (pipeline/mass/)
-(cd app/recognizer && uv sync && uv run python fetch_models.py && uv run python server.py)   # sign -> voice on :8788 (RECOGNIZER_URL for the API)
-node app/start.mjs                                # or both of the above in one terminal (recognizer + API)
-(cd app/web && npm run build)                     # then the API serves it at /app/
-cd app/web && npm i && npm run dev                # web app
-cd app/extension && npm i && npm run dev          # Chrome extension (WXT opens a browser)
-cd app/mobile && npm i && npx expo start          # phone: set the server URL to http://<LAN-IP>:8787
+From the repo root (see the main [README](../README.md#quick-start)):
+
+```
+npm run setup      # once: installs, web build, recognizer models, clips
+npm start          # recognizer (:8788) + API (:8787), web app at http://localhost:8787/app/
+npm run dev        # the same + the Vite dev server with live reload (:5173)
 ```
 
-**Data:** the clips come from WLASL signers repainted by H3 Max. That's non-commercial research data, so this is for private demos only (README §13).
+Per app: `app/web` (`npm run dev`, `npm run dev:mock` without a server), `app/extension` (`npm run dev` or `npm run build`, then load `.output/chrome-mv3` unpacked), `app/mobile` (`npx expo start`; start the API with `HOST=0.0.0.0` and set the server URL in Settings to `http://<LAN-IP>:8787`).
+
+**Data:** the clips come from WLASL signers repainted by fal's H3 Max. That is non-commercial research data (main README, "Licences and data").

@@ -1,4 +1,4 @@
-// English -> ASL sign plan (README §6.5), no remote model or API calls.
+// English -> ASL sign plan (plan shape: shared/contracts.mjs assertPlan), no remote model or API calls.
 //
 //   import { translate, translateRules } from "./translate/index.mjs";
 //   const plan = await translate("Where does it hurt?", vocab);      // rules + local embeddings

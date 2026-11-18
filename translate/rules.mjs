@@ -2,7 +2,7 @@
 // Plain ESM, no Node or browser APIs, so it runs anywhere.
 //
 // Everything here is an APPROXIMATION. Word lookup plus a few reordering rules
-// is signed English with ASL-ish word order, not ASL grammar (README §6.5).
+// is signed English with ASL-ish word order, not ASL grammar.
 // Every list is short on purpose; extend it deliberately, not by guessing.
 
 /** Words ASL usually does not sign as separate signs. Dropped (reported in plan.dropped_tokens). */
