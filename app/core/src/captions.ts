@@ -2,7 +2,7 @@
 //   upcoming (hidden) -> heard (visible) -> signed (solid) ; "now" = the word being signed (tinted highlight).
 // Pure logic, no DOM, shared by web, extension and mobile.
 
-import type { SignResponse } from "./api";
+import type { SignResponse } from "./api.ts";
 
 export type WordState = "upcoming" | "heard" | "signed" | "now";
 

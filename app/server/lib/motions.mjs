@@ -2,11 +2,12 @@
 // and the slim motion files the player needs, served at GET /motion/<stem>.json.
 //
 //   MOTION_DIRS     v1 motion dirs (<stem>.clean.json + summary.csv QC), the same setting generate-on-use reads.
-//                   Default <repo>/out/motion/wlasl (or the main checkout's next to a worktree / clone).
+//                   Default <repo>/out/motion/wlasl.
 //   MOTION_V2_DIRS  v2 dirs, searched recursively for <stem>.v2.json (motion/FORMAT.md v2, WiLoR hands). A v2 file
 //                   wins over the v1 file of the same sign. Default <repo>/out/motion/wlasl3d.
 //   MOTION_REST     the rest pose every 3D phrase starts and ends in. Default out/realtime/neutral.clean.json.
 //   MOTION=off      no 3D signer (the server answers as before: clips only).
+//   Parsed by lib/config.mjs motionConfig().
 //
 // motion_id / gloss come from each file's head (the same index generate-on-use uses, lib/ondemand.mjs). Signs that
 // failed extraction or QC (dominant hand in < MOTION_MIN_HAND_PCT % of frames, default 80) are left out.
@@ -17,10 +18,11 @@
 // `face_subset`; app/core inflateMotion() puts them back at their MediaPipe indices before the player validates it.
 // Only done when every frame that has a face also has blendshapes (else the player solves the face from the mesh).
 
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { REPO, displayGloss, scanMotionDirs } from "./ondemand.mjs";
+import { displayGloss, scanMotionDirs } from "./ondemand.mjs";
+import { readMotionHead as readHead } from "./paths.mjs";
 
 /** MediaPipe face indices the player reads: nose tip, forehead, eye corners, chin, face outline at the ears. */
 export const FACE_KEEP = Object.freeze([1, 10, 33, 133, 152, 234, 263, 362, 454]);
@@ -31,36 +33,6 @@ export const BLENDSHAPES_KEEP = Object.freeze(["eyeBlinkLeft", "eyeBlinkRight", 
 const STEM = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,120}$/;
 const LETTER = /^FS_([A-Z])$/;
 export const REST_STEM = "neutral";
-
-const list = (v) => String(v ?? "").split(/[,;]/).map((d) => d.trim()).filter(Boolean);
-const firstExisting = (paths) => paths.find((p) => p && existsSync(p));
-const sibling = (rel) => resolve(REPO, "../sign-avatar-b-puppet", rel);
-
-/** Settings from the environment (null = 3D signer off). Never under node --test unless passed explicitly. */
-export function motionConfig(env = process.env) {
-  if (/^(off|0|false|no)$/i.test(env.MOTION ?? "")) return null;
-  if (env.NODE_TEST_CONTEXT && env.MOTION_IN_TESTS !== "1") return null;
-  const v1 = list(env.MOTION_DIRS);
-  const v2 = list(env.MOTION_V2_DIRS);
-  return {
-    dirs: v1.length ? v1 : [firstExisting([join(REPO, "out/motion/wlasl"), sibling("out/motion/wlasl")]) ?? join(REPO, "out/motion/wlasl")],
-    v2Dirs: v2.length ? v2 : [firstExisting([join(REPO, "out/motion/wlasl3d"), sibling("out/motion/wlasl3d")]) ?? join(REPO, "out/motion/wlasl3d")],
-    rest: env.MOTION_REST || firstExisting([join(REPO, "out/realtime/neutral.clean.json"), sibling("out/realtime/neutral.clean.json")]) || null,
-    model: env.SIGNER_MODEL || firstExisting([join(REPO, "puppet/models/signer.glb"), sibling("puppet/models/signer.glb")]) || null,
-    minHandPct: Number.isFinite(Number(env.MOTION_MIN_HAND_PCT)) && env.MOTION_MIN_HAND_PCT ? Number(env.MOTION_MIN_HAND_PCT) : 80,
-  };
-}
-
-/** motion_id / gloss from the first 4 KB of a motion file (they come before the frames). */
-function readHead(path) {
-  let fd;
-  try {
-    fd = openSync(path, "r");
-    const buf = Buffer.alloc(4096);
-    const s = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0)).toString("utf8");
-    return { motion_id: /"motion_id"\s*:\s*"([^"]+)"/.exec(s)?.[1] ?? null, gloss: /"gloss"\s*:\s*"([^"]+)"/.exec(s)?.[1] ?? null };
-  } catch { return null; } finally { if (fd !== undefined) closeSync(fd); }
-}
 
 /** Every <stem>.v2.json under dir (recursive). */
 function findV2(dir, out = []) {

@@ -9,7 +9,7 @@
 // Words with neither clip nor motion never reach the playlist: the server's safety gate keeps such a phrase
 // caption-only, and fingerspells a name only when every letter has a clip (or, for 3D, a motion).
 
-import type { PlaylistItem, SignResponse } from "./api";
+import type { PlaylistItem, SignResponse } from "./api.ts";
 
 export type PlaybackMode = "clips" | "3d" | "none";
 

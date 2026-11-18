@@ -1,6 +1,6 @@
-// The 250 labels the sign -> voice recognizer knows (Kaggle GISLR "asl-signs", model index order). A copy of
-// app/web/src/lib/vocab.ts SIGN_VOCAB (test/compose.test.mjs checks they match); sent to the sentence model as context.
-export const SIGN_LABELS = Object.freeze([
+// The 250 labels the sign -> voice recognizer knows (Kaggle GISLR "asl-signs", model index order). One list for every
+// client and the server (app/server/lib/compose.mjs sends it to the sentence model); display text: labelText() in compose.ts.
+export const SIGN_VOCAB: readonly string[] = Object.freeze([
   "TV", "after", "airplane", "all", "alligator", "animal", "another", "any", "apple", "arm", "aunt", "awake",
   "backyard", "bad", "balloon", "bath", "because", "bed", "bedroom", "bee", "before", "beside", "better", "bird",
   "black", "blow", "blue", "boat", "book", "boy", "brother", "brown", "bug", "bye", "callonphone", "can", "car",

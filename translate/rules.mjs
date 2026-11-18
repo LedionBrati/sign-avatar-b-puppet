@@ -201,7 +201,8 @@ export function toFingerspell(word) {
   return String(word).normalize("NFD").replace(/\p{M}/gu, "").toUpperCase().replace(/[^A-Z]/g, "");
 }
 
-/** Same motion_id convention as pipeline/sign-clips.mjs: uppercase, non-alphanumerics -> "_". */
+/** gloss -> motion_id: uppercase, non-alphanumerics -> "_". The one definition (pipeline/lib/clips.mjs and
+ *  pipeline/produce/lib.mjs re-export it as toId). */
 export function toMotionId(gloss) {
   return String(gloss).trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
 }

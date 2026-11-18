@@ -1,13 +1,15 @@
 // Sign -> voice without a model call: pick, per sign, which of the recognizer's top guesses to use so the whole run
-// makes the most sense, with a tiny language-model prior over the demo sentences (an add-k bigram over sign labels).
-// Mirror of app/recognizer/context.py (same sentences, same numbers; a shared fixture test keeps them equal).
+// makes the most sense, with an optional tiny language-model prior (an add-k bigram over sign labels, bigram()).
+// Without a prior every sign keeps its most confident guess. Mirror of app/recognizer/context.py (same sentences, same
+// numbers; a shared fixture test keeps them equal: context.py uses bigram(DEMO_SENTENCES), the TS test passes it).
 //
 // score(combination) = sum_i log(confidence_i) + LM_WEIGHT * sum_i log P(label_i | label_{i-1})   (with <s> and </s>)
 // Exact over the top TOP_K guesses per sign (Viterbi). A guess the signer fixed from the chips is the only option.
 // The server's sentence model (/api/compose) does the same with real English knowledge; this is the offline fallback,
 // and what the recognizer evals use to simulate compose (eval_generic.py).
 
-/** Demo sentences as sign labels in signing order (ASL order: WH-sign last). The LM prior is fitted on these. */
+/** Short sentences over the closed DEMO_SIGNS vocabulary (api.ts), as sign labels in signing order (ASL order: WH-sign
+ *  last). Not a default: pass {lm: bigram(DEMO_SENTENCES)} to use them as the prior. */
 export const DEMO_SENTENCES: readonly string[] = [
   "HELLO", "HELLO NICE MEET YOU", "HELLO ME NAME", "HELLO YOU FINE", "HELLO HAPPY MEET YOU", "NICE MEET YOU",
   "NICE MEET YOU BYE", "HAPPY MEET YOU", "YOU NAME", "ME NAME", "THANK_YOU", "THANK_YOU BYE", "THANK_YOU HELP",
@@ -25,7 +27,7 @@ const BOS = "<s>", EOS = "</s>";
 export interface Bigram { logp(prev: string, next: string): number }
 
 /** Add-k bigram over the sentences' labels (+ </s>). Unknown labels share the unseen mass like any unseen pair. */
-export function bigram(sentences: readonly string[] = DEMO_SENTENCES, k: number = CONTEXT.addK): Bigram {
+export function bigram(sentences: readonly string[], k: number = CONTEXT.addK): Bigram {
   const pair = new Map<string, number>();
   const ctx = new Map<string, number>();
   const vocab = new Set<string>([EOS]);
@@ -41,13 +43,14 @@ export function bigram(sentences: readonly string[] = DEMO_SENTENCES, k: number 
   return { logp: (prev, next) => Math.log(((pair.get(`${prev} ${next}`) ?? 0) + k) / ((ctx.get(prev) ?? 0) + k * v)) };
 }
 
-const DEFAULT_LM = bigram();
+/** No prior: every transition equally likely, so only the confidences count. */
+const UNIFORM: Bigram = { logp: () => 0 };
 
 export interface PickSign { options: { label: string; confidence: number }[]; fixed?: boolean; sel?: number }
 
 /** Per sign, the index of the guess to use (Viterbi over the top topK guesses). Empty options -> -1. */
 export function contextPick(signs: readonly PickSign[], o: { lm?: Bigram; lmWeight?: number; topK?: number } = {}): number[] {
-  const lm = o.lm ?? DEFAULT_LM, wt = o.lmWeight ?? CONTEXT.lmWeight, k = o.topK ?? CONTEXT.topK;
+  const lm = o.lm ?? UNIFORM, wt = o.lmWeight ?? CONTEXT.lmWeight, k = o.topK ?? CONTEXT.topK;
   const cand = signs.map((s) => {
     if (s.fixed) { const i = s.sel ?? 0; return s.options[i] ? [i] : []; }
     return s.options.slice(0, k).map((_, i) => i);

@@ -10,6 +10,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": { "@flux/core": ["../core/src/index.ts"] }

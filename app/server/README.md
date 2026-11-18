@@ -1,13 +1,31 @@
 # app/server: Flux local API (contract: `app/core/src/api.ts`)
 
-`cd translate && npm i` once (and `cd app/server && npm i` for the optional agent layer: the `openai` SDK is its only dependency), then `node app/server/index.mjs` (binds 0.0.0.0, `PORT` default 8787, prints local + LAN URLs). `npm test` here runs `node --test test/`.
+`cd translate && npm i` once (and `cd app/server && npm i` for the optional agent layer: the `openai` SDK is its only dependency), then `node app/server/index.mjs` (Node >= 22.18: it imports `app/core/src/*.ts` directly). It listens on `127.0.0.1:8787` and prints the URL; `HOST=0.0.0.0` makes it reachable from phones on the LAN (and prints every LAN URL; on Windows the first start asks for a firewall rule). `npm test` here runs `node --test test/`.
 `CLIPS_DIR=dirA,dirB` merges clip sets (`manifest.json` each; first dir wins on a motion_id); only manifest files that exist are served, at `/clips/<file>` with Range/206. `SEMANTIC=0` = rules only.
 With the mass clip set (`pipeline/mass/`, see `experiments/2026-11-15-mass-signs.md`), run from the repo root with `CLIPS_DIR=out/realtime/clips,out/realtime/clips-mass node app/server/index.mjs`: the hand-made set wins on overlap, and mass aliases (synonyms sharing one WLASL video) point at the same file.
-Routes: `GET /api/health`, `GET /api/vocab`, `POST /api/sign {text, semantic?, agent?}` (text ≤ 500 chars; errors are `{error:{code,message}}`), `GET /api/sign.mp4?text=` (joined mp4 via ffmpeg). CORS open to any origin.
+Routes: `GET /api/health`, `GET /api/vocab`, `POST /api/sign {text, semantic?, agent?}` (text ≤ 500 chars; errors are `{error:{code,message}}`), `GET /api/sign.mp4?text=` (joined mp4 via ffmpeg stream copy; `ffmpeg` must be on PATH, else `503 no_ffmpeg`). CORS open to any origin.
 The semantic model warms in the background (~0.5 s with `translate/cache/`); until `health.semantic` is `"ready"`, `/api/sign` uses rules only. `word_index` comes from the translator's `source_index`.
 Speech -> text (the extension's tab audio): `POST /api/transcribe` with one audio chunk (`audio/webm` opus from MediaRecorder; also ogg, wav, mpeg, mp4; up to 2 MB, optional `?lang=en`, `X-Audio-Ms` up to 30000) returns `{text, model, timings}`; `text` is empty for silence or music. It uses the same OpenAI key as the agent layer (`gpt-4o-mini-transcribe`, `TRANSCRIBE_MODEL` to override, `TRANSCRIBE=off` to disable); `health.transcribe` is `"ready"` or `"off"`, and without a key the route answers `503 transcribe_off`. Audio is never stored or logged. `node scripts/transcribe-bench.mjs <dir>` compares models on real chunks.
 Sign -> voice: `POST /api/recognize?mode=sign|spell` (float32 body `frames x 543 x 3`, header `X-Frames`, max 384 frames) is proxied to `app/recognizer` at `RECOGNIZER_URL` (default `http://127.0.0.1:8788`); `503 recognizer_down` if it is not running, and `health.recognizer` is `"ready"` or `"down"`. Bodies are never logged (face points are biometric).
 `GET /app/*` serves the built web app from `app/web/dist` (or `WEB_DIST`) with SPA fallback to `index.html`; `404 no_web_build` until it is built. Build the web app with a relative or `/app/` base so its assets resolve under `/app/`.
+
+# Configuration and layout
+
+Every environment variable the server reads is listed with its default at the top of [`lib/config.mjs`](lib/config.mjs); default paths are relative to the repo root (no sibling-checkout fallbacks), each overridable:
+
+| env | default | |
+|---|---|---|
+| `PORT` / `HOST` | `8787` / `127.0.0.1` | listen address; `HOST=0.0.0.0` for phones on the LAN |
+| `RECOGNIZER_URL` | `http://127.0.0.1:8788` | `app/recognizer` (sign -> voice) |
+| `WEB_DIST` | `app/web/dist` | the built web app served at `/app/` |
+| `CLIPS_DIR` | `out/realtime/clips` | clip dirs, comma separated; `out/realtime/clips-v2-{demo,sentences,library}` go in front unless `CLIPS_V2=0` |
+| `SEMANTIC` | on | `0` = rules only |
+| `SIGNING_MODE` | `strict` | `relaxed`: partial sentences sign what they can (`docs/semantic-safety.md`) |
+| `MOTION` | on | `off` disables the 3D signer (`/motion/*`, `/models/signer.glb`, `POST /api/sign {motion: true}`) |
+| `MOTION_DIRS` / `MOTION_V2_DIRS` | `out/motion/wlasl` / `out/motion/wlasl3d` | motion for the 3D signer (and, `MOTION_DIRS`, for generate-on-use) |
+| `MOTION_REST` / `SIGNER_MODEL` | `out/realtime/neutral.clean.json` / `puppet/models/signer.glb` | 3D rest pose and avatar; `MOTION_MIN_HAND_PCT` (80) is the QC cut |
+
+Code: `index.mjs` (createApp: wiring + startup banner), `lib/config.mjs` (env), `lib/services.mjs` (OpenAI services, on-demand settings), `lib/sign-pipeline.mjs` (clip library + hot reload, translators, safety gate, agent), `lib/routes.mjs` (router, recognizer / enroll proxy, joined mp4), `lib/static.mjs` (files with Range, web app, motion JSON), `lib/http.mjs` (errors, bodies, CORS), `lib/paths.mjs` (repo root). The recognizer vocabulary (`SIGN_VOCAB`), frame limits and route paths come from `app/core`.
 
 # Playback safety
 
@@ -25,7 +43,7 @@ When the local translator's plan is not `fully_supported`, the server can ask an
 | `AGENT` | on if a key is set | `AGENT=off` disables the agent even with a key |
 | `AGENT_TIMEOUT_MS` | `6000` | total budget per sentence (1 retry only if ≥ 750 ms remain); on failure the local result is returned with a warning |
 | `AGENT_REASONING` | `none` | reasoning effort for gpt-5 / o-series models |
-| `EVAL_VOCAB` | – | **dev only**: `dictionary` plans against the 1,945-sign dictionary with virtual clips (responses labelled `eval: "virtual_clips"`, `sign.mp4` refuses) |
+| `EVAL_VOCAB` | – | **dev only**: `dictionary` plans against the 1,945-sign dictionary (`SIGN_DICTIONARY`, not in the repo) with virtual clips (responses labelled `eval: "virtual_clips"`, `sign.mp4` refuses) |
 
 Per request: `POST /api/sign {text, agent: "auto" | "always" | "off"}` (default `auto`; `GET /api/sign.mp4?agent=`). `health.agent` is `"ready"` or `"off"`. Responses where the agent was asked include an `agent` trace (status, paraphrase, notes, model, latency, tokens, rejected items).
 **Privacy:** with the agent on, the text of every sentence the local translator cannot fully sign is sent to OpenAI (`store: false`). Sentences signed locally are never sent. **Secrets:** the key is never logged, echoed or returned. Every log line and agent error is redacted. Tests use a fake client and ignore any key in the environment.
@@ -37,13 +55,13 @@ When a sentence needs a sign that has **motion** (an extracted `*.clean.json` in
 
 | env | default | |
 |---|---|---|
-| `ONDEMAND` | off | `on` enables it (also needs a fal key and `MOTION_DIRS`) |
+| `ONDEMAND` | off | `on` enables it (also needs a fal key, `MOTION_DIRS`, and `ffmpeg` + `ffprobe` on PATH) |
 | `FAL_KEY_FILE` / `FAL_KEY` | – | fal key (file: first non-empty line, read + trimmed at startup). Set as `FAL_KEY` inside the server process only; never passed to the render/compose child processes; redacted from every log, error and status |
 | `MOTION_DIRS` | – | comma-separated motion folders (`motion/batch_library.py` output). `summary.csv` rows with an `error` or < `ONDEMAND_MIN_HAND_PCT` (80) % dominant-hand detection are skipped. Re-scanned at most once a minute |
 | `FAL_DAILY_BUDGET_USD` | `20` | daily cap on the **reserve**: $0.25 per video second (min 5 s) per batch (H3 Max ~$0.085/s + input tokens ≈ $0.22/s, rounded up). A batch that would exceed it is refused (no fal call); nothing is queued when even a 5 s batch no longer fits |
 | `ONDEMAND_MAX_QUEUE` | `30` | signs waiting at most; more are not queued |
 | `PUPPET_RENDER` | `puppet/render.mjs` | renderer script (needs `puppet/node_modules` + the VRM in `puppet/models/`) |
-| `ONDEMAND_NEUTRAL` | `out/realtime/neutral.clean.json` (or the main checkout's) | the shared neutral pose every clip starts and ends in |
+| `ONDEMAND_NEUTRAL` | `out/realtime/neutral.clean.json` | the shared neutral pose every clip starts and ends in |
 | `ONDEMAND_AVATAR` | `assets/avatar/avatar-main.jpg` | Recast reference image (same as the existing clips) |
 | `ONDEMAND_CLIPS_DIR` | `out/realtime/clips-ondemand` | generated clips + manifest; appended after `CLIPS_DIR`'s dirs (a configured clip always wins) |
 | `ONDEMAND_STATE_DIR` | `out/ondemand` | `state.json` (queue, per-day spend, last 50 batches with timings) and `batches/<id>/` work files |

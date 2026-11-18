@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../index.mjs";
 import { createComposer, parseContext, parseSigns } from "../lib/compose.mjs";
-import { SIGN_LABELS } from "../lib/sign-vocab.mjs";
+import { SIGN_VOCAB } from "../../core/src/vocab.ts";
 
 const root = mkdtempSync(join(tmpdir(), "flux-compose-test-"));
 const clipsDir = join(root, "clips");
@@ -48,7 +48,7 @@ test("compose: sensible signs -> sentence, guesses + vocabulary go to the model,
   assert.equal(p.store, false);
   // Fixed, cacheable prefix: instructions, then the full recognizer vocabulary as a developer message.
   assert.equal(p.input[0].role, "developer");
-  assert.ok(SIGN_LABELS.every((l) => p.input[0].content.includes(l)));
+  assert.ok(SIGN_VOCAB.every((l) => p.input[0].content.includes(l)));
   assert.ok(p.prompt_cache_key);
 });
 
@@ -104,13 +104,6 @@ test("parseSigns: caps options at 5, clamps confidence, trims text; parseContext
   assert.throws(() => parseSigns({ signs: Array(9).fill({ text: "a" }) }));
 });
 
-test("sign-vocab.mjs matches the web app's SIGN_VOCAB (250 recognizer labels)", () => {
-  const src = readFileSync(new URL("../../web/src/lib/vocab.ts", import.meta.url), "utf8");
-  const web = JSON.parse(src.slice(src.indexOf("= [") + 2, src.indexOf("];") + 1).replace(/,\s*\]$/, "]"));
-  assert.equal(SIGN_LABELS.length, 250);
-  assert.deepEqual([...SIGN_LABELS], web);
-});
-
 test("compose-cases fixture (scripts/compose-check.mjs): realistic top-5 cases all parse", () => {
   const { cases } = JSON.parse(readFileSync(new URL("./fixtures/compose-cases.json", import.meta.url), "utf8"));
   const display = new Set(["thank you", "hurt", "you", "ice cream", "have to"]); // labelText() of thankyou, owie, ...
@@ -118,7 +111,7 @@ test("compose-cases fixture (scripts/compose-check.mjs): realistic top-5 cases a
   for (const c of cases) {
     const signs = parseSigns({ signs: c.signs.map((o) => ({ text: o[0][0], options: o.map(([text, confidence]) => ({ text, confidence })) })) });
     assert.ok(signs.every((x) => x.options.length === 5));
-    assert.ok(c.signs.flat().every(([t]) => SIGN_LABELS.includes(t) || display.has(t)), JSON.stringify(c.signs));
+    assert.ok(c.signs.flat().every(([t]) => SIGN_VOCAB.includes(t) || display.has(t)), JSON.stringify(c.signs));
   }
 });
 
