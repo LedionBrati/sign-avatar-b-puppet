@@ -2,7 +2,7 @@
 // plus a playback trace of typed signing that flags seams (frozen stretches, frames with no opaque video).
 //   npm run dev   then   node scripts/shots-2030.mjs
 // Env: APP_URL (default http://localhost:5173), OUT (default docs/), PREFIX (default "2030-"), ONLY (comma list of
-// screen names: home settings listening live done hints offline nospeech sign), THEMES ("dark,light"), SIZES ("phone,desktop"), TEXT, DPR (phone, default 2), WAIT_MS, REC=1 (also save screencast frames to OUT/rec).
+// screen names: home settings listening live done hints offline nospeech sign), THEMES ("dark,light"), SIZES ("phone,desktop"), TEXT, DPR (phone, default 2), WAIT_MS, REC=1 (also save screencast frames to OUT/rec), HEADFUL=1.
 import fs from "node:fs";
 import path from "node:path";
 import puppeteer from "puppeteer-core";
@@ -23,7 +23,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 fs.mkdirSync(OUT, { recursive: true });
 const browser = await puppeteer.launch({
-  executablePath: CHROME, headless: true,
+  executablePath: CHROME, headless: process.env.HEADFUL !== "1", // HEADFUL=1: a visible window (headless screenshots can miss hardware-decoded video)
   args: ["--autoplay-policy=no-user-gesture-required", "--hide-scrollbars", "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--disable-renderer-backgrounding"],
 });
 const errors = [];
@@ -71,8 +71,13 @@ try {
       });
       const mid = process.env.MID ?? "SICK";
       const T = +(process.env.WAIT_MS ?? 120000);
-      await page.waitForFunction((w) => document.querySelector(".island-detail")?.textContent === w, { timeout: T }, mid).catch(() => console.log("  (mid word not reached)"));
-      await sleep(650);
+      // The mid word is on screen (the island, or the caption's current word) and a signer clip is visible and playing.
+      await page.waitForFunction((w) => {
+        const word = document.querySelector(".island-detail")?.textContent ?? document.querySelector(".sl-cap .w.now")?.textContent ?? "";
+        const v = document.querySelector(".sl-signer video.front");
+        return word.replace(/[^a-z]/gi, "").toUpperCase() === w && v && v.readyState >= 2 && !v.paused && +getComputedStyle(v).opacity > 0.99;
+      }, { timeout: T, polling: 50 }, mid).catch(() => console.log("  (mid word not reached)"));
+      await sleep(400);
       if (want("live")) await shot("live");
       await page.waitForSelector(".sumline", { timeout: T }).catch(() => console.log("  (not done in time)"));
       await sleep(1000);

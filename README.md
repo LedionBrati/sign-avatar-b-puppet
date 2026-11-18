@@ -3,7 +3,7 @@
 **A live sign language interpreter that works both ways.** Speak, and a real-looking signer signs it in ASL. Sign to the camera, and Flux says it out loud.
 
 <p align="center">
-  <img src="app/web/docs/2030-live-phone-light.png" alt="Flux on a phone, signing SICK while the caption highlights the word" width="300">
+  <img src="app/web/docs/live-signing.png" alt="Flux signing SICK while the caption highlights the word" width="360">
 </p>
 
 ## Why it matters
