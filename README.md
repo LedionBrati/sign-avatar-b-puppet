@@ -32,6 +32,72 @@ Flux puts a signer next to any voice: a person in the room, a YouTube video, a G
 - **Phone app:** built with Expo.
 - **Standalone build:** the web app and its clips in one bundle, no server needed (`npm run build:artifact` in `app/web`).
 
+## Quick start
+
+Works the same on Windows (PowerShell or cmd), macOS and Linux.
+
+**1. Install the tools** (once)
+
+| Tool | Why | Windows | macOS |
+|---|---|---|---|
+| [Node.js](https://nodejs.org) 24 LTS (22.18+ works) | the API, web app and scripts | `winget install OpenJS.NodeJS.LTS` | `brew install node` |
+| [uv](https://docs.astral.sh/uv/) | sign to voice (Python recognizer; uv fetches Python 3.13 itself) | `winget install astral-sh.uv` | `brew install uv` |
+| Chrome | the web app's camera + speech recognition, the extension | | |
+| [ffmpeg](https://ffmpeg.org) *(optional)* | MP4 export of a signed sentence, making new clips | `winget install Gyan.FFmpeg` | `brew install ffmpeg` |
+
+Open a new terminal afterwards so the tools are on your PATH.
+
+**2. Set up and run**
+
+```
+git clone https://github.com/LedionBrati/sign-avatar-b-puppet.git
+cd sign-avatar-b-puppet
+npm run setup
+npm start
+```
+
+Open **http://localhost:8787/app/**. Type or say a sentence to see it signed; open **Sign** to sign to the camera.
+
+`npm run setup` installs every package, builds the web app, downloads the recognizer models (about 52 MB) and the runtime assets (about 205 MB: sign clips, the 3D signer, recognizer templates; see [Licences and data](#licences-and-data)), and creates `.env`. Re-running it is safe. Options: `--3d` adds the motion library for the instant 3D signer (large), `--ondemand` adds what making new signs with fal needs, `--extension` builds the Chrome extension, `--no-assets` skips the download.
+
+**3. Optional: an OpenAI key.** Without one, Flux needs no paid API: the browser's speech recognition and voice, plus the local translator and recognizer. Put `OPENAI_API_KEY=...` in `.env` to turn on server-side transcription (also needed for tab audio in the extension), natural sentences for sign to voice, the natural voice and the planning layer.
+
+### Configuration
+
+Everything goes in `.env` (created from [`.env.example`](.env.example)); variables already set in your shell win.
+
+| Variable | What it does |
+|---|---|
+| `OPENAI_API_KEY` (or `OPENAI_API_KEY_FILE`) | Transcription, sentences, voice and the planning layer. Keys are never logged, echoed or returned. |
+| `FAL_KEY` (or `FAL_KEY_FILE`), `ONDEMAND=on` | Make missing signs with fal in the background, capped by `FAL_DAILY_BUDGET_USD` (default 20). |
+| `HOST`, `PORT` | Where the API listens (default `127.0.0.1:8787`). `HOST=0.0.0.0` to open the app from a phone on the same Wi-Fi. |
+| `SIGNING_MODE` | `strict` (default) signs a phrase only when every word is signable; `relaxed` signs what it can and leaves the rest in the captions. |
+| `CLIPS_DIR` | Clip folders, comma-separated (default `out/realtime/clips,out/realtime/clips-mass`); the production sets `out/realtime/clips-v2-*` go in front automatically. |
+| `NO_RECOGNIZER=1`, `MOTION=off` | Skip the Python recognizer / the 3D signer. |
+
+The full list is in [`app/server/README.md`](app/server/README.md) and [`app/recognizer/README.md`](app/recognizer/README.md).
+
+### Chrome extension and phone app
+
+- **Extension:** `npm run setup -- --extension`, then open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and pick `app/extension/.output/chrome-mv3`. Click the Flux icon on any tab, choose **Tab** or **Mic**, and press Start. (`npm start` must be running.)
+- **Phone:** set `HOST=0.0.0.0` in `.env`, `npm start`, then `cd app/mobile && npm ci && npx expo start` and set the server URL in Settings to `http://<your computer's LAN IP>:8787`.
+
+### Make new signs with fal
+
+Flux generates every sign once, ahead of time ([the clip factory](#the-clip-factory-the-core-idea)). Two ways to add signs:
+
+- **On demand:** `npm run setup -- --ondemand`, then `ONDEMAND=on` and `FAL_KEY=...` in `.env`. A word that has extracted motion but no clip is rendered on the puppet and repainted with fal's H3 Max Recast in the background on first use (about 2 minutes), then hot-loaded into the library.
+- **In batches:** `pipeline/produce.mjs` is the production pipeline (render, Recast, cut, even out, QC); see [`pipeline/`](pipeline) and [`experiments/2026-11-15-mass-signs.md`](experiments/2026-11-15-mass-signs.md).
+
+### Development
+
+```
+npm run dev     # recognizer + API + the Vite dev server with live reload (http://localhost:5173)
+npm test        # every test suite (JS + Python) with one summary; npm test -- server web runs some
+```
+
+`cd app/web && npm run dev:mock` runs the web app against a mock API, with no server and no clips. Maintainers publish new runtime assets with `npm run assets:pack` (then upload `dist/assets/*.tar.gz` to the release named in [`scripts/assets.json`](scripts/assets.json)).
+
 ## How it works
 
 ### Speech to sign
@@ -108,64 +174,24 @@ Measured during the build on a laptop CPU with no GPU. Details are in [`experime
 | Wall-colour jump at a join between jobs | **18.9 down to 3.6** after evening out |
 | Optional OpenAI planning layer | **1.35 s** median, about **$0.001** per sentence |
 
-## Try it
-
-You need Node 20+, Python 3.13 with [uv](https://docs.astral.sh/uv/), ffmpeg and Chrome. The sign clips live in `out/`, which is not in git because the source videos are licensed for non-commercial research only. Build them with the clip factory in `pipeline/` (see [`experiments/2026-11-15-mass-signs.md`](experiments/2026-11-15-mass-signs.md)).
-
-```bash
-git clone https://github.com/LedionBrati/sign-avatar-b-puppet.git
-cd sign-avatar-b-puppet
-
-(cd translate && npm i)                                          # local translator + embeddings model
-(cd app/server && npm i)                                         # OpenAI SDK for the optional layers
-(cd app/recognizer && uv sync && uv run python fetch_models.py)  # about 52 MB of pretrained models
-(cd app/web && npm i && npm run build)                           # the API serves it at /app/
-
-OPENAI_API_KEY_FILE=path/to/openai.key \
-CLIPS_DIR=out/realtime/clips,out/realtime/clips-mass \
-node app/start.mjs                                               # recognizer on :8788 + API on :8787
-```
-
-Open `http://localhost:8787/app/`. For live reload, run `npm run dev` in `app/web` (port 5173). With no server and no clips, `npm run dev:mock` serves a mock API.
-
-**Chrome extension**
-
-```bash
-cd app/extension && npm i && npm run build
-```
-
-Open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and pick `app/extension/.output/chrome-mv3`. Click the Flux icon on any tab, choose **Tab** or **Mic**, and press Start.
-
-**Phone app:** `cd app/mobile && npm i && npx expo start`, then set the server URL to your computer's LAN address.
-
-| Variable | What it does |
-|---|---|
-| `OPENAI_API_KEY_FILE` | Path to a file holding the OpenAI key. Turns on transcription, sentences, voice and the planning layer. |
-| `FAL_KEY_FILE` | Path to a file holding the fal key. Only needed to make new clips. |
-| `CLIPS_DIR` | Comma-separated clip folders, each with a `manifest.json`. The first folder wins on overlap. The production clips from `pipeline/produce.mjs` (`out/realtime/clips-v2-demo`, `-sentences`, `-library`) are put in front automatically; `CLIPS_V2=0` turns that off. |
-| `SIGNING_MODE` | `strict` (default) signs a phrase only when every word is signable. `relaxed` signs what it can and leaves the rest in the captions. |
-| `ONDEMAND`, `MOTION_DIRS` | `ONDEMAND=on` makes missing signs in the background from extracted motion, capped by `FAL_DAILY_BUDGET_USD` (default 20). |
-| `RECOGNIZER_URL`, `PORT` | Recognizer address (default `http://127.0.0.1:8788`) and API port (default 8787). |
-
-Keys are read from files at startup and are never logged, echoed or returned.
-
 ## Repo map
 
 | Folder | What's in it |
 |---|---|
 | [`app/server`](app/server) | Node API: sign plans, playlists, clips, transcription, voice, recognizer proxy, on-demand clips |
-| [`app/recognizer`](app/recognizer) | Python recognizer: GISLR and fingerspelling TFLite models plus the WLASL template matcher |
+| [`app/recognizer`](app/recognizer) | Python recognizer: GISLR and fingerspelling TFLite models plus the WLASL template matcher (research scripts in `eval/`) |
 | [`app/web`](app/web) | React + Vite web app (PWA) for both directions |
 | [`app/extension`](app/extension) | Chrome extension (WXT, Manifest V3): the floating glass card |
 | [`app/mobile`](app/mobile) | Expo phone app |
-| [`app/core`](app/core) | Shared TypeScript: API contract, client, captions, landmark layout, design tokens |
+| [`app/core`](app/core) | Shared TypeScript (imported by the server too): API contract, client, captions, vocabulary, landmark layout, design tokens |
 | [`translate`](translate) | English to ASL sign plan: rules + local MiniLM embeddings, works offline |
 | [`motion`](motion) | MediaPipe motion extraction, cleanup and QA ([`FORMAT.md`](motion/FORMAT.md) is the format) |
 | [`puppet`](puppet) | three.js VRM puppet: join signs, play them live, render to mp4 |
 | [`pipeline`](pipeline) | The clip factory: batches, Recast, cutting, evening out, mass runs |
 | [`shared`](shared), [`catalog`](catalog) | Plan, catalog and motion contracts with their checkers |
-| [`docs`](docs) | Findings, product plan and the [playback safety gate](docs/semantic-safety.md) |
+| [`docs`](docs) | Day-one findings and the [playback safety gate](docs/semantic-safety.md) |
 | [`experiments`](experiments) | Every experiment we ran, with numbers, including the ones that failed |
+| [`scripts`](scripts) | `npm run setup`, `test` and the asset packs |
 | [`assets`](assets), [`references`](references), [`examples`](examples) | Avatar images, demo videos, reference clips with their licences, demo scripts |
 
 ## What's next
@@ -186,7 +212,7 @@ Built at a hackathon by:
 
 ## Licences and data
 
-**Flux is a research demo for non-commercial use only.** The signer clips are made from datasets with non-commercial licences, so they can't be used in a paid product.
+**Flux is a research demo for non-commercial use only.** The signer clips are made from datasets with non-commercial licences, so they can't be used in a paid product. The same goes for the runtime assets `npm run setup` downloads (sign clips, motion library, recognizer templates and sign models): they are derived from WLASL and published only for non-commercial research use.
 
 | Source | Used for | Licence |
 |---|---|---|
