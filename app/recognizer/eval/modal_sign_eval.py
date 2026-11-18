@@ -6,14 +6,14 @@ compute (CPU only, a few minutes); the recognizer itself stays local and free.
 1. Upload the eval data (out/wlasl-demo caches from demo_data.py + fetch_wlasl_demo.py, the downloaded clips, and the
    library clips of the demo signs for the extractor check; skips what is already there):
 
-    modal run app/recognizer/modal_sign_eval.py::upload --signs-dir <signs>     # <signs> holds index.json + videos/
+    modal run app/recognizer/eval/modal_sign_eval.py::upload --signs-dir <signs>     # <signs> holds index.json + videos/
 
 2. Run (each job is its own container; logs land on the volume and print here):
 
-    modal run app/recognizer/modal_sign_eval.py --smoke                  # 2 folds / 4 sentences: tests the image, a few min
-    modal run app/recognizer/modal_sign_eval.py --jobs isolated,continuous
-    modal run app/recognizer/modal_sign_eval.py --jobs rtmw              # RTMW whole-body on every demo clip, then
-                                                                         # eval_demo.py extractor (MediaPipe vs RTMW)
+    modal run app/recognizer/eval/modal_sign_eval.py --smoke                  # 2 folds / 4 sentences: tests the image, a few min
+    modal run app/recognizer/eval/modal_sign_eval.py --jobs isolated,continuous
+    modal run app/recognizer/eval/modal_sign_eval.py --jobs rtmw              # RTMW whole-body on every demo clip, then
+                                                                              # eval_demo.py extractor (MediaPipe vs RTMW)
     modal volume get signlayer-signeval /logs out/wlasl-demo/modal-logs
 
 The code and the models (models/ minus the 41 MB fingerspelling model) are baked into the image from this checkout,
@@ -28,7 +28,8 @@ from pathlib import Path
 import modal
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1] if len(HERE.parents) > 1 else HERE  # in the container the file sits at /root
+REC = HERE.parent  # app/recognizer (baked into the image at /root/recognizer)
+REPO = HERE.parents[2] if len(HERE.parents) > 2 else HERE  # in the container the file sits at /root
 VOLUME = "signlayer-signeval"  # existing Modal volume (pre-rename name kept so cached data stays reachable)
 DEMO = "/vol/wlasl-demo"  # DEMO_DIR inside the container
 LIB = "/vol/lib"  # SIGN_LIB: index.json + videos/ of the demo signs
@@ -45,7 +46,7 @@ image = (
                   "'holistic_landmarker/float16/latest/holistic_landmarker.task', '/opt/holistic_landmarker.task')\"")
     # RTMW weights (rtmlib downloads them on first use): bake them in so containers do not each fetch them
     .run_commands("python -c \"from rtmlib import Wholebody; Wholebody(mode='lightweight', backend='onnxruntime', device='cpu')\"")
-    .add_local_dir(str(HERE), "/root/recognizer", ignore=[".venv", "__pycache__", ".pytest_cache", "models/fs.tflite"])
+    .add_local_dir(str(REC), "/root/recognizer", ignore=[".venv", "**/__pycache__", ".pytest_cache", "models/fs.tflite"])
 )
 vol = modal.Volume.from_name(VOLUME, create_if_missing=True)
 app = modal.App("flux-signeval", image=image)
@@ -54,7 +55,7 @@ ENV = {"DEMO_DIR": DEMO, "SIGN_LIB": LIB, "GEN_DIR": GEN, "HOLISTIC_TASK": "/opt
 
 
 def _run(args: list[str], log: str) -> str:
-    """python <args> in the recognizer folder; stdout + stderr (minus TFLite / MediaPipe noise) -> /vol/logs/<log>."""
+    """python <args> in the recognizer folder (scripts as -m eval.<name>); stdout + stderr (minus TFLite / MediaPipe noise) -> /vol/logs/<log>."""
     import subprocess
     import sys
 
@@ -72,8 +73,8 @@ def evaluate(what: str, smoke: bool = False) -> str:
     """eval_demo.py isolated | continuous | extractor (the latter after rtmw_chunk has filled /vol/wlasl-demo/rtmw-*)."""
     vol.reload()
     if what == "extractor":
-        return _run(["eval_demo.py", "extractor", "--rtmw", f"{DEMO}/rtmw-lightweight-s2", "--stride", "2"], "extractor.log")
-    args = ["eval_demo.py", what] + (["--smoke"] if smoke else [])
+        return _run(["-m", "eval.eval_demo", "extractor", "--rtmw", f"{DEMO}/rtmw-lightweight-s2", "--stride", "2"], "extractor.log")
+    args = ["-m", "eval.eval_demo", what] + (["--smoke"] if smoke else [])
     return _run(args, f"{what}{'-smoke' if smoke else ''}.log")
 
 
@@ -81,7 +82,7 @@ def evaluate(what: str, smoke: bool = False) -> str:
 def rtmw_chunk(names: list[str]) -> str:
     """RTMW whole-body (rtmlib lightweight, onnxruntime CPU) on these clips, every 2nd frame, into the volume."""
     vol.reload()
-    return _run(["extract_rtmw.py", "--mode", "lightweight", "--stride", "2", "--only", ",".join(names)], f"rtmw-{names[0]}.log")
+    return _run(["-m", "eval.extract_rtmw", "--mode", "lightweight", "--stride", "2", "--only", ",".join(names)], f"rtmw-{names[0]}.log")
 
 
 @app.function(volumes={"/vol": vol}, timeout=600)
@@ -90,7 +91,7 @@ def list_clips() -> list[str]:
     import sys
 
     vol.reload()
-    p = subprocess.run([sys.executable, "extract_rtmw.py", "--list"], cwd="/root/recognizer", env={**os.environ, **ENV},
+    p = subprocess.run([sys.executable, "-m", "eval.extract_rtmw", "--list"], cwd="/root/recognizer", env={**os.environ, **ENV},
                        capture_output=True, text=True, check=True)
     return [n for n in p.stdout.strip().split(",") if n]
 
@@ -156,7 +157,7 @@ def upload(signs_dir: str, demo_dir: str = ""):
 def gather_chunk(lo: int, hi: int) -> str:
     """Fetch + extract jobs[lo:hi] of /vol/wlasl-gen/jobs.json (resumable: done jobs have a meta file)."""
     vol.reload()
-    out = _run(["gather_wlasl.py", "--run", f"{lo},{hi}"], f"gather/{lo:05d}.log")
+    out = _run(["-m", "eval.gather_wlasl", "--run", f"{lo},{hi}"], f"gather/{lo:05d}.log")
     return out.strip().splitlines()[-1] if out.strip() else "(no output)"
 
 
@@ -166,7 +167,7 @@ def gather_jobs() -> int:
 
     vol.reload()
     Path("/vol/logs/gather").mkdir(parents=True, exist_ok=True)
-    print(_run(["gather_wlasl.py", "--jobs", "--wlasl", "/vol/meta/WLASL_v0.3.json", "--dict", "/vol/meta/index.json"], "gather/jobs.log"))
+    print(_run(["-m", "eval.gather_wlasl", "--jobs", "--wlasl", "/vol/meta/WLASL_v0.3.json", "--dict", "/vol/meta/index.json"], "gather/jobs.log"))
     return len(json.loads(Path(f"{GEN}/jobs.json").read_text()))
 
 
@@ -174,12 +175,12 @@ def gather_jobs() -> int:
 def generic_eval(args: str, log: str) -> str:
     """eval_generic.py <args> (the generic-model experiments), log -> /vol/logs/<log>."""
     vol.reload()
-    return _run(["eval_generic.py", *args.split()], log)
+    return _run(["-m", "eval.eval_generic", *args.split()], log)
 
 
 @app.local_entrypoint()
 def gather(chunk: int = 20, lo: int = 0, hi: int = 0):
-    """modal run --detach app/recognizer/modal_sign_eval.py::gather  (after upload_gen). --lo/--hi: a job range only."""
+    """modal run --detach app/recognizer/eval/modal_sign_eval.py::gather  (after upload_gen). --lo/--hi: a job range only."""
     n = gather_jobs.remote()
     hi = min(n, hi) if hi else n
     parts = [(k, min(hi, k + chunk)) for k in range(lo, hi, chunk)]
@@ -190,7 +191,7 @@ def gather(chunk: int = 20, lo: int = 0, hi: int = 0):
 
 @app.local_entrypoint()
 def run_generic(args: str = "isolated", log: str = "generic.log"):
-    """modal run --detach app/recognizer/modal_sign_eval.py::run_generic --args "isolated --variants base,mirror" --log x.log"""
+    """modal run --detach app/recognizer/eval/modal_sign_eval.py::run_generic --args "isolated --variants base,mirror" --log x.log"""
     print(generic_eval.remote(args, log))
 
 

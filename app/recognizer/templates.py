@@ -1,7 +1,7 @@
 """Template-matching sign recognizer (no training): nearest WLASL motion template by banded DTW.
 
 Covers the words GISLR (250 kid-vocabulary labels) lacks, e.g. HOW, GOOD, EVENING, COMPANY, JUDGE, COFFEE.
-The bank (models/templates.npz, built by build_templates.py from the extracted WLASL raw motion) holds one or
+The bank (models/templates.npz, built by eval/build_templates.py from the extracted WLASL raw motion) holds one or
 more templates per gloss as fixed-length feature sequences. Input is the same legacy 543 x 3 layout the server
 receives (face 0-467 | left hand 468-488 | pose 489-521 | right hand 522-542, image coords, NaN = missing).
 
@@ -31,7 +31,7 @@ W_HAND = (0.6, 1.0)  # (left, right) after canonicalising to right-dominant
 REST = np.array([[0.9, 3.0], [-0.9, 3.0]], np.float32)  # absent hand: below each shoulder (subject left, right)
 BANK_PATH = Path(os.environ.get("RECOGNIZER_MODELS") or Path(__file__).resolve().parent / "models") / "templates.npz"
 
-# Calibration of distance -> pseudo-confidence (build_templates.py --eval): the margin to the next glosses is what
+# Calibration of distance -> pseudo-confidence (eval/build_templates.py --eval): the margin to the next glosses is what
 # separates right from wrong (leave-one-out: best-vs-second margin > 0.08 was right 11/11), the absolute distance
 # much less so. So: softmax over the 5 nearest glosses (temperature TAU), times a gate on the best distance that
 # only kills segments far from every template (not a sign we know / no real signing).

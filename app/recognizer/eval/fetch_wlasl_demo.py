@@ -1,7 +1,7 @@
 """Download more WLASL instances (different signers) of the demo vocabulary, for the enrollment / segmentation eval.
 
-    .venv/Scripts/python fetch_wlasl_demo.py --wlasl <path-to>/WLASL_v0.3.json         # -> out/wlasl-demo/
-    .venv/Scripts/python fetch_wlasl_demo.py --wlasl ... --extract                      # + landmarks (MediaPipe, CPU)
+    uv run python -m eval.fetch_wlasl_demo --wlasl <path-to>/WLASL_v0.3.json          # -> out/wlasl-demo/
+    uv run --group eval python -m eval.fetch_wlasl_demo --wlasl ... --extract         # + landmarks (MediaPipe, CPU)
 
 Only direct video links (no YouTube); dead links are skipped after one try (15 s timeout). Nothing is paid.
 Clips with frame_start/frame_end keep only that part when landmarks are extracted. Output (gitignored, WLASL is
@@ -21,8 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = Path(__file__).resolve().parents[3]
 OUT = REPO / "out" / "wlasl-demo"
 # Demo vocabulary (finals): WLASL gloss -> our label.
 DEMO = {"hello": "HELLO", "yes": "YES", "no": "NO", "please": "PLEASE", "thank you": "THANK_YOU", "water": "WATER",
@@ -72,7 +71,7 @@ def jobs(wlasl: Path) -> list[dict]:
 def extract_all(index: list[dict], workers: int) -> None:
     from concurrent.futures import ProcessPoolExecutor
 
-    from eval_wlasl import holistic_model
+    from eval.eval_wlasl import holistic_model
 
     model = holistic_model()
     todo = [(e, str(model)) for e in index if not (OUT / "landmarks" / f"{Path(e['file']).stem}.npy").exists()]
@@ -86,7 +85,7 @@ def extract_all(index: list[dict], workers: int) -> None:
 
 def _extract_job(args) -> str:
     e, model = args
-    from eval_wlasl import extract
+    from eval.eval_wlasl import extract
 
     x = extract(OUT / "videos" / e["file"], Path(model))
     a, b = e["frame_start"], e["frame_end"]

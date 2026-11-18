@@ -1,6 +1,6 @@
 """Python mirror of app/core/src/context.ts: pick, per sign, which of the top guesses to use so the whole run makes the
 most sense, with an add-k bigram prior over the demo sentences. Same sentences and numbers (tests/test_context.py
-checks the TS source and a shared fixture), so eval_generic.py measures what the web app does offline.
+checks the TS source and a shared fixture), so eval/eval_generic.py measures what the web app does offline.
 
 score(combination) = sum_i log(conf_i) + LM_WEIGHT * sum_i log P(label_i | label_{i-1})   (with <s> and </s>)
 """

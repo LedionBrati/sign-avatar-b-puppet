@@ -1,10 +1,10 @@
 """Generic demo model (no enrollment): more signers, signer-invariant features, calibrated rejection, context pick.
 Heavy: runs on Modal (modal_sign_eval.py::run_generic), never on the laptop.
 
-    python eval_generic.py summary                     # signers / clips per demo word, what the gather step got
-    python eval_generic.py isolated [--variants a,b]   # leave-signer-out (grouped folds), + open set, rejection curves
-    python eval_generic.py continuous --variants before,X   # pseudo-sentences (random + demo sentences), compose simulated
-    python eval_generic.py all                         # summary + isolated + continuous with the default variants
+    python -m eval.eval_generic summary                     # signers / clips per demo word, what the gather step got
+    python -m eval.eval_generic isolated [--variants a,b]   # leave-signer-out (grouped folds), + open set, rejection curves
+    python -m eval.eval_generic continuous --variants before,X   # pseudo-sentences (random + demo sentences), compose simulated
+    python -m eval.eval_generic all                         # summary + isolated + continuous with the default variants
 
 Data: gather_wlasl.py output (GEN_DIR: meta/ + landmarks/: every reachable WLASL instance of the demo glosses, one clip
 per other gloss) + the original eval data (DEMO_DIR caches from demo_data.py: the 92 clips and 400 motion-library
@@ -41,15 +41,15 @@ from pathlib import Path
 import numpy as np
 
 import context as CX
-import demo_data as D
 import personal as P
 import segment as S
 import templates as T
-from eval_continuous import FPS, build, edit, match
-from eval_demo import hands_window, idle, main_segment, transitions
+from eval import demo_data as D
+from eval.eval_continuous import FPS, build, edit, match
+from eval.eval_demo import hands_window, idle, main_segment, transitions
 
-HERE = Path(__file__).resolve().parent
-GEN = Path(os.environ.get("GEN_DIR") or HERE.parents[1] / "out" / "wlasl-gen")
+REPO = Path(__file__).resolve().parents[3]
+GEN = Path(os.environ.get("GEN_DIR") or REPO / "out" / "wlasl-gen")
 META = Path(os.environ.get("META_DIR") or "/vol/meta")
 RES = Path(os.environ.get("RESULTS_DIR") or GEN / "results")
 FOLDS = 10

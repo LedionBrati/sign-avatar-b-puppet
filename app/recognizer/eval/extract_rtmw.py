@@ -2,8 +2,8 @@
 
 Runs in its OWN venv (rtmlib is not a recognizer dependency):
     uv venv %TEMP%/rtm --python 3.12 && uv pip install --python %TEMP%/rtm/Scripts/python.exe rtmlib onnxruntime opencv-python-headless
-    %TEMP%/rtm/Scripts/python extract_rtmw.py --mode lightweight --stride 2   # -> out/wlasl-demo/rtmw-<mode>-s<stride>/<name>.npy
-then compare with MediaPipe on the same clips:  .venv/Scripts/python eval_demo.py extractor --rtmw ../../out/wlasl-demo/rtmw-lightweight-s2 --stride 2
+    %TEMP%/rtm/Scripts/python -m eval.extract_rtmw --mode lightweight --stride 2   # -> out/wlasl-demo/rtmw-<mode>-s<stride>/<name>.npy
+then compare with MediaPipe on the same clips:  uv run python -m eval.eval_demo extractor --rtmw ../../out/wlasl-demo/rtmw-lightweight-s2 --stride 2
 
 COCO-WholeBody 133 points -> legacy layout: nose -> pose 0, shoulders 5/6 -> pose 11/12, elbows -> 13/14, wrists -> 15/16,
 left hand 91-111 -> 468-488, right hand 112-132 -> 522-542 (same 21-point order as MediaPipe; subject's left / right).
@@ -22,8 +22,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
-OUT = Path(os.environ.get("DEMO_DIR") or HERE.parents[1] / "out" / "wlasl-demo")
+REPO = Path(__file__).resolve().parents[3]
+OUT = Path(os.environ.get("DEMO_DIR") or REPO / "out" / "wlasl-demo")
 LIB = Path(os.environ.get("SIGN_LIB") or Path.home() / "Desktop" / "hackathon-archive" / "ai-summit" / "data" / "signs")  # holds index.json + videos/
 BODY = {0: 0, 5: 11, 6: 12, 7: 13, 8: 14, 9: 15, 10: 16}
 

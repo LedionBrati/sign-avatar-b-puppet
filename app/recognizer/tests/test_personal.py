@@ -172,7 +172,7 @@ def test_http_enroll_train_recognize(base):
 
 def test_continuous_eval_helpers():
     """eval_continuous: one-to-one IoU matching, word edit distance, and main's old segmenter port."""
-    import eval_continuous as C
+    from eval import eval_continuous as C
 
     assert C.match([(0, 10), (12, 20)], [(0, 9, "A"), (13, 20, "B"), (30, 40, "C")])[0] == 2
     assert C.match([(0, 40)], [(0, 9, "A"), (13, 20, "B")])[0] == 0  # one long cut over two signs matches neither well

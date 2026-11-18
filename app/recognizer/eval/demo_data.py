@@ -19,8 +19,7 @@ import numpy as np
 
 import templates as T
 
-HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = Path(__file__).resolve().parents[3]
 DEMO_DIR = Path(os.environ.get("DEMO_DIR") or REPO / "out" / "wlasl-demo")  # modal_sign_eval.py points it at a volume
 
 

@@ -1,7 +1,7 @@
 """Build models/templates.npz (the template-matching bank) from WLASL motion already extracted, no videos, no training.
 
-    .venv/Scripts/python build_templates.py            # build (~330 glosses, ~10 s, one process)
-    .venv/Scripts/python build_templates.py --eval     # + leave-one-out check on glosses with 2+ instances
+    uv run python -m eval.build_templates            # build (~330 glosses, ~10 s, one process)
+    uv run python -m eval.build_templates --eval     # + leave-one-out check on glosses with 2+ instances
 
 Glosses = every sign the avatar can sign (realtime clip manifests) + the demo words below, where motion exists.
 Gloss -> instance: the library index (data/signs/index.json) plus every other extracted instance of the same gloss
@@ -30,7 +30,7 @@ import numpy as np
 
 import templates as T
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 MOTION = Path(os.environ.get("MOTION_DIR") or REPO / "out" / "motion" / "wlasl")
 INDEX = Path(os.environ["SIGN_DICTIONARY"]) if os.environ.get("SIGN_DICTIONARY") else None
 
@@ -133,7 +133,7 @@ def evaluate(path: Path, with_gislr: bool) -> None:
     queries = [(g, s) for g, ss in by_gloss.items() if len(ss) > 1 for s in ss]
     rec = None
     if with_gislr:
-        from eval_wlasl import hands_window
+        from eval.eval_wlasl import hands_window
         from recognizer import Recognizer
         rec = Recognizer(spell=False, templates=False)  # GISLR only; the templates come from the leave-one-out bank
     hit1 = hit5 = m1 = m5 = 0

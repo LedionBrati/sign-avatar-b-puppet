@@ -1,8 +1,8 @@
 """Demo-vocabulary eval without a human signer: WLASL clips of the 20 demo signs by different signers.
 
-    .venv/Scripts/python eval_demo.py isolated     # leave-signer-out, feature / model choices, open-set
-    .venv/Scripts/python eval_demo.py continuous   # pseudo-sentences: segmentation P/R + sentence accuracy
-    .venv/Scripts/python eval_demo.py all
+    uv run python -m eval.eval_demo isolated     # leave-signer-out, feature / model choices, open-set
+    uv run python -m eval.eval_demo continuous   # pseudo-sentences: segmentation P/R + sentence accuracy
+    uv run python -m eval.eval_demo all
 
 Data: demo_data.py (run fetch_wlasl_demo.py --extract first). MOTION_DIR / SIGN_DICTIONARY as in build_templates.py.
 Baseline = the pipeline on main: GISLR + WLASL templates merged (recognizer.py), then the web client's rules
@@ -30,10 +30,10 @@ from collections import Counter, defaultdict
 
 import numpy as np
 
-import demo_data as D
 import personal as P
 import segment as S
 import templates as T
+from eval import demo_data as D
 
 GLOSS_TEXT = {"hello": "HELLO", "yes": "YES", "no": "NO", "please": "PLEASE", "thank you": "THANK_YOU", "water": "WATER",
               "hungry": "HUNGRY", "sick": "SICK", "home": "HOME", "help": "HELP", "name": "NAME", "nice": "NICE",
@@ -385,7 +385,7 @@ def main():
     if a.what in ("isolated", "all"):
         isolated(a)
     if a.what in ("continuous", "all"):
-        from eval_continuous import continuous
+        from eval.eval_continuous import continuous
         continuous(a)
 
 

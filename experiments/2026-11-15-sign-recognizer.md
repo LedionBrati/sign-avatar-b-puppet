@@ -16,7 +16,7 @@
   cd app/recognizer && uv sync --all-groups && uv run python fetch_models.py
   uv run python server.py &                       # :8788
   PORT=8787 node app/server/index.mjs &           # proxy
-  uv run --group eval python eval_wlasl.py --limit 100 --url http://127.0.0.1:8787 --spell
+  uv run --group eval python -m eval.eval_wlasl --limit 100 --url http://127.0.0.1:8787 --spell
   ```
 
 ## Result

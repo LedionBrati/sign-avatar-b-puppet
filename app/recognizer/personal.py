@@ -39,13 +39,13 @@ VOCAB = ["HELLO", "YES", "NO", "PLEASE", "THANK_YOU", "WATER", "HUNGRY", "SICK",
 TEXT = {"THANK_YOU": "thank you", "ME": "me"}
 GISLR_OF = {"HELLO": "hello", "YES": "yes", "NO": "no", "PLEASE": "please", "THANK_YOU": "thankyou", "WATER": "water",
             "HUNGRY": "hungry", "SICK": "sick", "HOME": "home", "WHERE": "where", "FINE": "fine", "HAPPY": "happy", "BYE": "bye"}
-# Fusion and rejection (tuned leave-signer-out by eval_demo.py; see experiments/2026-11-16-sign-enrollment.md).
+# Fusion and rejection (tuned leave-signer-out by eval/eval_demo.py; see experiments/2026-11-16-sign-enrollment.md).
 A, B, DTW_W = 1.0, 0.75, 2.0
 REJECT = float(os.environ.get("PERSONAL_REJECT", "0.6"))
 DTW_FAR = float(os.environ.get("PERSONAL_DTW_FAR", "1.0"))
 OWN_WEIGHT = 3.0  # a person's own rep counts this many generic clips
 AUG = 0  # augmented copies per training clip (leave-signer-out: 0 beat 8, 86% vs 83% top-1; augment() stays for tests)
-# Signer-invariance options of features() (eval_generic.py measures each leave-signer-out; a model stores the ones it
+# Signer-invariance options of features() (eval/eval_generic.py measures each leave-signer-out; a model stores the ones it
 # was trained with in info["feat"], so old models keep reading the old way):
 #   rot:    rotate every frame so the shoulder line is level (head / camera tilt), scale by the full shoulder distance
 #   arclen: resample by the dominant hand's path length (+ ARC_T of time) instead of time: speed normalisation
@@ -334,9 +334,9 @@ class Model:
         options = [{"label": names[i], "text": text_of(names[i]), "confidence": round(float(fused[i]), 4)} for i in order]
         # reject = "no sign" (the none class wins: a transition, fidgeting, another sign). Merely unsure (low fused
         # confidence or far from every template) is kept with unsure: true: on continuous signing, dropping those
-        # lost more right words than wrong ones (eval_demo.py continuous).
+        # lost more right words than wrong ones (eval/eval_demo.py continuous).
         # margin: how much more the LR believes the best sign than "no sign", minus a DTW penalty (calibrated
-        # leave-signer-out against other WLASL signs, eval_generic.py); the old rule is margin < 0 with no penalty.
+        # leave-signer-out against other WLASL signs, eval/eval_generic.py); the old rule is margin < 0 with no penalty.
         margin = float(np.log(max(p[keep].max(), 1e-9)) - np.log(max(none_p, 1e-9)) - self.rej["dtw"] * (d if d is not None else 3.0))
         reject = bool(margin < self.rej["t"])
         unsure = bool(fused[top] < REJECT or (d is not None and d > DTW_FAR))
