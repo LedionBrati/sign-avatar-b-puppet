@@ -114,7 +114,7 @@ uv sync --group eval                                                   # + media
 uv run --group eval python eval_wlasl.py --url http://127.0.0.1:8787 --spell   # through the Node proxy, all overlapping clips
 ```
 
-Takes WLASL clips from the library (`--lib <path-to>/signs` or `SIGN_DICTIONARY=<path-to>/index.json`) whose gloss is in the GISLR vocabulary, extracts landmarks with the Python HolisticLandmarker (VIDEO mode, 478 -> 468 face packing, hands window like the web client), posts them over HTTP and reports top-1/top-5 and latency. Landmark caches go to `%TEMP%/signlayer-eval-cache`, never the repo. Results: `experiments/2026-11-15-sign-recognizer.md`.
+Takes WLASL clips from the library (`--lib <path-to>/signs` or `SIGN_DICTIONARY=<path-to>/index.json`) whose gloss is in the GISLR vocabulary, extracts landmarks with the Python HolisticLandmarker (VIDEO mode, 478 -> 468 face packing, hands window like the web client), posts them over HTTP and reports top-1/top-5 and latency. Landmark caches go to `%TEMP%/flux-eval-cache`, never the repo. Results: `experiments/2026-11-15-sign-recognizer.md`.
 
 ## Files
 

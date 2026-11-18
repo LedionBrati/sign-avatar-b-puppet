@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { createApp } from "../index.mjs";
 import { MAX_SPEAK_CHARS, createSpeaker } from "../lib/speak.mjs";
 
-const root = mkdtempSync(join(tmpdir(), "signlayer-speak-test-"));
+const root = mkdtempSync(join(tmpdir(), "flux-speak-test-"));
 const clipsDir = join(root, "clips");
 mkdirSync(clipsDir);
 writeFileSync(join(clipsDir, "HELLO.mp4"), "synthetic fixture; not ASL");

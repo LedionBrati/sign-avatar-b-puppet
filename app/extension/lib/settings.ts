@@ -1,5 +1,5 @@
 import { browser } from "wxt/browser";
-import { DEFAULT_PORT } from "@signlayer/core";
+import { DEFAULT_PORT } from "@flux/core";
 
 /** What the card listens to. */
 export type Source = "mic" | "tab";

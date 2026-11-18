@@ -12,7 +12,7 @@
     "noEmit": true,
     "types": ["vite/client"],
     "baseUrl": ".",
-    "paths": { "@signlayer/core": ["../core/src/index.ts"] }
+    "paths": { "@flux/core": ["../core/src/index.ts"] }
   },
   "include": ["src", "../core/src"]
 }

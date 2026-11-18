@@ -1,6 +1,6 @@
-# SIGNLAYER apps
+# Flux apps
 
-The product shell for Method B: **hear anything, see it signed.** The design follows the team's SIGNLAYER prototypes: a grainy cobalt background, frosted-glass cards, captions that light up word by word, one card per speaker.
+The product shell for Method B: **hear anything, see it signed.** The design follows the team's Flux prototypes: a grainy cobalt background, frosted-glass cards, captions that light up word by word, one card per speaker.
 
 ```
 speech (on the device) ──► text ──► app/server ──► playlist of realistic sign clips ──► client plays them back to back

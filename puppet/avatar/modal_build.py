@@ -22,7 +22,7 @@ from pathlib import Path
 import modal
 
 HERE = Path(__file__).resolve().parent
-VOLUME = "signlayer-renders"
+VOLUME = "signlayer-renders"  # existing Modal volume (pre-rename name kept so cached data stays reachable)
 BLENDER = "https://download.blender.org/release/Blender4.5/blender-4.5.0-linux-x64.tar.xz"
 MPFB = "https://extensions.blender.org/download/sha256:c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad/add-on-mpfb-v2.0.18.zip"
 ASSETS = "http://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip"
@@ -42,7 +42,7 @@ image = (
     .add_local_dir(str(HERE), "/root/avatar", ignore=["__pycache__"])
 )
 vol = modal.Volume.from_name(VOLUME, create_if_missing=True)
-app = modal.App("signlayer-avatar-build", image=image)
+app = modal.App("flux-avatar-build", image=image)
 
 
 def _blender(script: str, args: list[str]) -> str:

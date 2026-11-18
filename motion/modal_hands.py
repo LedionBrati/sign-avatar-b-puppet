@@ -36,7 +36,7 @@ HERE = Path(__file__).resolve().parent
 WILOR_COMMIT = "fcb911312a38fa8badd30d9656a167485d61b8f9"  # rolpotamias/WiLoR main, checked 2026-11-16
 HF = "https://huggingface.co/spaces/rolpotamias/WiLoR/resolve/main/pretrained_models"
 GPU = "L4"  # ViT-L at 256x192: an L4 is plenty; the job is mostly video decode + crop preparation
-VOLUME = "signlayer-hands"
+VOLUME = "signlayer-hands"  # existing Modal volume (pre-rename name kept so cached data stays reachable)
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -54,7 +54,7 @@ image = (
     .add_local_dir(str(HERE), "/root/motion", ignore=[".venv", "models", "__pycache__", "tests", ".pytest_cache"])
 )
 vol = modal.Volume.from_name(VOLUME, create_if_missing=True)
-app = modal.App("signlayer-hands", image=image)
+app = modal.App("flux-hands", image=image)
 
 
 @app.function(gpu=GPU, volumes={"/vol": vol}, timeout=3600, cpu=8.0, memory=16384)

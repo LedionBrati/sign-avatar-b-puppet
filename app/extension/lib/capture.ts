@@ -4,7 +4,7 @@
 //               └► AnalyserNode (level, silence) + MediaRecorder (audio/webm opus)
 //   chunks of 2-4 s, cut at a short silence when possible (a hard cut overlaps the next chunk by 0.4 s),
 //   silent chunks skipped ─► POST {apiUrl}/api/transcribe ─► text, in order, overlap words dropped.
-import { ROUTES, type TranscribeResponse } from "@signlayer/core";
+import { ROUTES, type TranscribeResponse } from "@flux/core";
 import type { ChunkInfo } from "./messages";
 
 const MIN_MS = 2000, MAX_MS = 4000, SILENCE_MS = 280, OVERLAP_MS = 400, MIN_VOICED_MS = 250, NO_AUDIO_MS = 6000;
@@ -121,7 +121,7 @@ export class Chunker {
     try {
       this.cur = this.newSeg();
     } catch (e) { // the stream died under us (its "ended" handler reports it)
-      console.warn("[signlayer] recorder", e);
+      console.warn("[flux] recorder", e);
       this.cur = null;
       try { old.rec.stop(); } catch { /* already stopped */ }
       if (!this.stopped) { this.stop(); this.h.onError("The audio stopped. Press Start to listen again."); }
@@ -149,10 +149,10 @@ export class Chunker {
       if (!res.ok) {
         const code = body?.error?.code ?? `http_${res.status}`;
         if (code === "transcribe_off") { this.stop(); this.h.onError("Speech-to-text is off on the Flux server (it needs an OpenAI key)."); }
-        else console.warn("[signlayer] transcribe", code, body?.error?.message);
+        else console.warn("[flux] transcribe", code, body?.error?.message);
       } else text = body?.text ?? "";
     } catch (e) {
-      console.warn("[signlayer] transcribe failed", e);
+      console.warn("[flux] transcribe failed", e);
       let host = this.apiUrl;
       try { host = new URL(this.apiUrl).host; } catch { /* keep */ }
       this.h.onHint(`Can't reach the server (${host}) for speech-to-text. Set it in ⚙.`);

@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { createApp } from "../index.mjs";
 import { childEnv, reserveUsd, scanMotionDirs } from "../lib/ondemand.mjs";
 
-const root = mkdtempSync(join(tmpdir(), "signlayer-ondemand-"));
+const root = mkdtempSync(join(tmpdir(), "flux-ondemand-"));
 after(() => rmSync(root, { recursive: true, force: true }));
 
 // Clips: I, FEEL, WANT. Motion only: SICK (1 s), WATER (1 s), HOSPITAL (4 s), DOCTOR (QC fail), plus a clip sign's motion.

@@ -42,7 +42,7 @@ from pathlib import Path
 import modal
 
 HERE = Path(__file__).resolve().parent
-VOLUME = "signlayer-renders"
+VOLUME = "signlayer-renders"  # existing Modal volume (pre-rename name kept so cached data stays reachable)
 CPU = 16.0          # SwiftShader scales with cores; one motion per container
 GPU_PROBE = "T4"
 
@@ -63,7 +63,7 @@ image = (
     .add_local_dir(str(HERE), "/root/puppet", ignore=["node_modules", "dist", "models", "**/*.mp4", "__pycache__"])
 )
 vol = modal.Volume.from_name(VOLUME, create_if_missing=True)
-app = modal.App("signlayer-renders", image=image)
+app = modal.App("flux-renders", image=image)
 
 
 def _workdir() -> Path:

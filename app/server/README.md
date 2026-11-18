@@ -1,4 +1,4 @@
-# app/server: SIGNLAYER local API (contract: `app/core/src/api.ts`)
+# app/server: Flux local API (contract: `app/core/src/api.ts`)
 
 `cd translate && npm i` once (and `cd app/server && npm i` for the optional agent layer: the `openai` SDK is its only dependency), then `node app/server/index.mjs` (binds 0.0.0.0, `PORT` default 8787, prints local + LAN URLs). `npm test` here runs `node --test test/`.
 `CLIPS_DIR=dirA,dirB` merges clip sets (`manifest.json` each; first dir wins on a motion_id); only manifest files that exist are served, at `/clips/<file>` with Range/206. `SEMANTIC=0` = rules only.

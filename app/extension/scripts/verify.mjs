@@ -6,7 +6,7 @@
 // Screenshots: screenshots/{light,dark}-*.png (whole viewport) and *-card.png (close-up).
 //
 //   npm run build && AUDIO=path/to/speech.wav node scripts/verify.mjs
-//   env: SIGNLAYER_API (default http://localhost:8787; needs transcribe "ready"), SEEK=seconds into the audio,
+//   env: FLUX_API (default http://localhost:8787; needs transcribe "ready"), SEEK=seconds into the audio,
 //        OUT=dir (default screenshots), HEADFUL=1
 import http from "node:http";
 import { mkdir, readFile } from "node:fs/promises";
@@ -17,7 +17,7 @@ import puppeteer from "puppeteer-core";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ext = resolve(root, ".output/chrome-mv3");
 const chrome = process.env.CHROME ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
-const api = process.env.SIGNLAYER_API ?? "http://localhost:8787";
+const api = process.env.FLUX_API ?? "http://localhost:8787";
 const audio = process.env.AUDIO;
 const seek = Number(process.env.SEEK ?? 0);
 const out = process.env.OUT ?? resolve(root, "screenshots");
@@ -101,7 +101,7 @@ try {
   const extension = (await browser.extensions()).get(extId);
   const page = (await browser.pages())[0] ?? (await browser.newPage());
   await page.setViewport({ width: VW, height: VH, deviceScaleFactor: 2 });
-  const hostCount = () => page.evaluate(() => document.querySelectorAll("signlayer-float").length);
+  const hostCount = () => page.evaluate(() => document.querySelectorAll("flux-float").length);
   const capturing = () => sw.evaluate(() => chrome.storage.session.get("capturing").then((r) => r.capturing ?? null));
 
   const open = async () => {

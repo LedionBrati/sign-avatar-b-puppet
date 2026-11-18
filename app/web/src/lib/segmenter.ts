@@ -4,7 +4,7 @@
 // (plus a few frames of context). A dropped cut (a twitch, the hands going back to rest) calls onDone with count 0,
 // so the caller still knows the hands settled. Continuous (the default): back to "armed" after each sign, until
 // cancel(); one-shot: back to "idle". stop() cuts now (the enrollment countdown and the Spell button use it).
-import { createCutter, packFrame, packSegment, MAX_FRAMES, type HolisticFrame, type Point, type SegConfig, type SegReason } from "@signlayer/core";
+import { createCutter, packFrame, packSegment, MAX_FRAMES, type HolisticFrame, type Point, type SegConfig, type SegReason } from "@flux/core";
 
 export type SegState = "idle" | "armed" | "recording";
 

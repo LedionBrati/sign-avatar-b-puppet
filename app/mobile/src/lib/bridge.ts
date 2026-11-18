@@ -4,7 +4,7 @@
 //   {type:"speak", text}     the user tapped Speak in the page (spoken with expo-speech)
 // plus {type:"env"} from our own injected script (is the page a secure context with getUserMedia?).
 import { Platform } from "react-native";
-import { ROUTES } from "@signlayer/core";
+import { ROUTES } from "@flux/core";
 
 export type BridgeMsg =
   | { type: "sentence"; text: string }

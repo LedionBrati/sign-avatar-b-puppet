@@ -8,7 +8,7 @@ export function Wordmark({ size = 15, light = true }: { size?: number; light?: b
   const t = { fontSize: size, lineHeight: size * 1.15, color: ink, fontFamily: fontMedium, fontWeight: "500" as const, letterSpacing: -0.025 * size };
   const d = size * 0.21;
   return (
-    <View style={s.row} accessible accessibilityRole="text" accessibilityLabel="signlayer">
+    <View style={s.row} accessible accessibilityRole="text" accessibilityLabel="flux">
       <Text style={t}>s</Text>
       <View>
         <Text style={t}>ı</Text>

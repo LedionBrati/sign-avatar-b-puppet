@@ -8,7 +8,7 @@ import { createApp } from "../index.mjs";
 import { createTranscriber, MAX_AUDIO_BYTES } from "../lib/transcribe.mjs";
 
 const FAKE_KEY = "sk-proj-FAKEfakeFAKEfake0123456789abcdefABCDEF";
-const root = mkdtempSync(join(tmpdir(), "signlayer-transcribe-test-"));
+const root = mkdtempSync(join(tmpdir(), "flux-transcribe-test-"));
 const clipsDir = join(root, "clips");
 mkdirSync(clipsDir);
 writeFileSync(join(clipsDir, "HELLO.mp4"), "synthetic fixture; not ASL");

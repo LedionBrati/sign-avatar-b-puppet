@@ -1,4 +1,4 @@
-# SIGNLAYER playback safety boundary
+# Flux playback safety boundary
 
 This PR is based on `nikos/app-base` and depends on PR #20 until that branch merges. It does not change the translator, clips, player, or UI. `app/server/lib/semantic-safety.mjs` checks the existing translator plan against the loaded clip manifest immediately before the server returns a playlist. Its statuses are engineering workflow states, **not ASL linguistic certification**. No available clip has been certified by this module for sign meaning or grammar.
 
@@ -26,7 +26,7 @@ Reason objects have a stable `code`, affected `tokens`, and `next_action`; they 
 
 ## Handoff for Nikos's clients
 
-Read `safety.status` before enqueuing any `playlist` items. For `fully_supported`, current playback remains valid. For `needs_confirmation`, show the full `safety.caption` and the reason and request a sense-specific choice; keep playback stopped until a future explicit confirmation route exists. For `caption_only`, show the full caption and reason, with no signing animation. The web, mobile, and extension can use the same `SigningSafety` type from `@signlayer/core`. The field is optional in the TypeScript interface solely so older/mock responses still compile; the real server always returns it. Existing clients already avoid playback for an empty playlist, but they do not yet render the new reason text. They should not infer “signed” from a prior phrase's queued clips when the current phrase is blocked.
+Read `safety.status` before enqueuing any `playlist` items. For `fully_supported`, current playback remains valid. For `needs_confirmation`, show the full `safety.caption` and the reason and request a sense-specific choice; keep playback stopped until a future explicit confirmation route exists. For `caption_only`, show the full caption and reason, with no signing animation. The web, mobile, and extension can use the same `SigningSafety` type from `@flux/core`. The field is optional in the TypeScript interface solely so older/mock responses still compile; the real server always returns it. Existing clients already avoid playback for an empty playlist, but they do not yet render the new reason text. They should not infer “signed” from a prior phrase's queued clips when the current phrase is blocked.
 
 If a user confirms a homograph, the translator/clip catalog needs an explicit sense-specific motion mapping before the message can be signed. Repeating the same request does not clear `needs_confirmation`. This PR deliberately does not add a confirmation bypass.
 

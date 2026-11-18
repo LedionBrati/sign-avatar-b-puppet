@@ -25,7 +25,7 @@ import modal
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
-VOLUME = "signlayer-renders"
+VOLUME = "signlayer-renders"  # existing Modal volume (pre-rename name kept so cached data stays reachable)
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -41,7 +41,7 @@ image = (
     .add_local_file(str(REPO / "pipeline/produce/score_takes.py"), "/root/pipeline/produce/score_takes.py")
 )
 vol = modal.Volume.from_name(VOLUME, create_if_missing=True)
-app = modal.App("signlayer-produce-post", image=image)
+app = modal.App("flux-produce-post", image=image)
 
 
 def _model() -> None:

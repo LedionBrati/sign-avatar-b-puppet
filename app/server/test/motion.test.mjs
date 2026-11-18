@@ -9,7 +9,7 @@ import { gunzipSync } from "node:zlib";
 import { createApp } from "../index.mjs";
 import { FACE_KEEP, slimMotion } from "../lib/motions.mjs";
 
-const root = mkdtempSync(join(tmpdir(), "signlayer-motion-"));
+const root = mkdtempSync(join(tmpdir(), "flux-motion-"));
 const clipsDir = join(root, "clips"), v1Dir = join(root, "wlasl"), v2Dir = join(root, "wlasl3d"), model = join(root, "signer.glb");
 
 const pts = (n, d, seed) => Array.from({ length: n }, (_, k) => Array.from({ length: d }, (_, j) => Math.round(((k * 31 + j * 7 + seed) % 97) / 97 * 1e4) / 1e4));

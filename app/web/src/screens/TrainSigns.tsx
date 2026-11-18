@@ -5,7 +5,7 @@
 // model what is not a sign. Then POST /api/train fits the profile's model in a few seconds, and Sign to speak uses it
 // (closed demo vocabulary + the GISLR prior, "unsure" when nothing fits).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEMO_SIGNS, NONE_SIGN, SignApiError, createSignClient, labelText, packFrame, packSegment, type EnrollInfo } from "@signlayer/core";
+import { DEMO_SIGNS, NONE_SIGN, SignApiError, createSignClient, labelText, packFrame, packSegment, type EnrollInfo } from "@flux/core";
 import { apiBase } from "../config";
 import { CloseIcon } from "../components/Icons";
 import { createTracker, drawOverlay, type Tracker } from "../lib/holistic";

@@ -8,7 +8,7 @@ import { createApp } from "../index.mjs";
 import { assessSigning } from "../lib/semantic-safety.mjs";
 import { translateRules } from "../../../translate/index.mjs";
 
-const root = mkdtempSync(join(tmpdir(), "signlayer-safety-test-"));
+const root = mkdtempSync(join(tmpdir(), "flux-safety-test-"));
 const dir = join(root, "clips");
 mkdirSync(dir);
 const ids = ["HELLO", "THANK_YOU", "YES", "NO", "I", "WANT", "THAT", "TURN", "RIGHT", "BANK", "YOU", "PAY", "FINE", "MY", "HUSBAND", "NEED", "HELP", "NAME"];

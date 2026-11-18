@@ -3,7 +3,7 @@
 // Captions toggle only hides that highlight). Drag the card anywhere on a desktop (lib/float.ts), its controls in the
 // header; on a phone it docks full width and the controls sit in a thumb-height row at the bottom.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { choosePlayback, createSignClient, generatingLabel, type SignResponse } from "@signlayer/core";
+import { choosePlayback, createSignClient, generatingLabel, type SignResponse } from "@flux/core";
 import { apiBase, apiLabel } from "../config";
 import { Captions } from "../components/Captions";
 import { CaptionsIcon, CloseIcon, KeyboardIcon, Mark, MicIcon, ReplayIcon, StopIcon, Wordmark } from "../components/Icons";

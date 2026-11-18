@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import { DEFAULT_PORT } from "@signlayer/core";
+import { DEFAULT_PORT } from "@flux/core";
 
-const KEY = "signlayer.serverUrl";
+const KEY = "flux.serverUrl";
 export const PLACEHOLDER = `http://192.168.x.x:${DEFAULT_PORT}`;
 /** Demo laptop on the venue LAN (used only when nothing is saved and nothing can be detected). */
 export const FALLBACK_URL = "http://172.20.1.174:8787";

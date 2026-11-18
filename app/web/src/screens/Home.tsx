@@ -1,7 +1,7 @@
 // Home: the mark, one big glass listen orb with the glowing voice line running through it, and a thumb-height dock
 // (type / sign to speak). No headline: the orb and the line are the whole page.
 import { useCallback, useState } from "react";
-import { copy } from "@signlayer/core";
+import { copy } from "@flux/core";
 import { CloseIcon, GearIcon, HandIcon, KeyboardIcon, Mark, MicIcon, Wordmark } from "../components/Icons";
 import { TypeBox } from "../components/TypeBox";
 import { Wave } from "../components/Wave";

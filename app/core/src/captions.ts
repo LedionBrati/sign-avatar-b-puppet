@@ -1,4 +1,4 @@
-// Caption word states, as in the SIGNLAYER prototype:
+// Caption word states, as in the Flux prototype:
 //   upcoming (hidden) -> heard (visible) -> signed (solid) ; "now" = the word being signed (tinted highlight).
 // Pure logic, no DOM, shared by web, extension and mobile.
 

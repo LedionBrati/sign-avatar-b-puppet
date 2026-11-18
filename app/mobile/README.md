@@ -1,4 +1,4 @@
-# SIGNLAYER mobile
+# Flux mobile
 
 The phone app: **hear anything, see it signed.** Expo (React Native, TypeScript), SDK 58. It has the same two screens as the team prototype: **Home** ("Tap to listen") and **Live** (status island, signer card, word-by-word captions, done summary with Replay and Listen again). There is also a **Server** settings sheet, and the other direction: **Sign to speak** (camera → sentence → spoken aloud).
 
@@ -15,10 +15,10 @@ mic ─► expo-speech-recognition (on device, continuous, interim results)
          └─ each final phrase ─► POST /api/sign {text} ─► playlist of clips (768×1024, 24 fps)
 typed text ───────────────────┘                         └─► appended to one running session
 two expo-video players: one plays clip i, the other has clip i+1 loaded and paused ─► swap on end (gapless)
-current clip index ─► captionFrame() from @signlayer/core ─► heard / signed / now (tinted) word states
+current clip index ─► captionFrame() from @flux/core ─► heard / signed / now (tinted) word states
 ```
 
-- **Contract:** `@signlayer/core` is imported straight from `../core` (TypeScript source, nothing copied). `metro.config.js` adds `../core` to `watchFolders` and aliases the package, and `tsconfig.json` maps the path.
+- **Contract:** `@flux/core` is imported straight from `../core` (TypeScript source, nothing copied). `metro.config.js` adds `../core` to `watchFolders` and aliases the package, and `tsconfig.json` maps the path.
 - **Never faking a sign:** words the server lists in `unsupported`/`fingerspell` that no clip covers stay muted with a dotted underline, never solid, and the summary counts them ("1 word without a sign yet").
 - **Phrases stay in order:** requests run in parallel, but results are appended in the order the phrases were heard.
 - **Device touches:** haptics on start and stop, the screen stays awake while live, safe areas, and a light status bar on the blue background.
@@ -48,7 +48,7 @@ Sign screen ─► OS camera permission (expo-camera) ─► GET <server>/app/ (
 - **Permissions:** `app.json` has iOS `NSCameraUsageDescription` (and the `expo-camera` plugin with the same string) and Android `CAMERA`. Before the WebView loads, the screen asks for the OS permission with `Camera.requestCameraPermissionsAsync()`.
   - iOS (WKWebView, iOS 15+): `mediaCapturePermissionGrantType="grant"` stops the page from showing a second web prompt. `allowsInlineMediaPlayback` and `mediaPlaybackRequiresUserAction={false}` keep the preview inline and autoplaying.
   - Android (`react-native-webview` 14.0.1): `RNCWebChromeClient.onPermissionRequest` grants `RESOURCE_VIDEO_CAPTURE` itself when `CAMERA` is already granted, and asks the OS otherwise. There's no JS `onPermissionRequest` prop to wire up. `allowsProtectedMedia` is only for DRM and isn't needed.
-- **Expo Go vs dev build:** `react-native-webview`, `expo-camera` and `expo-speech` are all in Expo Go, so Sign to speak works in Expo Go (the permission prompt names Expo Go instead of SIGNLAYER). A dev build (`npx expo run:android|ios`) uses the app's own strings.
+- **Expo Go vs dev build:** `react-native-webview`, `expo-camera` and `expo-speech` are all in Expo Go, so Sign to speak works in Expo Go (the permission prompt names Expo Go instead of Flux). A dev build (`npx expo run:android|ios`) uses the app's own strings.
 - **Web export:** `SignFrame.web.tsx` renders an `<iframe allow="camera">` with the same URL and accepts `postMessage` only from that iframe. `?sign=<url>` overrides the embed URL (used by the smoke test with `scripts/sign-stub.html`, a stand-in that posts the same messages).
 
 ## Run it

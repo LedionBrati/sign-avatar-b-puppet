@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { createSignClient } from "@signlayer/core";
+import { createSignClient } from "@flux/core";
 import { detectServerUrl, normalizeUrl, PLACEHOLDER } from "../lib/settings";
 import { colors, font, fontMedium } from "../theme";
 

@@ -1,7 +1,7 @@
 // The listening wave, the web app's (app/web/src/lib/signWave.ts): a thin white line with glowing cobalt-to-ice lobes
 // that swell with the real audio level, on a soft violet glow so it reads on white glass. Silent: a calm line.
 // Drawing stops by itself once the line has settled (no idle CPU), and while the card is hidden.
-import { waveColors as COLORS } from "@signlayer/core";
+import { waveColors as COLORS } from "@flux/core";
 
 export function createWave(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext("2d")!;

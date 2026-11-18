@@ -1,5 +1,5 @@
 // The 250 signs the sign -> speak recognizer knows (Kaggle GISLR "asl-signs" labels, in model index order).
-// Shown in the "See signs" sheet; display text comes from labelText() in @signlayer/core.
+// Shown in the "See signs" sheet; display text comes from labelText() in @flux/core.
 export const SIGN_VOCAB: readonly string[] = [
   "TV", "after", "airplane", "all", "alligator", "animal", "another", "any", "apple", "arm", "aunt", "awake",
   "backyard", "bad", "balloon", "bath", "because", "bed", "bedroom", "bee", "before", "beside", "better", "bird",

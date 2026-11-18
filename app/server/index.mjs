@@ -1,4 +1,4 @@
-// SIGNLAYER local API (contract: app/core/src/api.ts). Plain node:http, no framework.
+// Flux local API (contract: app/core/src/api.ts). Plain node:http, no framework.
 //
 //   node app/server/index.mjs            PORT=8787, CLIPS_DIR=dir[,dir2,...], SEMANTIC=0 to disable embeddings
 //                                        (out/realtime/clips-v2-{demo,sentences,library} are added in front; CLIPS_V2=0 off)
@@ -397,7 +397,7 @@ export function createApp(o = {}) {
       if (!file) throw new HttpError(404, "no_clip", `no clip ${rel ?? path}`);
       return sendFile(req, res, file);
     }
-    if (path === "/" ) return json(res, 200, { name: "signlayer-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "GET|POST|DELETE /api/enroll", "POST /api/train", "/api/profiles", "POST /api/compose", "POST /api/speak", "/motion/<stem>.json", "/models/signer.glb", "/app/"] });
+    if (path === "/" ) return json(res, 200, { name: "flux-server", routes: ["/api/health", "/api/vocab", "/api/ondemand", "POST /api/sign", "/api/sign.mp4?text=", "/clips/<file>", "POST /api/transcribe", "POST /api/recognize?mode=sign|spell", "GET|POST|DELETE /api/enroll", "POST /api/train", "/api/profiles", "POST /api/compose", "POST /api/speak", "/motion/<stem>.json", "/models/signer.glb", "/app/"] });
     throw new HttpError(404, "not_found", `no route ${req.method} ${path}`);
   }
 
@@ -480,7 +480,7 @@ export function createApp(o = {}) {
     const ids = result.playlist.map((p, i) => `${p.motion_id}#${i}`);
     const byId = new Map([...clips.signs.values(), ...clips.letters.values()].map((c) => [c.motion_id, c]));
     const manifest = Object.fromEntries(result.playlist.map((p, i) => [ids[i], { file: byId.get(p.motion_id).path, seconds: p.duration_s }]));
-    const dir = mkdtempSync(join(tmpdir(), "signlayer-"));
+    const dir = mkdtempSync(join(tmpdir(), "flux-"));
     const out = join(dir, "sign.mp4");
     try {
       const joined = joinClips({ clipsDir: dir, ids, out, manifest });
@@ -492,7 +492,7 @@ export function createApp(o = {}) {
     }
     res.on("close", () => rmSync(dir, { recursive: true, force: true }));
     res.setHeader("content-disposition", 'inline; filename="sign.mp4"');
-    res.setHeader("x-signlayer-unsupported", encodeURIComponent(result.unsupported.join(" ")));
+    res.setHeader("x-flux-unsupported", encodeURIComponent(result.unsupported.join(" ")));
     return sendFile(req, res, out, { cache: "no-store" });
   }
 
@@ -601,7 +601,7 @@ function cors(req, res) {
   res.setHeader("access-control-allow-origin", "*");
   res.setHeader("access-control-allow-methods", "GET, HEAD, POST, DELETE, OPTIONS");
   res.setHeader("access-control-allow-headers", req.headers["access-control-request-headers"] ?? "content-type, range");
-  res.setHeader("access-control-expose-headers", "content-length, content-range, accept-ranges, x-signlayer-unsupported");
+  res.setHeader("access-control-expose-headers", "content-length, content-range, accept-ranges, x-flux-unsupported");
   // Chrome Private Network Access: lets https pages / the extension reach this server on localhost or the LAN.
   if (req.headers["access-control-request-private-network"]) res.setHeader("access-control-allow-private-network", "true");
 }
@@ -702,7 +702,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const port = Number(process.env.PORT ?? 8787);
   const app = createApp();
   app.server.listen(port, "0.0.0.0", () => {
-    console.log(`SIGNLAYER server: ${app.clips.signs.size} signs from ${app.clips.dirs.map((d) => `${d.dir} (${d.signs})`).join(", ")}`);
+    console.log(`Flux server: ${app.clips.signs.size} signs from ${app.clips.dirs.map((d) => `${d.dir} (${d.signs})`).join(", ")}`);
     for (const u of lanUrls(port)) console.log(`  ${u}`);
     console.log(`semantic: ${app.state.semantic}`);
     console.log(`agent: ${app.state.agent}${app.agent?.model ? ` (${app.agent.model})` : ""}`);

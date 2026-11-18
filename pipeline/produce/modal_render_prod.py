@@ -28,7 +28,7 @@ from pathlib import Path
 
 import modal
 
-VOLUME = "signlayer-renders"
+VOLUME = "signlayer-renders"  # existing Modal volume (pre-rename name kept so cached data stays reachable)
 CPU = 16.0
 PUPPET = Path(os.environ.get("PRODUCE_PUPPET_DIR", "/root/puppet"))   # local path at `modal run`; unused in the container
 
@@ -48,7 +48,7 @@ image = (
     .add_local_dir(str(PUPPET), "/root/puppet", ignore=["node_modules", "dist", "models", "**/*.mp4", "__pycache__"])
 )
 vol = modal.Volume.from_name(VOLUME, create_if_missing=True)
-app = modal.App("signlayer-produce-render", image=image)
+app = modal.App("flux-produce-render", image=image)
 
 
 def _workdir() -> Path:

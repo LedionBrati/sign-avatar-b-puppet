@@ -3,7 +3,7 @@
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "paths": { "@signlayer/core": ["../core/src/index.ts"] }
+    "paths": { "@flux/core": ["../core/src/index.ts"] }
   },
   "include": ["**/*.ts", "**/*.tsx", "../core/src/**/*.ts"]
 }

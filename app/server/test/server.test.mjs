@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { createApp } from "../index.mjs";
 
 const SIGNS = { HELLO: "HELLO", MY: "MY", NAME: "NAME", THANK_YOU: "THANK YOU", SEE: "SEE", YOU: "YOU", LATER: "LATER", WHERE: "WHERE", HURT: "HURT" };
-const root = mkdtempSync(join(tmpdir(), "signlayer-test-"));
+const root = mkdtempSync(join(tmpdir(), "flux-test-"));
 const dirA = join(root, "clips"), dirB = join(root, "vocab-1");
 // Deterministic fake "mp4" bytes: byte i = (i * 7 + seed) & 255.
 const bytes = (n, seed) => Buffer.from(Array.from({ length: n }, (_, i) => (i * 7 + seed) & 255));

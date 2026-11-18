@@ -74,7 +74,7 @@ export function mockRecognize(mode: string, frames: number) {
 
 export function mockApi(): Plugin {
   return {
-    name: "signlayer-mock-api",
+    name: "flux-mock-api",
     configureServer(server) {
       const dir = findClipsDir(server.config.root);
       if (!dir) server.config.logger.warn("[mock] no clips/manifest.json found; set CLIPS_DIR");

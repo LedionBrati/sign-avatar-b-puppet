@@ -2,7 +2,7 @@
 // <video> elements. expo-video's web VideoView re-applies `src` on every React render, which reloads
 // a clip we already preloaded and stalls the swap, so the browser preview drives the elements itself.
 import { useEffect, useRef, useState } from "react";
-import type { PlaylistItem } from "@signlayer/core";
+import type { PlaylistItem } from "@flux/core";
 
 interface Props {
   playlist: PlaylistItem[];

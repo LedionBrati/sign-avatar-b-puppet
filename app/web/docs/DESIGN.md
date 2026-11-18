@@ -1,4 +1,4 @@
-# SIGNLAYER web, 2030 design
+# Flux web, 2030 design
 
 Calm, minimal and fast. The signer is the hero, and everything else gets out of the way.
 

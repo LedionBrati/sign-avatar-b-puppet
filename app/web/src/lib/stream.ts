@@ -9,7 +9,7 @@
 //
 // Junk filter: windows with almost no hand motion are not sent, and toddler-vocabulary labels (DOWNWEIGHT) are removed
 // from every window's guesses unless they are the only plausible guess at >= JUNK_KEEP_CONF.
-import { handsVisible, packFrame, packSegment, type HolisticFrame, type RecognizeResponse } from "@signlayer/core";
+import { handsVisible, packFrame, packSegment, type HolisticFrame, type RecognizeResponse } from "@flux/core";
 import { motion, type SegState } from "./segmenter";
 
 export const STREAM_CFG = {

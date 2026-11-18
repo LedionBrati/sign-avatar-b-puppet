@@ -29,7 +29,7 @@ import modal
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1] if len(HERE.parents) > 1 else HERE  # in the container the file sits at /root
-VOLUME = "signlayer-signeval"
+VOLUME = "signlayer-signeval"  # existing Modal volume (pre-rename name kept so cached data stays reachable)
 DEMO = "/vol/wlasl-demo"  # DEMO_DIR inside the container
 LIB = "/vol/lib"  # SIGN_LIB: index.json + videos/ of the demo signs
 # demo_data.GLOSS_LABEL's keys (repeated so the upload runs without numpy in the Modal CLI's Python)
@@ -48,7 +48,7 @@ image = (
     .add_local_dir(str(HERE), "/root/recognizer", ignore=[".venv", "__pycache__", ".pytest_cache", "models/fs.tflite"])
 )
 vol = modal.Volume.from_name(VOLUME, create_if_missing=True)
-app = modal.App("signlayer-signeval", image=image)
+app = modal.App("flux-signeval", image=image)
 GEN = "/vol/wlasl-gen"  # gather_wlasl.py output: every reachable WLASL instance of the demo signs + negatives
 ENV = {"DEMO_DIR": DEMO, "SIGN_LIB": LIB, "GEN_DIR": GEN, "HOLISTIC_TASK": "/opt/holistic_landmarker.task", "OPENBLAS_NUM_THREADS": "8", "OMP_NUM_THREADS": "8", "PYTHONUNBUFFERED": "1"}
 

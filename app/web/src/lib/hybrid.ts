@@ -4,7 +4,7 @@
 // like GaplessPlayer's, so Live's phrase offsets and captions work the same in both modes.
 // The stage crossfades between the styles: onMode("3d") once the 3D signer draws its first frame, onMode("clips")
 // when the first clip of a clip run is on screen.
-import type { PlaylistItem, Signer3D } from "@signlayer/core";
+import type { PlaylistItem, Signer3D } from "@flux/core";
 import type { GaplessPlayer } from "./player";
 
 export type StageMode = "clips" | "3d";

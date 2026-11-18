@@ -178,7 +178,7 @@ export function createComposer(o) {
       return { ...hit, cached: true, latency_ms: 0 };
     }
     const p = {
-      model, instructions: INSTRUCTIONS, store: false, max_output_tokens: 300, prompt_cache_key: "signlayer-compose-v3",
+      model, instructions: INSTRUCTIONS, store: false, max_output_tokens: 300, prompt_cache_key: "flux-compose-v3",
       input: [
         { role: "developer", content: VOCAB_MESSAGE },
         { role: "user", content: text },

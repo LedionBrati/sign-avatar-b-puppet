@@ -139,7 +139,7 @@ function Problem({ phase, err, url, onSettings, onRetry }: { phase: Phase; err: 
   const denied = phase === "denied";
   const title = denied ? "Camera access is off" : err?.kind === "not-served" ? "The signing page isn't on this server" : "Can't reach the server";
   const body = denied
-    ? "SIGNLAYER needs the camera to see your signing. Turn it on in the phone's settings, then try again."
+    ? "Flux needs the camera to see your signing. Turn it on in the phone's settings, then try again."
     : err?.kind === "not-served"
       ? "The server answered but doesn't serve the web app at /app/. Build app/web and restart app/server, or check the server URL."
       : "Is app/server running on the laptop, and is the phone on the same Wi-Fi?";

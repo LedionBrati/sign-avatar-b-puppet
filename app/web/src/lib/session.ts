@@ -1,6 +1,6 @@
 // Turns the phrases of a live session + the player's position into caption words, the now-line and the summary.
-// Pure logic on top of captionFrame() from @signlayer/core.
-import { captionFrame, type SignResponse, type WordState } from "@signlayer/core";
+// Pure logic on top of captionFrame() from @flux/core.
+import { captionFrame, type SignResponse, type WordState } from "@flux/core";
 
 export interface Phrase {
   id: number;

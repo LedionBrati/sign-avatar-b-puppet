@@ -10,7 +10,7 @@ import { loadApiKey, redactor } from "../lib/secrets.mjs";
 import { loadVocab } from "../../../translate/node.mjs";
 
 const IDS = ["HELLO", "MY", "NAME", "THANK_YOU", "SEE", "YOU", "LATER", "WHERE", "HURT"];
-const root = mkdtempSync(join(tmpdir(), "signlayer-agent-test-"));
+const root = mkdtempSync(join(tmpdir(), "flux-agent-test-"));
 const dir = join(root, "clips");
 mkdirSync(dir);
 writeFileSync(join(dir, "manifest.json"), JSON.stringify(Object.fromEntries(IDS.map((id) => {

@@ -1,5 +1,5 @@
-// SIGNLAYER listening wave (ported from the prototype's SignWave): a thin white line with glowing blue lobes that swell with speech.
-import { waveColors } from "@signlayer/core";
+// Flux listening wave (ported from the prototype's SignWave): a thin white line with glowing blue lobes that swell with speech.
+import { waveColors } from "@flux/core";
 
 export interface WaveOpts { level?: number; talking?: boolean; colors?: readonly string[]; /** live 0..1 level (mic), read every frame; a negative value means none right now */ getLevel?: () => number }
 export interface WaveHandle { set(o: { level?: number; talking?: boolean }): void; destroy(): void }

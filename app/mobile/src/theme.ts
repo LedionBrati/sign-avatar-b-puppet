@@ -1,8 +1,8 @@
-// Mobile-side theme: the shared SIGNLAYER tokens plus the few React Native specifics (fonts, shadows).
+// Mobile-side theme: the shared Flux tokens plus the few React Native specifics (fonts, shadows).
 import { Platform } from "react-native";
-import { colors, speakers } from "@signlayer/core";
+import { colors, speakers } from "@flux/core";
 
-export { colors, speakers, copy, liveGradient, waveColors, radii } from "@signlayer/core";
+export { colors, speakers, copy, liveGradient, waveColors, radii } from "@flux/core";
 
 export const font = Platform.select({
   ios: "System",

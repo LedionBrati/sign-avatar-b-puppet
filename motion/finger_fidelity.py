@@ -23,7 +23,7 @@ Reported (over frames inside sign segments when --segments is given, else all fr
 - optional: recognizer top-1 on each sign segment for both videos (when the server answers)
 - optional: the same angle numbers against the motion file the puppet was driven by
 
-Landmark caches go to %TEMP%/signlayer-finger-cache, never the repo.
+Landmark caches go to %TEMP%/flux-finger-cache, never the repo.
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-CACHE = Path(os.environ.get("FINGER_CACHE", Path(tempfile.gettempdir()) / "signlayer-finger-cache"))
+CACHE = Path(os.environ.get("FINGER_CACHE", Path(tempfile.gettempdir()) / "flux-finger-cache"))
 HANDS = ("left", "right")
 FINGERS = ("thumb", "index", "middle", "ring", "pinky")
 CHAINS = ((0, 1, 2, 3, 4), (0, 5, 6, 7, 8), (0, 9, 10, 11, 12), (0, 13, 14, 15, 16), (0, 17, 18, 19, 20))

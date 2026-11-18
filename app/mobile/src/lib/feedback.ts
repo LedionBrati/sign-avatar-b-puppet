@@ -8,7 +8,7 @@ export const tap = (kind: "start" | "stop" | "light" = "light") => {
   Haptics.impactAsync(style).catch(() => {});
 };
 
-const TAG = "signlayer-live";
+const TAG = "flux-live";
 export const keepAwake = (on: boolean) => {
   if (on) activateKeepAwakeAsync(TAG).catch(() => {});
   else deactivateKeepAwake(TAG).catch(() => {});

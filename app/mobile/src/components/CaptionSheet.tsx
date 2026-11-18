@@ -3,7 +3,7 @@
 // The sheet keeps the newest lines in view (it rolls up like the prototype's .roll).
 import { useEffect, useRef } from "react";
 import { ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from "react-native";
-import type { WordState } from "@signlayer/core";
+import type { WordState } from "@flux/core";
 import { colors, fontMedium, shadow, spk } from "../theme";
 
 interface Props {

@@ -52,7 +52,7 @@ function artifact(): Plugin {
   const clips = loadClips();
   const VIRTUAL = "virtual:artifact-clips";
   return {
-    name: "signlayer-artifact",
+    name: "flux-artifact",
     enforce: "post", // after vite:css-post has emitted the CSS asset
     resolveId: (id) => (id === VIRTUAL ? `\0${VIRTUAL}` : null),
     load: (id) => id === `\0${VIRTUAL}` ? `export const CLIPS = ${JSON.stringify(clips.map(({ src: _src, ...c }) => c))};` : null,
@@ -71,7 +71,7 @@ function artifact(): Plugin {
       if (js.includes("<!--")) throw new Error("bundle contains '<!--'; escape it before inlining");
       css = css.replace(/<\/style/gi, "<\\/style");
       const html = [
-        "<title>SIGNLAYER</title>",
+        "<title>Flux</title>",
         `<meta name="description" content="Hear anything. See it signed. Live sign language with captions.">`,
         `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400..700&family=Inter:opsz,wght@14..32,400..700&family=Newsreader:opsz,wght@6..72,400..700&display=swap">`,
         `<style>${css}</style>`,
@@ -119,13 +119,13 @@ export default defineConfig({
   plugins: [react(), artifact()],
   resolve: {
     alias: {
-      "@signlayer/core": path.resolve(here, "../core/src/index.ts"),
+      "@flux/core": path.resolve(here, "../core/src/index.ts"),
       "@sl/translate": path.resolve(repo, "translate/index.mjs"),
       "@sl/sign": path.resolve(repo, "app/server/lib/sign.mjs"),
       "@sl/safety": path.resolve(repo, "app/server/lib/semantic-safety.mjs"),
       // translate/semantic.mjs imports it lazily; the artifact never runs the semantic layer.
       "@huggingface/transformers": path.resolve(here, "src/artifact/stub-transformers.ts"),
-      "@signlayer/signer-player": path.resolve(here, "src/artifact/stub-signer-player.ts"),
+      "@flux/signer-player": path.resolve(here, "src/artifact/stub-signer-player.ts"),
     },
   },
   define: { __ARTIFACT__: "true", __MP_VERSION__: JSON.stringify(mpVersion) },

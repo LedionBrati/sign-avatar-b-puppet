@@ -1,6 +1,6 @@
 // MediaPipe HolisticLandmarker (VIDEO mode) on the camera <video>, one detection per presented frame.
 // Loaded lazily (the tasks-vision bundle + wasm + ~13 MB model) so the home screen stays light.
-import type { HolisticFrame } from "@signlayer/core";
+import type { HolisticFrame } from "@flux/core";
 import type { HolisticLandmarker, HolisticLandmarkerResult } from "@mediapipe/tasks-vision";
 
 declare const __MP_VERSION__: string;

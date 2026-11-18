@@ -150,7 +150,7 @@ export function createAgent(o) {
       text: { format: { type: "json_schema", name: "sign_plan", schema: PLAN_SCHEMA, strict: true } },
       max_output_tokens: 1500,
       store: false,
-      prompt_cache_key: `signlayer-agent-${vocabHash}`,
+      prompt_cache_key: `flux-agent-${vocabHash}`,
     };
     if (isReasoningModel(model)) { if (!unsupportedParams.has("reasoning")) p.reasoning = { effort }; }
     else if (!unsupportedParams.has("temperature")) p.temperature = 0;

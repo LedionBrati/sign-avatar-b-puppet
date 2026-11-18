@@ -1,6 +1,6 @@
 // Settings as a clean sheet: appearance, the signed-word highlight, and where the sign server runs.
 import { useState } from "react";
-import { copy, createSignClient } from "@signlayer/core";
+import { copy, createSignClient } from "@flux/core";
 import { ARTIFACT, ENV_API, apiBase, getApiSetting, setApiSetting } from "../config";
 import { setPrefs, usePrefs, type Theme } from "../lib/prefs";
 import { Segmented } from "./Segmented";

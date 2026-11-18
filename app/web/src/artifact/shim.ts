@@ -4,7 +4,7 @@
 // the network untouched. /api/sign is the live server's code path in rules-only, relaxed mode:
 //   translate/ translateRules -> app/server/lib/sign.mjs planToPlaylist -> semantic-safety assessSigning -> relaxed.
 // The semantic layer (transformers.js) is never called and is aliased to a stub in the build.
-import type { HealthResponse, SignResponse, SigningSafety, VocabResponse } from "@signlayer/core";
+import type { HealthResponse, SignResponse, SigningSafety, VocabResponse } from "@flux/core";
 import { CLIPS } from "virtual:artifact-clips";
 import { translateRules } from "@sl/translate";
 import { planToPlaylist, type ArtifactClip, type ArtifactClipSets } from "@sl/sign";

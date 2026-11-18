@@ -1,6 +1,6 @@
 # Flux Chrome extension
 
-A small floating glass card on top of any page. Click the Flux icon: the card appears over the tab, with a live voice wave on top, the signer under it and captions under the signer. Pick **Tab** (this tab's audio) or **Mic**, press Start. Built with WXT (Manifest V3, TypeScript, no framework) on `@signlayer/core` (`../core`).
+A small floating glass card on top of any page. Click the Flux icon: the card appears over the tab, with a live voice wave on top, the signer under it and captions under the signer. Pick **Tab** (this tab's audio) or **Mic**, press Start. Built with WXT (Manifest V3, TypeScript, no framework) on `@flux/core` (`../core`).
 
 Screenshots in `screenshots/` are from the previous (dark cobalt) look; `npm run verify` regenerates them.
 
@@ -36,7 +36,7 @@ If the card shows a small **Can't reach …** line under the transcript, the ser
 
 ```
 toolbar click ─► background: scripting.executeScript(float.js) into the tab   (activeTab granted by the click)
-float.js      ─► <signlayer-float> closed shadow root: glass frame + iframe(overlay.html) + drag grip
+float.js      ─► <flux-float> closed shadow root: glass frame + iframe(overlay.html) + drag grip
 overlay.html  ─► the UI (extension page: the site's CSS/CSP never apply). Start ─► background
 background    ─► tabCapture.getMediaStreamId({ targetTabId }) ─► offscreen document
 offscreen     ─► getUserMedia (tab stream id, or the mic) ─► AudioContext (keeps the tab audible) + analyser + MediaRecorder
@@ -74,7 +74,7 @@ card          ─► POST /api/sign ─► playlist ─► signer + captions
 
 ```bash
 npm run build
-AUDIO=path/to/speech.wav node scripts/verify.mjs     # SIGNLAYER_API=http://localhost:8787 by default
+AUDIO=path/to/speech.wav node scripts/verify.mjs     # FLUX_API=http://localhost:8787 by default
 ```
 
 Real Chrome (headless, `--disable-audio-output`: nothing is audible, the tab still produces audio for capture; `--mute-audio` can't be used, a muted tab captures as silence). A local light page and a dark page play the recording (started by a real click); `Extension.triggerAction` clicks the icon; the script drags the card, checks the saved position and viewport clamp, starts Tab audio, waits for text → `fully_supported` → signing with captions, stops, checks a phrase that can't be signed leaves the signer still, cycles S/M/L from the gear menu, closes the card with a second icon click and with ×, and checks the "!" badge on chrome://version. Screenshots go to `screenshots/`.

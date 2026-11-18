@@ -8,7 +8,7 @@ import { createApp } from "../index.mjs";
 import { createComposer, parseContext, parseSigns } from "../lib/compose.mjs";
 import { SIGN_LABELS } from "../lib/sign-vocab.mjs";
 
-const root = mkdtempSync(join(tmpdir(), "signlayer-compose-test-"));
+const root = mkdtempSync(join(tmpdir(), "flux-compose-test-"));
 const clipsDir = join(root, "clips");
 mkdirSync(clipsDir);
 writeFileSync(join(clipsDir, "HELLO.mp4"), "synthetic fixture; not ASL");

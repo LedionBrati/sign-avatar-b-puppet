@@ -3,7 +3,7 @@ import { browser } from "wxt/browser";
 // The floating card's frame, injected into the page on a toolbar click (background.ts, chrome.scripting).
 // Running it again on the same page closes the card (the toolbar icon toggles it).
 //
-//   <signlayer-float> (0×0, fixed)  └ closed shadow root
+//   <flux-float> (0×0, fixed)  └ closed shadow root
 //      .card (fixed, draggable)  ├ .glass  frosted white glass: backdrop blur of the page, pastel wash, sheen
 //                                ├ iframe  overlay.html: the whole UI (an extension page, so the page's CSP never applies)
 //                                └ .rim / .ring  bright white rim; a slow pastel ring of light while listening
@@ -75,7 +75,7 @@ export default defineUnlistedScript(() => {
   // DOM APIs only, no innerHTML: YouTube, Meet and other Google pages enforce Trusted Types
   // (require-trusted-types-for 'script'), and a string HTML sink would throw there. Styles go through the CSSOM
   // (host.style, adoptedStyleSheets), which the page's CSP style-src doesn't govern.
-  const host = document.createElement("signlayer-float");
+  const host = document.createElement("flux-float");
   const HOST_STYLE: [string, string][] = [["all", "initial"], ["position", "fixed"], ["left", "0"], ["top", "0"], ["right", "auto"], ["bottom", "auto"],
     ["width", "0"], ["height", "0"], ["margin", "0"], ["padding", "0"], ["border", "0"], ["background", "transparent"], ["overflow", "visible"],
     ["z-index", "2147483647"], ["display", "block"], ["pointer-events", "none"]];

@@ -4,7 +4,7 @@
 //   energy VAD on the shared AnalyserNode -> one MediaRecorder chunk per utterance (pre-roll kept: the recorder runs
 //   while silent and is recycled every ~1.5 s) -> ends after 600 ms of silence or at 8 s -> chunks with < 300 ms of
 //   voice are dropped -> POST /api/transcribe (parallel) -> onFinal(text) in utterance order.
-import { SignApiError, type SignClient } from "@signlayer/core";
+import { SignApiError, type SignClient } from "@flux/core";
 import { acquireMic, releaseMic, type Mic } from "./mic";
 
 export const VAD = {
@@ -108,7 +108,7 @@ export function createCapture(client: SignClient, h: CaptureHandlers) {
       text = (await client.transcribe(blob, { ms })).text ?? "";
     } catch (e) {
       if (e instanceof SignApiError && (e.code === "transcribe_off" || e.status === 404)) { stop(); h.onError("unavailable", e.message); }
-      else if (e instanceof SignApiError) console.warn("[signlayer] transcribe", e.code, e.message);
+      else if (e instanceof SignApiError) console.warn("[flux] transcribe", e.code, e.message);
       else h.onError("network", String((e as Error).message ?? e));
     }
     pending--;

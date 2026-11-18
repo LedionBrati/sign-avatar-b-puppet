@@ -1,4 +1,4 @@
-// SIGNLAYER listening wave (port of the prototype's canvas SignWave to react-native-svg):
+// Flux listening wave (port of the prototype's canvas SignWave to react-native-svg):
 // a thin white line with soft blue lobes that swell while someone is talking. ~30 fps, cheap paths.
 import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, View, type LayoutChangeEvent } from "react-native";

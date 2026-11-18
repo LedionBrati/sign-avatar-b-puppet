@@ -1,7 +1,7 @@
 // A live session: every final phrase (spoken or typed) becomes one /api/sign call; the responses are
 // merged into a single running SignResponse so captionFrame() can drive the captions for the whole
 // conversation, and the playlist just keeps growing at the end.
-import type { SignResponse } from "@signlayer/core";
+import type { SignResponse } from "@flux/core";
 
 export const emptySession = (): SignResponse => ({
   text: "", words: [], playlist: [], unsupported: [], fingerspell: [], markers: [], plan: null, timings: { translate_ms: 0, total_ms: 0 },

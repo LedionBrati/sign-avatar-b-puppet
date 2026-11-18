@@ -8,13 +8,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp, MAX_RECOGNIZE_BODY } from "../index.mjs";
 
-const root = mkdtempSync(join(tmpdir(), "signlayer-rec-"));
+const root = mkdtempSync(join(tmpdir(), "flux-rec-"));
 const clipsDir = join(root, "clips");
 const dist = join(root, "dist");
 mkdirSync(clipsDir);
 writeFileSync(join(clipsDir, "manifest.json"), "{}");
 mkdirSync(join(dist, "assets"), { recursive: true });
-writeFileSync(join(dist, "index.html"), "<!doctype html><title>SIGNLAYER</title>");
+writeFileSync(join(dist, "index.html"), "<!doctype html><title>Flux</title>");
 writeFileSync(join(dist, "assets", "app-123.js"), "console.log('hi')");
 writeFileSync(join(root, "secret.txt"), "outside dist");
 
@@ -140,14 +140,14 @@ test("/app/ serves the web build with SPA fallback", async () => {
   let res = await fetch(`${base}/app/`);
   assert.equal(res.status, 200);
   assert.match(res.headers.get("content-type"), /text\/html/);
-  assert.match(await res.text(), /SIGNLAYER/);
+  assert.match(await res.text(), /Flux/);
   res = await fetch(`${base}/app/assets/app-123.js`);
   assert.equal(res.status, 200);
   assert.match(res.headers.get("content-type"), /javascript/);
   assert.match(res.headers.get("cache-control"), /immutable/);
   res = await fetch(`${base}/app/sign/deep/route`);
   assert.equal(res.status, 200);
-  assert.match(await res.text(), /SIGNLAYER/);
+  assert.match(await res.text(), /Flux/);
   assert.equal((await fetch(`${base}/app/assets/missing.js`)).status, 404);
   assert.equal((await fetch(`${base}/app/..%2Fsecret.txt`)).status, 404);
   res = await fetch(`${base}/app`, { redirect: "manual" });

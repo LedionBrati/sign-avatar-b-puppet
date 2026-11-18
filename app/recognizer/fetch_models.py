@@ -43,7 +43,7 @@ ZIPPED = {"fs.tflite": "model.tflite", "fs_args.json": "inference_args.json"}
 ALIASES = {"gislr.tflite": ["gislr.tflite", "islr.tflite"], "gislr_labels.json": ["gislr_labels.json", "map.json"],
            "fs.tflite": ["fs.tflite"], "fs_args.json": ["fs_args.json"], "fs_chars.json": ["fs_chars.json"]}
 
-UA = {"User-Agent": "signlayer-recognizer/0.1"}
+UA = {"User-Agent": "flux-recognizer/0.1"}
 
 
 def get(url: str, headers: dict | None = None) -> bytes:

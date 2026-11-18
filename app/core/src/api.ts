@@ -1,4 +1,4 @@
-// SIGNLAYER app contract: the local API (app/server) and every client (web, extension, mobile).
+// Flux app contract: the local API (app/server) and every client (web, extension, mobile).
 // Change this file first, then the server and clients.
 
 /** One clip in the signing playlist. Clips start and end in the same neutral pose, so they play back to back. */

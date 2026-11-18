@@ -12,7 +12,7 @@ declare module "@sl/translate" {
 
 declare module "@sl/sign" {
   import type { ArtifactPlan } from "@sl/translate";
-  import type { PlaylistItem } from "@signlayer/core";
+  import type { PlaylistItem } from "@flux/core";
   export function planToPlaylist(plan: ArtifactPlan, clips: ArtifactClipSets): {
     words: string[]; playlist: PlaylistItem[]; unsupported: string[]; fingerspell: string[]; markers: { type: string; from: number; to: number }[];
   };
@@ -21,7 +21,7 @@ declare module "@sl/sign" {
 }
 
 declare module "@sl/safety" {
-  import type { SigningSafety } from "@signlayer/core";
+  import type { SigningSafety } from "@flux/core";
   import type { ArtifactPlan } from "@sl/translate";
   import type { ArtifactClipSets } from "@sl/sign";
   export function assessSigning(text: string, plan: ArtifactPlan, clips: ArtifactClipSets): SigningSafety;

@@ -62,7 +62,7 @@ export interface SignerPlayerModule {
 }
 
 export interface Signer3DOptions {
-  /** Lazy loader of the player bundle, e.g. () => import("@signlayer/signer-player"). Called once. */
+  /** Lazy loader of the player bundle, e.g. () => import("@flux/signer-player"). Called once. */
   load: () => Promise<SignerPlayerModule>;
   /** The avatar, e.g. client.modelUrl() (GET /models/signer.glb). Fetched once. */
   modelUrl: string;

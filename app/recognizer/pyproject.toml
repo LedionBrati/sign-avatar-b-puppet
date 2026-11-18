@@ -1,5 +1,5 @@
 [project]
-name = "signlayer-recognizer"
+name = "flux-recognizer"
 version = "0.1.0"
 description = "Sign -> voice recognizer: pretrained GISLR (isolated signs) and ASL fingerspelling TFLite models behind a small HTTP API"
 requires-python = ">=3.11,<3.14"

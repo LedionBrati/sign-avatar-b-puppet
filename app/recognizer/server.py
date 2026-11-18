@@ -1,4 +1,4 @@
-"""SIGNLAYER recognizer service (contract: RecognizeResponse in app/core/src/api.ts).
+"""Flux recognizer service (contract: RecognizeResponse in app/core/src/api.ts).
 
     uv run python server.py            # RECOGNIZER_PORT=8788 RECOGNIZER_HOST=127.0.0.1 (0.0.0.0 to expose it; normally only app/server calls it)
 
@@ -45,7 +45,7 @@ def make_handler(rec: Recognizer, info: dict, store: E.Store | None = None):
     store = store or E.Store()
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "signlayer-recognizer/0.1"
+        server_version = "flux-recognizer/0.1"
         protocol_version = "HTTP/1.1"
 
         def log_message(self, fmt, *args):  # method + path + status only, never bodies
@@ -90,7 +90,7 @@ def make_handler(rec: Recognizer, info: dict, store: E.Store | None = None):
             except E.EnrollError as e:
                 return self._error(e.status, e.code, str(e))
             if path == "/":
-                return self._json(200, {"name": "signlayer-recognizer", "routes": ["/health", "POST /recognize?mode=sign|spell[&profile=&vocab=]",
+                return self._json(200, {"name": "flux-recognizer", "routes": ["/health", "POST /recognize?mode=sign|spell[&profile=&vocab=]",
                                                                                  "GET|POST|DELETE /enroll?profile=", "POST /train?profile=", "/profiles"]})
             self._error(404, "not_found", f"no route GET {path}")
 
@@ -182,7 +182,7 @@ def main():
     port = int(os.environ.get("RECOGNIZER_PORT", "8788"))
     t = time.perf_counter()
     srv = create_server(host, port)
-    print(f"SIGNLAYER recognizer on http://{host}:{port} (models loaded and warm in {time.perf_counter() - t:.1f} s)", flush=True)
+    print(f"Flux recognizer on http://{host}:{port} (models loaded and warm in {time.perf_counter() - t:.1f} s)", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

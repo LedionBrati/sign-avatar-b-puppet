@@ -1,7 +1,7 @@
 import "@/lib/fonts";
 import "./style.css";
 import { browser, type Browser } from "wxt/browser";
-import { captionFrame, choosePlayback, createSignClient, ROUTES, Signer3D, type PlaybackMode, type PlaylistItem, type SignResponse } from "@signlayer/core";
+import { captionFrame, choosePlayback, createSignClient, ROUTES, Signer3D, type PlaybackMode, type PlaylistItem, type SignResponse } from "@flux/core";
 import { $, esc, ICON, mark, WORDMARK } from "@/lib/brand";
 import { OVERLAY_PORT, type ChunkInfo, type StartReply, type ToBg, type ToOverlay } from "@/lib/messages";
 import { getSettings, setSettings, SIZE_PX, type Size, type Source } from "@/lib/settings";
@@ -47,7 +47,7 @@ function get3d(): Signer3D {
     canvas.width = 540;
     canvas.height = 720;
     layer3d.appendChild(canvas);
-    signer3d = new Signer3D({ load: () => import("@signlayer/signer-player"), modelUrl: client.modelUrl(), canvas });
+    signer3d = new Signer3D({ load: () => import("@flux/signer-player"), modelUrl: client.modelUrl(), canvas });
   }
   return signer3d;
 }
@@ -438,7 +438,7 @@ function advance() {
   back.requestVideoFrameCallback?.(() => swap());
   back.addEventListener("playing", () => setTimeout(swap, 40), { once: true });
   back.play().catch((e) => {
-    console.warn("[signlayer] play failed", item.url, e);
+    console.warn("[flux] play failed", item.url, e);
     swap();
     setTimeout(advance, 0);
   });
@@ -466,7 +466,7 @@ function play3d(j: Job) {
     advance();
   }).catch((e) => {
     if (!mine()) return;
-    console.warn("[signlayer] 3D signer failed", e);
+    console.warn("[flux] 3D signer failed", e);
     // Can't load the 3D signer (network, WebGL): a phrase that has every clip still plays photoreal; else skip it.
     if (j.res.playlist.every((x) => x.url)) { j.mode = "clips"; job = null; idx = -1; jobs.unshift(j); advance(); return; }
     idx = j.res.playlist.length - 1;
@@ -483,7 +483,7 @@ document.addEventListener("visibilitychange", () => {
 vids.forEach((v) => {
   v.addEventListener("ended", () => v === vids[front] && job && advance());
   v.addEventListener("error", () => {
-    if (v === vids[front] && job && v.getAttribute("src")) { console.warn("[signlayer] clip failed", v.src); advance(); }
+    if (v === vids[front] && job && v.getAttribute("src")) { console.warn("[flux] clip failed", v.src); advance(); }
   });
 });
 
@@ -619,7 +619,7 @@ function offline(e: unknown) {
   let host = s.apiUrl;
   try { host = new URL(s.apiUrl).host; } catch { /* keep */ }
   offlineMsg = `Can't reach <b>${esc(host)}</b>.`;
-  console.warn("[signlayer]", e);
+  console.warn("[flux]", e);
   isOffline = true;
   render();
 }

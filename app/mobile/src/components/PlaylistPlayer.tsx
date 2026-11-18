@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { useVideoPlayer, VideoView, type VideoPlayer } from "expo-video";
-import type { PlaylistItem } from "@signlayer/core";
+import type { PlaylistItem } from "@flux/core";
 
 interface Props {
   playlist: PlaylistItem[];

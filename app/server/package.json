@@ -1,8 +1,8 @@
 {
-  "name": "signlayer-server",
+  "name": "flux-server",
   "private": true,
   "type": "module",
-  "description": "SIGNLAYER local API: text -> playlist of pre-rendered sign clips (contract: app/core/src/api.ts).",
+  "description": "Flux local API: text -> playlist of pre-rendered sign clips (contract: app/core/src/api.ts).",
   "engines": {
     "node": ">=20"
   },

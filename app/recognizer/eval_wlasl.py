@@ -7,7 +7,7 @@
 Pipeline per clip: video -> MediaPipe Tasks HolisticLandmarker (Python, VIDEO mode) -> legacy 543-point packing
 (face 478 -> 468, same as app/core/src/landmarks.ts) -> POST /api/recognize over HTTP -> top-1 / top-5.
 
-Landmarks are biometric: they are cached as .npy OUTSIDE the repo (--cache, default %TEMP%/signlayer-eval-cache)
+Landmarks are biometric: they are cached as .npy OUTSIDE the repo (--cache, default %TEMP%/flux-eval-cache)
 only so reruns are fast, and are never printed. The videos stay in the library folder (WLASL, research use only).
 
 Library: --lib DIR (the folder holding index.json and videos/), default the folder of $SIGN_DICTIONARY; one is required.
@@ -151,7 +151,7 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="0 = every clip in the GISLR vocabulary")
     ap.add_argument("--mirror", action="store_true", help="also evaluate horizontally flipped clips")
     ap.add_argument("--spell", action="store_true", help="fingerspelling sanity check on single-letter clips")
-    ap.add_argument("--cache", type=Path, default=Path(tempfile.gettempdir()) / "signlayer-eval-cache")
+    ap.add_argument("--cache", type=Path, default=Path(tempfile.gettempdir()) / "flux-eval-cache")
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 4) // 2))
     ap.add_argument("--json", type=Path, help="write per-clip results (labels and scores only) here")
     a = ap.parse_args()

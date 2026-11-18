@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { captionFrame, createSignClient, generatingLabel, playlistSeconds, type SignResponse } from "@signlayer/core";
+import { captionFrame, createSignClient, generatingLabel, playlistSeconds, type SignResponse } from "@flux/core";
 import { Field } from "../components/Field";
 import { Mark } from "../components/Mark";
 import { Pill } from "../components/Glass";

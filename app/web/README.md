@@ -1,6 +1,6 @@
-# SIGNLAYER web app
+# Flux web app
 
-**Hear anything. See it signed.** The installable web app (PWA): tap to listen, and an AI signer card signs what it hears with live captions. The other direction, **Sign to speak** (`#/sign`), reads signs from the camera and speaks them. Vite + React + TypeScript, built on the shared contract in `../core` (`@signlayer/core`).
+**Hear anything. See it signed.** The installable web app (PWA): tap to listen, and an AI signer card signs what it hears with live captions. The other direction, **Sign to speak** (`#/sign`), reads signs from the camera and speaks them. Vite + React + TypeScript, built on the shared contract in `../core` (`@flux/core`).
 
 | Home | Live (signing) | Done | Light |
 |---|---|---|---|

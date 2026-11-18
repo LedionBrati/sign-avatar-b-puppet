@@ -3,7 +3,7 @@
 // Over them, the instant 3D signer's canvas (same 3:4 stage): HybridPlayer crossfades between the two styles, one
 // style per phrase.
 import { useEffect, useRef, type ReactNode } from "react";
-import type { SigningSafety } from "@signlayer/core";
+import type { SigningSafety } from "@flux/core";
 import { GaplessPlayer } from "../lib/player";
 import { HybridPlayer } from "../lib/hybrid";
 import { getSigner3D } from "../lib/signer3d";
